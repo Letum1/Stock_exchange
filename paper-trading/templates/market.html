@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Market — Paper Trading</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+    header {
+      background: #1a1d27; border-bottom: 1px solid #2d3148;
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 800; color: #7c85ff; }
+    .hdr-right { display: flex; align-items: center; gap: 10px; }
+    .btn-sm { padding: 6px 14px; border: none; border-radius: 6px; font-size: 0.8rem;
+              font-weight: 600; cursor: pointer; background: #2d3148; color: #94a3b8; transition: opacity .15s; text-decoration: none; display: inline-block; }
+    .btn-sm:hover { opacity: .8; }
+    .btn-active { background: #7c85ff; color: #fff; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
+
+    /* Search */
+    .top-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 22px; flex-wrap: wrap; }
+    .search-wrap { position: relative; flex: 1; min-width: 200px; max-width: 380px; }
+    .search-wrap input {
+      width: 100%; background: #1a1d27; border: 1px solid #2d3148; border-radius: 8px;
+      color: #e2e8f0; padding: 9px 14px; font-size: 0.9rem; outline: none; transition: border-color .15s;
+    }
+    .search-wrap input:focus { border-color: #7c85ff; }
+    button.search-btn {
+      padding: 9px 18px; border: none; border-radius: 8px;
+      font-size: 0.88rem; font-weight: 700; cursor: pointer;
+      background: #7c85ff; color: #fff; transition: opacity .15s;
+    }
+    button.search-btn:hover { opacity: .85; }
+
+    .refresh-info { font-size: 0.78rem; color: #475569; margin-left: auto; }
+
+    /* Stock grid */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; margin-bottom: 28px; }
+    .stock-card {
+      background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px;
+      padding: 14px 16px; cursor: pointer; transition: border-color .15s, transform .1s;
+    }
+    .stock-card:hover { border-color: #7c85ff; transform: translateY(-2px); }
+    .stock-card.selected { border-color: #7c85ff; background: #1e203a; }
+    .sc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+    .sc-ticker { font-size: 1rem; font-weight: 800; color: #7c85ff; }
+    .sc-name { font-size: 0.72rem; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+    .sc-change { font-size: 0.78rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
+    .sc-change.up   { background: #14532d; color: #4ade80; }
+    .sc-change.down { background: #450a0a; color: #f87171; }
+    .sc-price { font-size: 1.2rem; font-weight: 700; color: #f1f5f9; }
+    .skeleton { background: #2d3148; border-radius: 4px; animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* Detail panel */
+    .detail-panel {
+      background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px;
+      padding: 22px 24px; margin-bottom: 24px; display: none;
+    }
+    .detail-panel.open { display: block; }
+    .dp-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; flex-wrap: wrap; gap: 12px; }
+    .dp-title h2 { font-size: 1.4rem; font-weight: 800; }
+    .dp-title p  { font-size: 0.83rem; color: #64748b; margin-top: 2px; }
+    .dp-price { text-align: right; }
+    .dp-price .big  { font-size: 2rem; font-weight: 800; }
+    .dp-price .chg  { font-size: 0.9rem; font-weight: 700; margin-top: 2px; }
+    .chg.up   { color: #4ade80; }
+    .chg.down { color: #f87171; }
+
+    .dp-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); gap: 12px; margin: 16px 0 20px; }
+    .dp-stat { background: #13151f; border-radius: 8px; padding: 10px 14px; }
+    .dp-stat .lbl { font-size: 0.72rem; color: #64748b; margin-bottom: 3px; }
+    .dp-stat .val { font-size: 0.95rem; font-weight: 700; color: #f1f5f9; }
+
+    .chart-wrap { position: relative; height: 220px; margin-bottom: 20px; }
+
+    .trade-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .trade-row input[type="number"] {
+      background: #13151f; border: 1px solid #2d3148; border-radius: 7px;
+      color: #e2e8f0; padding: 9px 13px; font-size: 0.9rem; outline: none;
+      width: 140px; transition: border-color .15s;
+    }
+    .trade-row input:focus { border-color: #7c85ff; }
+    .btn-buy  { padding: 9px 22px; border: none; border-radius: 7px; font-size: 0.9rem; font-weight: 700; cursor: pointer; background: #16a34a; color: #fff; transition: opacity .15s; }
+    .btn-sell { padding: 9px 22px; border: none; border-radius: 7px; font-size: 0.9rem; font-weight: 700; cursor: pointer; background: #dc2626; color: #fff; transition: opacity .15s; }
+    .btn-buy:hover,.btn-sell:hover { opacity:.85; }
+    .cost-preview { font-size: 0.83rem; color: #64748b; }
+    .cost-preview span { color: #38bdf8; font-weight: 600; }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 9px;
+      padding: 12px 18px; max-width: 320px; font-size: 0.86rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      opacity: 0; transform: translateY(10px);
+      transition: opacity .22s, transform .22s;
+      pointer-events: none; z-index: 999;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.ok  { border-left: 3px solid #4ade80; }
+    .toast.err { border-left: 3px solid #f87171; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📈 Paper Trading</h1>
+  <div class="hdr-right">
+    {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
+    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/market" class="btn-sm btn-active">Markets</a>
+    <a href="/account" class="btn-sm">Account</a>
+    <button class="btn-sm" onclick="doLogout()">Logout</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="search-wrap">
+      <input id="search-input" type="text" placeholder="Search any ticker… e.g. AAPL" style="text-transform:uppercase"
+             onkeydown="if(event.key==='Enter') lookupTicker()"/>
+    </div>
+    <button class="search-btn" onclick="lookupTicker()">Look Up</button>
+    <div class="refresh-info" id="refresh-info">Loading prices…</div>
+  </div>
+
+  <!-- Detail panel -->
+  <div class="detail-panel" id="detail-panel">
+    <div class="dp-header">
+      <div class="dp-title">
+        <h2 id="dp-name">—</h2>
+        <p id="dp-ticker-sector">—</p>
+      </div>
+      <div class="dp-price">
+        <div class="big" id="dp-price">—</div>
+        <div class="chg" id="dp-chg">—</div>
+      </div>
+    </div>
+
+    <div class="dp-stats" id="dp-stats"></div>
+
+    <div class="chart-wrap">
+      <canvas id="price-chart"></canvas>
+    </div>
+
+    <div class="trade-row">
+      <input type="number" id="trade-shares" min="0.0001" step="any" placeholder="Shares" />
+      <button class="btn-buy"  onclick="tradeFromMarket('buy')">Buy</button>
+      <button class="btn-sell" onclick="tradeFromMarket('sell')">Sell</button>
+      <div class="cost-preview" id="cost-preview"></div>
+    </div>
+  </div>
+
+  <!-- Stock grid -->
+  <div class="grid" id="stock-grid">
+    <!-- skeleton cards -->
+    ${[...Array(20)].map(() => `
+      <div class="stock-card">
+        <div class="sc-top"><div class="skeleton" style="width:60px;height:16px"></div></div>
+        <div class="skeleton" style="width:100%;height:12px;margin-top:6px"></div>
+        <div class="skeleton" style="width:80px;height:20px;margin-top:10px"></div>
+      </div>
+    `).join('')}
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const fmt   = n => '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtBig = n => {
+    if (!n) return '—';
+    if (n >= 1e12) return '$' + (n/1e12).toFixed(2) + 'T';
+    if (n >= 1e9)  return '$' + (n/1e9).toFixed(2) + 'B';
+    if (n >= 1e6)  return '$' + (n/1e6).toFixed(2) + 'M';
+    return '$' + n.toLocaleString();
+  };
+  const fmtVol = n => n ? n.toLocaleString() : '—';
+
+  let stocks = [];
+  let chartInstance = null;
+  let selectedTicker = null;
+
+  // ── Grid ──────────────────────────────────────────────────────────────────
+
+  async function loadStocks() {
+    document.getElementById('refresh-info').textContent = 'Fetching live prices…';
+    const r = await fetch('/api/market/stocks');
+    if (r.status === 401) { window.location.href = '/login'; return; }
+    stocks = await r.json();
+    renderGrid(stocks);
+    const now = new Date().toLocaleTimeString();
+    document.getElementById('refresh-info').textContent = `Updated ${now} · auto-refresh every 60s`;
+  }
+
+  function renderGrid(list) {
+    const grid = document.getElementById('stock-grid');
+    grid.innerHTML = list.map(s => {
+      const up = s.change >= 0;
+      return `
+        <div class="stock-card ${selectedTicker === s.ticker ? 'selected' : ''}"
+             onclick="selectStock('${s.ticker}')">
+          <div class="sc-top">
+            <div>
+              <div class="sc-ticker">${s.ticker}</div>
+              <div class="sc-name">${s.name}</div>
+            </div>
+            <div class="sc-change ${up ? 'up' : 'down'}">${up ? '+' : ''}${s.change_pct.toFixed(2)}%</div>
+          </div>
+          <div class="sc-price">${fmt(s.price)}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Detail ────────────────────────────────────────────────────────────────
+
+  async function selectStock(ticker) {
+    selectedTicker = ticker;
+    document.querySelectorAll('.stock-card').forEach(c => c.classList.remove('selected'));
+    event.currentTarget && event.currentTarget.classList.add('selected');
+
+    const panel = document.getElementById('detail-panel');
+    panel.classList.add('open');
+    document.getElementById('dp-name').textContent    = ticker;
+    document.getElementById('dp-ticker-sector').textContent = 'Loading…';
+    document.getElementById('dp-price').textContent   = '—';
+    document.getElementById('dp-chg').textContent     = '—';
+    document.getElementById('dp-stats').innerHTML     = '';
+    document.getElementById('cost-preview').textContent = '';
+
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    const [infoRes, chartRes] = await Promise.all([
+      fetch(`/api/market/info/${ticker}`),
+      fetch(`/api/market/chart/${ticker}`),
+    ]);
+
+    if (!infoRes.ok) { showToast('Could not load stock info.', false); return; }
+    const info  = await infoRes.json();
+    const chart = chartRes.ok ? await chartRes.json() : [];
+
+    const up = info.change >= 0;
+    document.getElementById('dp-name').textContent = info.name;
+    document.getElementById('dp-ticker-sector').textContent =
+      `${info.ticker}${info.sector ? ' · ' + info.sector : ''}`;
+
+    document.getElementById('dp-price').textContent = fmt(info.price);
+    const chgEl = document.getElementById('dp-chg');
+    chgEl.textContent = `${up ? '+' : ''}${fmt(info.change)} (${up ? '+' : ''}${info.change_pct.toFixed(2)}%) today`;
+    chgEl.className = 'chg ' + (up ? 'up' : 'down');
+
+    document.getElementById('dp-stats').innerHTML = [
+      { lbl: 'Open',          val: info.open        ? fmt(info.open)        : '—' },
+      { lbl: "Today's High",  val: info.high        ? fmt(info.high)        : '—' },
+      { lbl: "Today's Low",   val: info.low         ? fmt(info.low)         : '—' },
+      { lbl: 'Volume',        val: fmtVol(info.volume) },
+      { lbl: 'Market Cap',    val: fmtBig(info.market_cap) },
+      { lbl: 'P/E Ratio',     val: info.pe_ratio    ? info.pe_ratio.toFixed(2) : '—' },
+      { lbl: '52-Wk High',    val: info.week52_high ? fmt(info.week52_high) : '—' },
+      { lbl: '52-Wk Low',     val: info.week52_low  ? fmt(info.week52_low)  : '—' },
+    ].map(s => `<div class="dp-stat"><div class="lbl">${s.lbl}</div><div class="val">${s.val}</div></div>`).join('');
+
+    drawChart(chart, ticker, up);
+  }
+
+  function drawChart(data, ticker, up) {
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    if (!data.length) return;
+    const color = up ? '#4ade80' : '#f87171';
+    chartInstance = new Chart(document.getElementById('price-chart'), {
+      type: 'line',
+      data: {
+        labels: data.map(d => d.date),
+        datasets: [{
+          label: ticker,
+          data: data.map(d => d.close),
+          borderColor: color,
+          backgroundColor: color + '18',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: true,
+          tension: 0.3,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => ' ' + fmt(ctx.parsed.y),
+            },
+          },
+        },
+        scales: {
+          x: { grid: { color: '#2d3148' }, ticks: { color: '#64748b', maxTicksLimit: 8, font: { size: 11 } } },
+          y: { grid: { color: '#2d3148' }, ticks: { color: '#64748b', font: { size: 11 }, callback: v => fmt(v) } },
+        },
+      },
+    });
+  }
+
+  // Update cost preview as user types shares
+  document.getElementById('trade-shares').addEventListener('input', () => {
+    const shares = parseFloat(document.getElementById('trade-shares').value);
+    const stock  = stocks.find(s => s.ticker === selectedTicker);
+    const el     = document.getElementById('cost-preview');
+    if (!shares || !stock) { el.textContent = ''; return; }
+    el.innerHTML = `Est. cost: <span>${fmt(shares * stock.price)}</span>`;
+  });
+
+  // ── Lookup arbitrary ticker ───────────────────────────────────────────────
+
+  async function lookupTicker() {
+    const ticker = document.getElementById('search-input').value.trim().toUpperCase();
+    if (!ticker) return;
+    selectedTicker = ticker;
+
+    // Add to grid temporarily if not there
+    if (!stocks.find(s => s.ticker === ticker)) {
+      const r = await fetch(`/api/market/info/${ticker}`);
+      if (!r.ok) { showToast('Ticker not found.', false); return; }
+      const info = await r.json();
+      stocks = [{ ticker: info.ticker, name: info.name, price: info.price,
+                  change: info.change, change_pct: info.change_pct }, ...stocks];
+      renderGrid(stocks);
+    }
+
+    // Trigger detail panel via click on first card
+    const cards = document.querySelectorAll('.stock-card');
+    if (cards.length) {
+      const fake = { currentTarget: cards[0] };
+      Object.assign(event, fake);
+    }
+    await selectStock(ticker);
+    document.getElementById('search-input').value = '';
+  }
+
+  // ── Trade from market page ────────────────────────────────────────────────
+
+  async function tradeFromMarket(action) {
+    const shares = parseFloat(document.getElementById('trade-shares').value);
+    if (!selectedTicker || !shares || shares <= 0) {
+      showToast('Enter a valid number of shares.', false); return;
+    }
+    const r = await fetch(`/api/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: selectedTicker, shares }),
+    });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok);
+  }
+
+  async function doLogout() {
+    await fetch('/api/logout', { method: 'POST' });
+    window.location.href = '/login';
+  }
+
+  let toastTimer;
+  function showToast(msg, ok) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + (ok ? 'ok' : 'err');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = 'toast'; }, 3500);
+  }
+
+  loadStocks();
+  setInterval(loadStocks, 60000);
+</script>
+</body>
+</html>
