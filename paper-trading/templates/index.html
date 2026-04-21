@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Paper Trading</title>
   <style>
@@ -11,35 +11,44 @@
     header {
       background: #1a1d27;
       border-bottom: 1px solid #2d3148;
-      padding: 16px 32px;
+      padding: 14px 28px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    header h1 { font-size: 1.3rem; font-weight: 700; color: #7c85ff; letter-spacing: -0.5px; }
-    header .cash { font-size: 1rem; color: #94a3b8; }
-    header .cash span { color: #38bdf8; font-weight: 600; }
+    header h1 { font-size: 1.2rem; font-weight: 800; color: #7c85ff; }
+    .hdr-right { display: flex; align-items: center; gap: 16px; }
+    .hdr-user { font-size: 0.85rem; color: #64748b; }
+    .hdr-user span { color: #e2e8f0; font-weight: 600; }
+    .btn-sm {
+      padding: 6px 14px; border: none; border-radius: 6px;
+      font-size: 0.8rem; font-weight: 600; cursor: pointer;
+      background: #2d3148; color: #94a3b8; transition: opacity .15s;
+    }
+    .btn-sm:hover { opacity: .8; }
+    .btn-sm.danger { background: #450a0a; color: #f87171; }
 
-    .container { max-width: 1100px; margin: 0 auto; padding: 28px 24px; display: grid; gap: 24px; }
+    .container { max-width: 1120px; margin: 0 auto; padding: 26px 20px; display: grid; gap: 22px; }
 
     .card {
       background: #1a1d27;
       border: 1px solid #2d3148;
       border-radius: 12px;
-      padding: 22px 24px;
+      padding: 20px 22px;
     }
-    .card h2 { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 18px; }
+    .card h2 { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin-bottom: 16px; }
 
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
-    .stat { background: #13151f; border-radius: 8px; padding: 16px; }
-    .stat .label { font-size: 0.75rem; color: #64748b; margin-bottom: 6px; }
-    .stat .value { font-size: 1.4rem; font-weight: 700; }
-    .stat .value.green { color: #4ade80; }
-    .stat .value.red   { color: #f87171; }
-    .stat .value.blue  { color: #38bdf8; }
-    .stat .value.white { color: #f1f5f9; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; }
+    .stat { background: #13151f; border-radius: 8px; padding: 14px 16px; }
+    .stat .lbl { font-size: 0.73rem; color: #64748b; margin-bottom: 5px; }
+    .stat .val { font-size: 1.35rem; font-weight: 700; }
+    .val.blue  { color: #38bdf8; }
+    .val.white { color: #f1f5f9; }
+    .val.green { color: #4ade80; }
+    .val.red   { color: #f87171; }
 
-    .trade-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 12px; align-items: end; }
+    .trade-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end; }
+    .btn-group { display: flex; gap: 8px; }
     label { font-size: 0.78rem; color: #94a3b8; display: block; margin-bottom: 5px; }
     input[type="text"], input[type="number"] {
       width: 100%;
@@ -48,71 +57,59 @@
       border-radius: 7px;
       color: #e2e8f0;
       padding: 9px 12px;
-      font-size: 0.92rem;
+      font-size: 0.9rem;
       outline: none;
       transition: border-color .15s;
     }
     input:focus { border-color: #7c85ff; }
-
     button {
-      padding: 9px 20px;
-      border: none;
-      border-radius: 7px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity .15s;
+      padding: 9px 18px; border: none; border-radius: 7px;
+      font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: opacity .15s;
     }
-    button:hover { opacity: 0.85; }
-    .btn-buy  { background: #16a34a; color: #fff; }
-    .btn-sell { background: #dc2626; color: #fff; }
+    button:hover { opacity: .85; }
     .btn-quote { background: #2563eb; color: #fff; }
-    .btn-reset { background: #374151; color: #94a3b8; font-size: 0.8rem; padding: 6px 14px; border-radius: 6px; }
+    .btn-buy   { background: #16a34a; color: #fff; }
+    .btn-sell  { background: #dc2626; color: #fff; }
 
-    .quote-result { margin-top: 10px; font-size: 0.9rem; color: #94a3b8; min-height: 1.2em; }
-    .quote-result .price { color: #38bdf8; font-weight: 600; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+    @media (max-width: 680px) {
+      .two-col { grid-template-columns: 1fr; }
+      .trade-row { grid-template-columns: 1fr 1fr; }
+      .trade-row > :nth-child(3) { grid-column: span 2; }
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th { text-align: left; padding: 7px 10px; font-size: 0.73rem; color: #64748b; font-weight: 500; border-bottom: 1px solid #2d3148; }
+    td { padding: 9px 10px; border-bottom: 1px solid #1e2130; }
+    tr:last-child td { border-bottom: none; }
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 0.73rem; font-weight: 700; }
+    .badge.BUY  { background: #14532d; color: #4ade80; }
+    .badge.SELL { background: #450a0a; color: #f87171; }
+    .empty { color: #475569; font-size: 0.83rem; padding: 14px 0; }
 
     .toast {
-      position: fixed; bottom: 28px; right: 28px;
+      position: fixed; bottom: 24px; right: 24px;
       background: #1e2130; border: 1px solid #2d3148;
-      border-radius: 9px; padding: 14px 20px;
-      max-width: 340px; font-size: 0.88rem;
-      box-shadow: 0 8px 32px rgba(0,0,0,.4);
-      opacity: 0; transform: translateY(12px);
-      transition: opacity .25s, transform .25s;
-      pointer-events: none;
-      z-index: 100;
+      border-radius: 9px; padding: 12px 18px;
+      max-width: 320px; font-size: 0.86rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      opacity: 0; transform: translateY(10px);
+      transition: opacity .22s, transform .22s;
+      pointer-events: none; z-index: 999;
     }
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.ok  { border-left: 3px solid #4ade80; }
     .toast.err { border-left: 3px solid #f87171; }
-
-    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-    th { text-align: left; padding: 8px 12px; font-size: 0.75rem; color: #64748b; font-weight: 500; border-bottom: 1px solid #2d3148; }
-    td { padding: 10px 12px; border-bottom: 1px solid #1e2130; }
-    tr:last-child td { border-bottom: none; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
-    .badge.BUY  { background: #14532d; color: #4ade80; }
-    .badge.SELL { background: #450a0a; color: #f87171; }
-
-    .top-row { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-    @media (max-width: 700px) {
-      .top-row { grid-template-columns: 1fr; }
-      .trade-form { grid-template-columns: 1fr 1fr; }
-      .trade-form > :nth-child(3) { grid-column: 1 / -1; }
-    }
-    .empty { color: #475569; font-size: 0.85rem; padding: 16px 0; }
-
-    .header-right { display: flex; align-items: center; gap: 16px; }
   </style>
 </head>
 <body>
 
 <header>
   <h1>📈 Paper Trading</h1>
-  <div class="header-right">
-    <div class="cash">Cash: <span id="hdr-cash">—</span></div>
-    <button class="btn-reset" onclick="resetPortfolio()">Reset Portfolio</button>
+  <div class="hdr-right">
+    <div class="hdr-user">Logged in as <span>{{ username }}</span></div>
+    <button class="btn-sm danger" onclick="resetPortfolio()">Reset Portfolio</button>
+    <button class="btn-sm" onclick="logout()">Logout</button>
   </div>
 </header>
 
@@ -123,80 +120,70 @@
     <h2>Overview</h2>
     <div class="stats">
       <div class="stat">
-        <div class="label">Cash Available</div>
-        <div class="value blue" id="stat-cash">—</div>
+        <div class="lbl">Cash Available</div>
+        <div class="val blue" id="stat-cash">—</div>
       </div>
       <div class="stat">
-        <div class="label">Portfolio Value</div>
-        <div class="value white" id="stat-total">—</div>
+        <div class="lbl">Portfolio Value</div>
+        <div class="val white" id="stat-total">—</div>
       </div>
       <div class="stat">
-        <div class="label">P&amp;L</div>
-        <div class="value" id="stat-pnl">—</div>
+        <div class="lbl">P&amp;L</div>
+        <div class="val" id="stat-pnl">—</div>
       </div>
       <div class="stat">
-        <div class="label">Starting Capital</div>
-        <div class="value white">$100,000.00</div>
+        <div class="lbl">Starting Capital</div>
+        <div class="val white">$100,000.00</div>
       </div>
     </div>
   </div>
 
-  <!-- Trade + Quote -->
+  <!-- Trade -->
   <div class="card">
     <h2>Trade</h2>
-    <div class="trade-form">
+    <div class="trade-row">
       <div>
         <label>Ticker</label>
-        <input id="ticker" type="text" placeholder="e.g. AAPL" />
+        <input id="ticker" type="text" placeholder="e.g. AAPL" style="text-transform:uppercase"/>
       </div>
       <div>
         <label>Shares</label>
-        <input id="shares" type="number" min="0.0001" step="any" placeholder="e.g. 5" />
+        <input id="shares" type="number" min="0.0001" step="any" placeholder="e.g. 5"/>
       </div>
       <div>
-        <label>Quote price</label>
-        <input id="quote-price" type="text" readonly placeholder="Fetch quote first" style="opacity:.6;cursor:default;" />
+        <label>Live Price</label>
+        <input id="quote-price" type="text" readonly placeholder="Fetch quote first" style="opacity:.55;cursor:default"/>
       </div>
       <div>
         <label>&nbsp;</label>
-        <button class="btn-quote" onclick="fetchQuote()">Get Quote</button>
-      </div>
-      <div style="display:flex;gap:8px;align-items:flex-end;">
-        <div>
-          <label>&nbsp;</label>
-          <button class="btn-buy" onclick="trade('buy')">Buy</button>
-        </div>
-        <div>
-          <label>&nbsp;</label>
-          <button class="btn-sell" onclick="trade('sell')">Sell</button>
+        <div class="btn-group">
+          <button class="btn-quote" onclick="fetchQuote()">Get Quote</button>
+          <button class="btn-buy"   onclick="trade('buy')">Buy</button>
+          <button class="btn-sell"  onclick="trade('sell')">Sell</button>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="top-row">
+  <div class="two-col">
     <!-- Holdings -->
     <div class="card">
       <h2>Holdings</h2>
       <table>
-        <thead>
-          <tr><th>Ticker</th><th>Shares</th><th>Price</th><th>Value</th></tr>
-        </thead>
+        <thead><tr><th>Ticker</th><th>Shares</th><th>Price</th><th>Value</th></tr></thead>
         <tbody id="holdings-body">
           <tr><td colspan="4" class="empty">No positions yet.</td></tr>
         </tbody>
       </table>
     </div>
 
-    <!-- Trade History -->
+    <!-- History -->
     <div class="card">
       <h2>Trade History</h2>
       <table>
-        <thead>
-          <tr><th>Time</th><th>Action</th><th>Ticker</th><th>Shares</th><th>Price</th><th>Total</th></tr>
-        </thead>
+        <thead><tr><th>Time</th><th>Action</th><th>Ticker</th><th>Shares</th><th>Total</th></tr></thead>
         <tbody id="trades-body">
-          <tr><td colspan="6" class="empty">No trades yet.</td></tr>
+          <tr><td colspan="5" class="empty">No trades yet.</td></tr>
         </tbody>
       </table>
     </div>
@@ -207,54 +194,46 @@
 <div class="toast" id="toast"></div>
 
 <script>
-  const fmt = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   async function loadPortfolio() {
     const r = await fetch('/api/portfolio');
+    if (r.status === 401) { window.location.href = '/login'; return; }
     const d = await r.json();
 
-    document.getElementById('hdr-cash').textContent = fmt(d.cash);
-    document.getElementById('stat-cash').textContent = fmt(d.cash);
+    document.getElementById('stat-cash').textContent  = fmt(d.cash);
     document.getElementById('stat-total').textContent = fmt(d.total_value);
-
     const pnlEl = document.getElementById('stat-pnl');
-    const pnl = d.pnl;
-    pnlEl.textContent = (pnl >= 0 ? '+' : '') + fmt(pnl);
-    pnlEl.className = 'value ' + (pnl >= 0 ? 'green' : 'red');
+    pnlEl.textContent = (d.pnl >= 0 ? '+' : '') + fmt(d.pnl);
+    pnlEl.className = 'val ' + (d.pnl >= 0 ? 'green' : 'red');
 
-    const tbody = document.getElementById('holdings-body');
-    if (d.holdings.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty">No positions yet.</td></tr>';
-    } else {
-      tbody.innerHTML = d.holdings.map(h => `
-        <tr>
-          <td style="font-weight:600;color:#7c85ff">${h.ticker}</td>
-          <td>${Number(h.shares).toLocaleString()}</td>
-          <td>${fmt(h.price)}</td>
-          <td>${fmt(h.value)}</td>
-        </tr>
-      `).join('');
-    }
+    const tb = document.getElementById('holdings-body');
+    tb.innerHTML = d.holdings.length === 0
+      ? '<tr><td colspan="4" class="empty">No positions yet.</td></tr>'
+      : d.holdings.map(h => `
+          <tr>
+            <td style="font-weight:700;color:#7c85ff">${h.ticker}</td>
+            <td>${Number(h.shares).toLocaleString()}</td>
+            <td>${fmt(h.price)}</td>
+            <td>${fmt(h.value)}</td>
+          </tr>`).join('');
   }
 
   async function loadTrades() {
     const r = await fetch('/api/trades');
+    if (r.status === 401) return;
     const d = await r.json();
-    const tbody = document.getElementById('trades-body');
-    if (d.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">No trades yet.</td></tr>';
-    } else {
-      tbody.innerHTML = d.map(t => `
-        <tr>
-          <td style="color:#64748b;font-size:.8rem">${t.timestamp.slice(0,16)}</td>
-          <td><span class="badge ${t.action}">${t.action}</span></td>
-          <td style="color:#7c85ff;font-weight:600">${t.ticker}</td>
-          <td>${Number(t.shares).toLocaleString()}</td>
-          <td>${fmt(t.price)}</td>
-          <td>${fmt(t.total)}</td>
-        </tr>
-      `).join('');
-    }
+    const tb = document.getElementById('trades-body');
+    tb.innerHTML = d.length === 0
+      ? '<tr><td colspan="5" class="empty">No trades yet.</td></tr>'
+      : d.map(t => `
+          <tr>
+            <td style="color:#64748b;font-size:.78rem">${t.timestamp.slice(0,16)}</td>
+            <td><span class="badge ${t.action}">${t.action}</span></td>
+            <td style="color:#7c85ff;font-weight:700">${t.ticker}</td>
+            <td>${Number(t.shares).toLocaleString()}</td>
+            <td>${fmt(t.total)}</td>
+          </tr>`).join('');
   }
 
   async function fetchQuote() {
@@ -266,36 +245,35 @@
       document.getElementById('quote-price').value = d.price;
       showToast(`${d.ticker}: ${fmt(d.price)}`, true);
     } else {
-      showToast(d.error || 'Ticker not found.', false);
+      showToast(d.error || 'Not found.', false);
     }
   }
 
   async function trade(action) {
     const ticker = document.getElementById('ticker').value.trim().toUpperCase();
     const shares = parseFloat(document.getElementById('shares').value);
-    if (!ticker || !shares || shares <= 0) { showToast('Enter a valid ticker and number of shares.', false); return; }
-
+    if (!ticker || !shares || shares <= 0) { showToast('Enter a valid ticker and shares.', false); return; }
     const r = await fetch(`/api/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ticker, shares }),
     });
     const d = await r.json();
-
     showToast(d.message || d.error, r.ok);
-    if (r.ok) {
-      loadPortfolio();
-      loadTrades();
-    }
+    if (r.ok) { loadPortfolio(); loadTrades(); }
   }
 
   async function resetPortfolio() {
-    if (!confirm('Reset your portfolio back to $100,000? All trades will be erased.')) return;
+    if (!confirm('Reset your portfolio to $100,000? All trades will be wiped.')) return;
     const r = await fetch('/api/reset', { method: 'POST' });
     const d = await r.json();
     showToast(d.message, true);
-    loadPortfolio();
-    loadTrades();
+    loadPortfolio(); loadTrades();
+  }
+
+  async function logout() {
+    await fetch('/api/logout', { method: 'POST' });
+    window.location.href = '/login';
   }
 
   let toastTimer;
