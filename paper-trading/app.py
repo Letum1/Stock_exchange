@@ -518,6 +518,18 @@ def trades():
 
 # ── Admin API ─────────────────────────────────────────────────────────────────
 
+@app.route("/api/admin/trades")
+@admin_required
+def admin_trades():
+    db   = get_db()
+    rows = db.execute(
+        """SELECT t.id, u.username, t.ticker, t.action, t.shares, t.price, t.total, t.timestamp
+           FROM trades t JOIN users u ON u.id = t.user_id
+           ORDER BY t.id DESC LIMIT 500"""
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 @app.route("/api/admin/users")
 @admin_required
 def admin_users():

@@ -103,6 +103,21 @@
     .toast.err  { border-left: 3px solid #f87171; }
     .toast.info { border-left: 3px solid #f59e0b; }
     .empty { color: #475569; font-size: 0.83rem; padding: 18px 0; text-align: center; }
+
+    .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+    .filter-bar input { flex: 1; min-width: 140px; }
+    .pill-group { display: flex; gap: 6px; }
+    .pill { padding: 5px 13px; border: none; border-radius: 20px; font-size: 0.78rem;
+            font-weight: 700; cursor: pointer; background: #2d3148; color: #64748b;
+            transition: opacity .15s; }
+    .pill.active     { background: #4f46e5; color: #fff; }
+    .pill.pill-buy   { background: #14532d; color: #4ade80; }
+    .pill.pill-sell  { background: #450a0a; color: #f87171; }
+    .pill:hover { opacity: .8; }
+    .badge.buy  { background: #14532d; color: #4ade80; }
+    .badge.sell { background: #450a0a; color: #f87171; }
+    .trade-total.buy  { color: #4ade80; font-weight: 700; }
+    .trade-total.sell { color: #f87171; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -125,6 +140,9 @@
     <div class="stat"><div class="lbl">Active</div><div class="val green" id="st-active">—</div></div>
     <div class="stat"><div class="lbl">Banned</div><div class="val red" id="st-banned">—</div></div>
     <div class="stat"><div class="lbl">Total Cash in System</div><div class="val" id="st-cash">—</div></div>
+    <div class="stat"><div class="lbl">Total Trades</div><div class="val" id="st-trades">—</div></div>
+    <div class="stat"><div class="lbl">Buy Volume</div><div class="val green" id="st-buyvol">—</div></div>
+    <div class="stat"><div class="lbl">Sell Volume</div><div class="val red" id="st-sellvol">—</div></div>
   </div>
 
   <!-- Users table -->
@@ -142,6 +160,31 @@
         </tr>
       </thead>
       <tbody id="users-body">
+        <tr><td colspan="7" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Trading Activity -->
+  <div class="card">
+    <h2>Trading Activity</h2>
+    <div class="filter-bar">
+      <input type="text" id="trade-search" placeholder="Filter by username or ticker…" oninput="renderTrades()"/>
+      <div class="pill-group">
+        <button class="pill active" id="pill-all"  onclick="setActionFilter('all')">All</button>
+        <button class="pill pill-buy"  id="pill-buy"  onclick="setActionFilter('buy')">BUY</button>
+        <button class="pill pill-sell" id="pill-sell" onclick="setActionFilter('sell')">SELL</button>
+      </div>
+      <button class="btn-sm" onclick="loadTrades()" style="background:#2d3148;color:#94a3b8">↻ Refresh</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th><th>User</th><th>Ticker</th><th>Action</th>
+          <th>Shares</th><th>Price</th><th>Total</th>
+        </tr>
+      </thead>
+      <tbody id="trades-body">
         <tr><td colspan="7" class="empty">Loading…</td></tr>
       </tbody>
     </table>
@@ -178,7 +221,9 @@
 
 <script>
   const fmt = n => '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
-  let users = [];
+  let users  = [];
+  let allTrades = [];
+  let actionFilter = 'all';
 
   async function loadUsers() {
     const r = await fetch('/api/admin/users');
@@ -186,6 +231,14 @@
     users = await r.json();
     updateStats();
     renderTable();
+  }
+
+  async function loadTrades() {
+    const r = await fetch('/api/admin/trades');
+    if (!r.ok) return;
+    allTrades = await r.json();
+    updateTradeStats();
+    renderTrades();
   }
 
   function updateStats() {
@@ -196,6 +249,52 @@
     document.getElementById('st-active').textContent = active;
     document.getElementById('st-banned').textContent = banned;
     document.getElementById('st-cash').textContent   = fmt(cash);
+  }
+
+  function updateTradeStats() {
+    const buyVol  = allTrades.filter(t => t.action === 'BUY').reduce((s, t) => s + t.total, 0);
+    const sellVol = allTrades.filter(t => t.action === 'SELL').reduce((s, t) => s + t.total, 0);
+    document.getElementById('st-trades').textContent  = allTrades.length;
+    document.getElementById('st-buyvol').textContent  = fmt(buyVol);
+    document.getElementById('st-sellvol').textContent = fmt(sellVol);
+  }
+
+  function setActionFilter(f) {
+    actionFilter = f;
+    document.getElementById('pill-all').classList.toggle('active', f === 'all');
+    document.getElementById('pill-buy').classList.toggle('active', f === 'buy');
+    document.getElementById('pill-sell').classList.toggle('active', f === 'sell');
+    renderTrades();
+  }
+
+  function renderTrades() {
+    const q  = document.getElementById('trade-search').value.toLowerCase().trim();
+    const tb = document.getElementById('trades-body');
+
+    let rows = allTrades;
+    if (actionFilter !== 'all') rows = rows.filter(t => t.action === actionFilter.toUpperCase());
+    if (q) rows = rows.filter(t =>
+      t.username.toLowerCase().includes(q) || t.ticker.toLowerCase().includes(q)
+    );
+
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="empty">No trades match.</td></tr>';
+      return;
+    }
+
+    tb.innerHTML = rows.map(t => {
+      const isBuy = t.action === 'BUY';
+      const ts    = t.timestamp ? t.timestamp.slice(0, 16).replace('T', ' ') : '—';
+      return `<tr>
+        <td style="color:#64748b;font-size:.78rem;white-space:nowrap">${ts}</td>
+        <td style="font-weight:700;color:#7c85ff">${t.username}</td>
+        <td style="font-weight:700">${t.ticker}</td>
+        <td><span class="badge ${isBuy ? 'buy' : 'sell'}">${t.action}</span></td>
+        <td>${Number(t.shares).toFixed(6)}</td>
+        <td style="color:#94a3b8">${fmt(t.price)}</td>
+        <td class="trade-total ${isBuy ? 'buy' : 'sell'}">${isBuy ? '+' : '−'}${fmt(t.total)}</td>
+      </tr>`;
+    }).join('');
   }
 
   function renderTable() {
@@ -353,6 +452,7 @@
   }
 
   loadUsers();
+  loadTrades();
 </script>
 </body>
 </html>
