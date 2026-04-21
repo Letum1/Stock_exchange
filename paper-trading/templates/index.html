@@ -9,34 +9,26 @@
     body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
 
     header {
-      background: #1a1d27;
-      border-bottom: 1px solid #2d3148;
-      padding: 14px 28px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      background: #1a1d27; border-bottom: 1px solid #2d3148;
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
     }
     header h1 { font-size: 1.2rem; font-weight: 800; color: #7c85ff; }
-    .hdr-right { display: flex; align-items: center; gap: 16px; }
-    .hdr-user { font-size: 0.85rem; color: #64748b; }
+    .hdr-right { display: flex; align-items: center; gap: 12px; }
+    .hdr-user  { font-size: 0.85rem; color: #64748b; }
     .hdr-user span { color: #e2e8f0; font-weight: 600; }
-    .btn-sm {
-      padding: 6px 14px; border: none; border-radius: 6px;
-      font-size: 0.8rem; font-weight: 600; cursor: pointer;
-      background: #2d3148; color: #94a3b8; transition: opacity .15s;
-    }
+    .tag-admin { background: #78350f; color: #fcd34d; font-size: 0.72rem; font-weight: 700;
+                 padding: 3px 9px; border-radius: 20px; letter-spacing: .05em; }
+    .btn-sm { padding: 6px 14px; border: none; border-radius: 6px; font-size: 0.8rem;
+              font-weight: 600; cursor: pointer; background: #2d3148; color: #94a3b8;
+              transition: opacity .15s; }
     .btn-sm:hover { opacity: .8; }
-    .btn-sm.danger { background: #450a0a; color: #f87171; }
+    .btn-admin { background: #78350f; color: #fcd34d; }
 
     .container { max-width: 1120px; margin: 0 auto; padding: 26px 20px; display: grid; gap: 22px; }
 
-    .card {
-      background: #1a1d27;
-      border: 1px solid #2d3148;
-      border-radius: 12px;
-      padding: 20px 22px;
-    }
-    .card h2 { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin-bottom: 16px; }
+    .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 20px 22px; }
+    .card h2 { font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+               letter-spacing: .08em; color: #64748b; margin-bottom: 16px; }
 
     .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; }
     .stat { background: #13151f; border-radius: 8px; padding: 14px 16px; }
@@ -47,25 +39,21 @@
     .val.green { color: #4ade80; }
     .val.red   { color: #f87171; }
 
+    .notice {
+      background: #1e1a0f; border: 1px solid #78350f; border-radius: 8px;
+      padding: 12px 16px; font-size: 0.85rem; color: #fcd34d;
+    }
+
     .trade-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end; }
     .btn-group { display: flex; gap: 8px; }
     label { font-size: 0.78rem; color: #94a3b8; display: block; margin-bottom: 5px; }
     input[type="text"], input[type="number"] {
-      width: 100%;
-      background: #13151f;
-      border: 1px solid #2d3148;
-      border-radius: 7px;
-      color: #e2e8f0;
-      padding: 9px 12px;
-      font-size: 0.9rem;
-      outline: none;
-      transition: border-color .15s;
+      width: 100%; background: #13151f; border: 1px solid #2d3148; border-radius: 7px;
+      color: #e2e8f0; padding: 9px 12px; font-size: 0.9rem; outline: none; transition: border-color .15s;
     }
     input:focus { border-color: #7c85ff; }
-    button {
-      padding: 9px 18px; border: none; border-radius: 7px;
-      font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: opacity .15s;
-    }
+    button { padding: 9px 18px; border: none; border-radius: 7px;
+             font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: opacity .15s; }
     button:hover { opacity: .85; }
     .btn-quote { background: #2563eb; color: #fff; }
     .btn-buy   { background: #16a34a; color: #fff; }
@@ -79,7 +67,8 @@
     }
 
     table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
-    th { text-align: left; padding: 7px 10px; font-size: 0.73rem; color: #64748b; font-weight: 500; border-bottom: 1px solid #2d3148; }
+    th { text-align: left; padding: 7px 10px; font-size: 0.73rem; color: #64748b;
+         font-weight: 500; border-bottom: 1px solid #2d3148; }
     td { padding: 9px 10px; border-bottom: 1px solid #1e2130; }
     tr:last-child td { border-bottom: none; }
     .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 0.73rem; font-weight: 700; }
@@ -89,17 +78,16 @@
 
     .toast {
       position: fixed; bottom: 24px; right: 24px;
-      background: #1e2130; border: 1px solid #2d3148;
-      border-radius: 9px; padding: 12px 18px;
-      max-width: 320px; font-size: 0.86rem;
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 9px;
+      padding: 12px 18px; max-width: 320px; font-size: 0.86rem;
       box-shadow: 0 8px 32px rgba(0,0,0,.45);
       opacity: 0; transform: translateY(10px);
       transition: opacity .22s, transform .22s;
       pointer-events: none; z-index: 999;
     }
     .toast.show { opacity: 1; transform: translateY(0); }
-    .toast.ok  { border-left: 3px solid #4ade80; }
-    .toast.err { border-left: 3px solid #f87171; }
+    .toast.ok   { border-left: 3px solid #4ade80; }
+    .toast.err  { border-left: 3px solid #f87171; }
   </style>
 </head>
 <body>
@@ -107,13 +95,21 @@
 <header>
   <h1>📈 Paper Trading</h1>
   <div class="hdr-right">
+    {% if is_admin %}<span class="tag-admin">ADMIN</span>{% endif %}
     <div class="hdr-user">Logged in as <span>{{ username }}</span></div>
-    <button class="btn-sm danger" onclick="resetPortfolio()">Reset Portfolio</button>
+    {% if is_admin %}
+    <a href="/admin"><button class="btn-sm btn-admin">Admin Panel</button></a>
+    {% endif %}
     <button class="btn-sm" onclick="logout()">Logout</button>
   </div>
 </header>
 
 <div class="container">
+
+  <!-- Funding notice (hidden once user has cash) -->
+  <div class="notice" id="funding-notice" style="display:none">
+    💡 Your balance is $0.00. Ask the admin to add funds to your account before trading.
+  </div>
 
   <!-- Stats -->
   <div class="card">
@@ -128,12 +124,8 @@
         <div class="val white" id="stat-total">—</div>
       </div>
       <div class="stat">
-        <div class="lbl">P&amp;L</div>
+        <div class="lbl">Gains</div>
         <div class="val" id="stat-pnl">—</div>
-      </div>
-      <div class="stat">
-        <div class="lbl">Starting Capital</div>
-        <div class="val white">$100,000.00</div>
       </div>
     </div>
   </div>
@@ -176,7 +168,6 @@
         </tbody>
       </table>
     </div>
-
     <!-- History -->
     <div class="card">
       <h2>Trade History</h2>
@@ -194,7 +185,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-  const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = n => '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
 
   async function loadPortfolio() {
     const r = await fetch('/api/portfolio');
@@ -205,7 +196,10 @@
     document.getElementById('stat-total').textContent = fmt(d.total_value);
     const pnlEl = document.getElementById('stat-pnl');
     pnlEl.textContent = (d.pnl >= 0 ? '+' : '') + fmt(d.pnl);
-    pnlEl.className = 'val ' + (d.pnl >= 0 ? 'green' : 'red');
+    pnlEl.className   = 'val ' + (d.pnl >= 0 ? 'green' : 'red');
+
+    document.getElementById('funding-notice').style.display =
+      (d.cash === 0 && d.total_value === 0) ? 'block' : 'none';
 
     const tb = document.getElementById('holdings-body');
     tb.innerHTML = d.holdings.length === 0
@@ -241,12 +235,8 @@
     if (!ticker) { showToast('Enter a ticker first.', false); return; }
     const r = await fetch(`/api/quote/${ticker}`);
     const d = await r.json();
-    if (r.ok) {
-      document.getElementById('quote-price').value = d.price;
-      showToast(`${d.ticker}: ${fmt(d.price)}`, true);
-    } else {
-      showToast(d.error || 'Not found.', false);
-    }
+    if (r.ok) { document.getElementById('quote-price').value = d.price; showToast(`${d.ticker}: ${fmt(d.price)}`, true); }
+    else       { showToast(d.error || 'Not found.', false); }
   }
 
   async function trade(action) {
@@ -254,25 +244,16 @@
     const shares = parseFloat(document.getElementById('shares').value);
     if (!ticker || !shares || shares <= 0) { showToast('Enter a valid ticker and shares.', false); return; }
     const r = await fetch(`/api/${action}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, shares }),
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ticker, shares}),
     });
     const d = await r.json();
     showToast(d.message || d.error, r.ok);
     if (r.ok) { loadPortfolio(); loadTrades(); }
   }
 
-  async function resetPortfolio() {
-    if (!confirm('Reset your portfolio to $100,000? All trades will be wiped.')) return;
-    const r = await fetch('/api/reset', { method: 'POST' });
-    const d = await r.json();
-    showToast(d.message, true);
-    loadPortfolio(); loadTrades();
-  }
-
   async function logout() {
-    await fetch('/api/logout', { method: 'POST' });
+    await fetch('/api/logout', {method:'POST'});
     window.location.href = '/login';
   }
 
