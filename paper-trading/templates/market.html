@@ -108,6 +108,57 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.ok  { border-left: 3px solid #4ade80; }
     .toast.err { border-left: 3px solid #f87171; }
+
+    /* ── Confirm modal ── */
+    .confirm-bg {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.75); z-index: 300;
+      align-items: center; justify-content: center;
+    }
+    .confirm-bg.open { display: flex; }
+    .confirm-modal {
+      background: #1a1d27; border: 1px solid #2d3148; border-radius: 16px;
+      padding: 30px 32px; width: 100%; max-width: 360px; text-align: center;
+    }
+    .cm-header { margin-bottom: 18px; }
+    .cm-action {
+      display: inline-block; padding: 4px 14px; border-radius: 6px;
+      font-size: 0.8rem; font-weight: 800; letter-spacing: .1em; margin-bottom: 8px;
+    }
+    .cm-action.buy  { background: #14532d; color: #4ade80; }
+    .cm-action.sell { background: #450a0a; color: #f87171; }
+    .cm-ticker { font-size: 1.5rem; font-weight: 800; color: #7c85ff; }
+
+    .cm-timer { position: relative; width: 80px; height: 80px; margin: 0 auto 20px; }
+    .timer-ring { width: 80px; height: 80px; transform: rotate(-90deg); }
+    .ring-bg       { fill: none; stroke: #2d3148; stroke-width: 5; }
+    .ring-progress { fill: none; stroke: #7c85ff; stroke-width: 5;
+                     stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+    .ring-progress.urgent { stroke: #f87171; }
+    .timer-number {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; font-weight: 800; color: #f1f5f9;
+    }
+
+    .cm-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+    .cm-field { background: #13151f; border-radius: 8px; padding: 10px 8px; }
+    .cm-lbl { font-size: 0.68rem; color: #64748b; margin-bottom: 4px; }
+    .cm-val { font-size: 0.95rem; font-weight: 700; color: #f1f5f9; }
+
+    .cm-expired {
+      background: #450a0a; color: #f87171; border-radius: 7px;
+      padding: 8px 12px; font-size: 0.83rem; font-weight: 600; margin-bottom: 14px;
+    }
+    .cm-footer { display: flex; gap: 10px; }
+    .cm-cancel  { flex: 1; padding: 10px; border: none; border-radius: 8px;
+                  background: #2d3148; color: #94a3b8; font-size: 0.88rem;
+                  font-weight: 700; cursor: pointer; transition: opacity .15s; }
+    .cm-confirm-btn { flex: 2; padding: 10px; border: none; border-radius: 8px;
+                      font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: opacity .15s; }
+    .cm-confirm-btn.buy  { background: #16a34a; color: #fff; }
+    .cm-confirm-btn.sell { background: #dc2626; color: #fff; }
+    .cm-confirm-btn:disabled { opacity: .35; cursor: not-allowed; }
+    .cm-cancel:hover, .cm-confirm-btn:not(:disabled):hover { opacity: .85; }
   </style>
 </head>
 <body>
@@ -182,6 +233,34 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Live price confirmation modal -->
+<div class="confirm-bg" id="confirm-bg">
+  <div class="confirm-modal">
+    <div class="cm-header">
+      <div class="cm-action" id="cm-action">BUY</div>
+      <div class="cm-ticker" id="cm-ticker">—</div>
+    </div>
+    <div class="cm-timer">
+      <svg class="timer-ring" viewBox="0 0 64 64">
+        <circle class="ring-bg" cx="32" cy="32" r="28"/>
+        <circle class="ring-progress" id="ring-progress" cx="32" cy="32" r="28"
+                stroke-dasharray="175.93" stroke-dashoffset="0"/>
+      </svg>
+      <div class="timer-number" id="timer-number">10</div>
+    </div>
+    <div class="cm-fields">
+      <div class="cm-field"><div class="cm-lbl">Live Price</div><div class="cm-val" id="cm-price">—</div></div>
+      <div class="cm-field"><div class="cm-lbl">Shares</div><div class="cm-val" id="cm-shares">—</div></div>
+      <div class="cm-field"><div class="cm-lbl">Total</div><div class="cm-val" id="cm-total">—</div></div>
+    </div>
+    <div class="cm-expired" id="cm-expired" style="display:none">⏰ Price expired — please retry</div>
+    <div class="cm-footer">
+      <button class="cm-cancel" onclick="cancelConfirm()">Cancel</button>
+      <button class="cm-confirm-btn buy" id="cm-confirm-btn" onclick="executeConfirmed()">Confirm BUY</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const fmt   = n => '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtBig = n => {
@@ -197,6 +276,84 @@
   let chartInstance = null;
   let selectedTicker = null;
   let tradeMode = 'shares';
+
+  // ── Confirm modal state ───────────────────────────────────────────────────
+  let countdownTimer = null;
+  let pendingAction  = null;
+  let pendingTicker  = null;
+  let pendingShares  = null;
+
+  const CIRCUMFERENCE = 175.93;
+
+  function openConfirmModal(action, ticker, shares, livePrice) {
+    pendingAction = action;
+    pendingTicker = ticker;
+    pendingShares = shares;
+
+    const total = shares * livePrice;
+    const btn   = document.getElementById('cm-confirm-btn');
+    const actionEl = document.getElementById('cm-action');
+
+    actionEl.textContent = action.toUpperCase();
+    actionEl.className   = 'cm-action ' + action;
+    btn.textContent      = `Confirm ${action.toUpperCase()}`;
+    btn.className        = `cm-confirm-btn ${action}`;
+    btn.disabled         = false;
+
+    document.getElementById('cm-ticker').textContent = ticker;
+    document.getElementById('cm-price').textContent  = fmt(livePrice);
+    document.getElementById('cm-shares').textContent = shares.toFixed(6);
+    document.getElementById('cm-total').textContent  = fmt(total);
+    document.getElementById('cm-expired').style.display = 'none';
+    document.getElementById('confirm-bg').classList.add('open');
+
+    startCountdown(10);
+  }
+
+  function startCountdown(seconds) {
+    let remaining = seconds;
+    const ring  = document.getElementById('ring-progress');
+    const numEl = document.getElementById('timer-number');
+    ring.classList.remove('urgent');
+    ring.style.strokeDashoffset = '0';
+    numEl.textContent = remaining;
+
+    clearInterval(countdownTimer);
+    countdownTimer = setInterval(() => {
+      remaining--;
+      numEl.textContent = remaining;
+      ring.style.strokeDashoffset = String(((seconds - remaining) / seconds) * CIRCUMFERENCE);
+      if (remaining <= 3) ring.classList.add('urgent');
+      if (remaining <= 0) {
+        clearInterval(countdownTimer);
+        document.getElementById('cm-expired').style.display = 'block';
+        document.getElementById('cm-confirm-btn').disabled = true;
+        ring.style.strokeDashoffset = String(CIRCUMFERENCE);
+      }
+    }, 1000);
+  }
+
+  function cancelConfirm() {
+    clearInterval(countdownTimer);
+    document.getElementById('confirm-bg').classList.remove('open');
+  }
+
+  async function executeConfirmed() {
+    clearInterval(countdownTimer);
+    document.getElementById('confirm-bg').classList.remove('open');
+    const r = await fetch(`/api/${pendingAction}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: pendingTicker, shares: pendingShares }),
+    });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok);
+  }
+
+  // Close on backdrop click
+  document.getElementById('confirm-bg').addEventListener('click', e => {
+    if (e.target === document.getElementById('confirm-bg')) cancelConfirm();
+  });
 
   function setMode(mode) {
     tradeMode = mode;
@@ -378,22 +535,20 @@
       showToast('Enter a valid amount.', false); return;
     }
 
+    showToast('Fetching live price…', true);
+    const qr = await fetch(`/api/quote/${selectedTicker}`);
+    if (!qr.ok) { showToast('Could not fetch live price. Try again.', false); return; }
+    const qd = await qr.json();
+    const livePrice = qd.price;
+
     let shares;
     if (tradeMode === 'dollars') {
-      const stock = stocks.find(s => s.ticker === selectedTicker);
-      if (!stock) { showToast('Price not loaded yet. Try again.', false); return; }
-      shares = amount / stock.price;
+      shares = amount / livePrice;
     } else {
       shares = amount;
     }
 
-    const r = await fetch(`/api/${action}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker: selectedTicker, shares }),
-    });
-    const d = await r.json();
-    showToast(d.message || d.error, r.ok);
+    openConfirmModal(action, selectedTicker, shares, livePrice);
   }
 
   async function doLogout() {
