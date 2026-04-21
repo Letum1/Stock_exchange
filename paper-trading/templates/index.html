@@ -46,6 +46,10 @@
 
     .trade-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end; }
     .btn-group { display: flex; gap: 8px; }
+    .mode-toggle { display: flex; border: 1px solid #2d3148; border-radius: 7px; overflow: hidden; margin-bottom: 14px; width: fit-content; }
+    .mode-btn { padding: 7px 16px; border: none; font-size: 0.82rem; font-weight: 700;
+                cursor: pointer; background: #13151f; color: #64748b; transition: background .15s, color .15s; }
+    .mode-btn.active { background: #7c85ff; color: #fff; }
     label { font-size: 0.78rem; color: #94a3b8; display: block; margin-bottom: 5px; }
     input[type="text"], input[type="number"] {
       width: 100%; background: #13151f; border: 1px solid #2d3148; border-radius: 7px;
@@ -135,14 +139,18 @@
   <!-- Trade -->
   <div class="card">
     <h2>Trade</h2>
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="mode-shares"  onclick="setMode('shares')">By Shares</button>
+      <button class="mode-btn"        id="mode-dollars" onclick="setMode('dollars')">By $</button>
+    </div>
     <div class="trade-row">
       <div>
         <label>Ticker</label>
         <input id="ticker" type="text" placeholder="e.g. AAPL" style="text-transform:uppercase"/>
       </div>
       <div>
-        <label>Shares</label>
-        <input id="shares" type="number" min="0.0001" step="any" placeholder="e.g. 5"/>
+        <label id="amount-label">Shares</label>
+        <input id="trade-amount" type="number" min="0.0001" step="any" placeholder="e.g. 5" oninput="updatePreview()"/>
       </div>
       <div>
         <label>Live Price</label>
@@ -157,6 +165,7 @@
         </div>
       </div>
     </div>
+    <div style="margin-top:8px;font-size:.83rem;color:#64748b" id="trade-preview"></div>
   </div>
 
   <div class="two-col">
@@ -188,6 +197,32 @@
 
 <script>
   const fmt = n => '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+  let tradeMode = 'shares';
+
+  function setMode(mode) {
+    tradeMode = mode;
+    document.getElementById('mode-shares').classList.toggle('active', mode === 'shares');
+    document.getElementById('mode-dollars').classList.toggle('active', mode === 'dollars');
+    const lbl = document.getElementById('amount-label');
+    const inp = document.getElementById('trade-amount');
+    lbl.textContent = mode === 'shares' ? 'Shares' : 'Dollar Amount';
+    inp.placeholder = mode === 'shares' ? 'e.g. 5' : 'e.g. 500';
+    inp.value = '';
+    document.getElementById('trade-preview').textContent = '';
+  }
+
+  function updatePreview() {
+    const price  = parseFloat(document.getElementById('quote-price').value);
+    const amount = parseFloat(document.getElementById('trade-amount').value);
+    const el     = document.getElementById('trade-preview');
+    if (!price || !amount) { el.textContent = ''; return; }
+    if (tradeMode === 'dollars') {
+      const shares = amount / price;
+      el.innerHTML = `≈ <strong style="color:#38bdf8">${shares.toFixed(6)} shares</strong> at ${fmt(price)}`;
+    } else {
+      el.innerHTML = `Est. cost: <strong style="color:#38bdf8">${fmt(amount * price)}</strong>`;
+    }
+  }
 
   async function loadPortfolio() {
     const r = await fetch('/api/portfolio');
@@ -237,14 +272,30 @@
     if (!ticker) { showToast('Enter a ticker first.', false); return; }
     const r = await fetch(`/api/quote/${ticker}`);
     const d = await r.json();
-    if (r.ok) { document.getElementById('quote-price').value = d.price; showToast(`${d.ticker}: ${fmt(d.price)}`, true); }
-    else       { showToast(d.error || 'Not found.', false); }
+    if (r.ok) {
+      document.getElementById('quote-price').value = d.price;
+      showToast(`${d.ticker}: ${fmt(d.price)}`, true);
+      updatePreview();
+    } else {
+      showToast(d.error || 'Not found.', false);
+    }
   }
 
   async function trade(action) {
     const ticker = document.getElementById('ticker').value.trim().toUpperCase();
-    const shares = parseFloat(document.getElementById('shares').value);
-    if (!ticker || !shares || shares <= 0) { showToast('Enter a valid ticker and shares.', false); return; }
+    const amount = parseFloat(document.getElementById('trade-amount').value);
+    const price  = parseFloat(document.getElementById('quote-price').value);
+
+    if (!ticker || !amount || amount <= 0) { showToast('Enter a valid ticker and amount.', false); return; }
+
+    let shares;
+    if (tradeMode === 'dollars') {
+      if (!price) { showToast('Fetch a quote first to trade by dollar amount.', false); return; }
+      shares = amount / price;
+    } else {
+      shares = amount;
+    }
+
     const r = await fetch(`/api/${action}`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ticker, shares}),

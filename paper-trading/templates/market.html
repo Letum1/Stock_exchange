@@ -83,7 +83,7 @@
     .trade-row input[type="number"] {
       background: #13151f; border: 1px solid #2d3148; border-radius: 7px;
       color: #e2e8f0; padding: 9px 13px; font-size: 0.9rem; outline: none;
-      width: 140px; transition: border-color .15s;
+      width: 150px; transition: border-color .15s;
     }
     .trade-row input:focus { border-color: #7c85ff; }
     .btn-buy  { padding: 9px 22px; border: none; border-radius: 7px; font-size: 0.9rem; font-weight: 700; cursor: pointer; background: #16a34a; color: #fff; transition: opacity .15s; }
@@ -91,6 +91,10 @@
     .btn-buy:hover,.btn-sell:hover { opacity:.85; }
     .cost-preview { font-size: 0.83rem; color: #64748b; }
     .cost-preview span { color: #38bdf8; font-weight: 600; }
+    .mode-toggle { display: flex; border: 1px solid #2d3148; border-radius: 7px; overflow: hidden; }
+    .mode-btn { padding: 8px 14px; border: none; font-size: 0.82rem; font-weight: 700;
+                cursor: pointer; background: #13151f; color: #64748b; transition: background .15s, color .15s; }
+    .mode-btn.active { background: #7c85ff; color: #fff; }
 
     .toast {
       position: fixed; bottom: 24px; right: 24px;
@@ -151,7 +155,11 @@
     </div>
 
     <div class="trade-row">
-      <input type="number" id="trade-shares" min="0.0001" step="any" placeholder="Shares" />
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="mode-shares"  onclick="setMode('shares')">By Shares</button>
+        <button class="mode-btn"        id="mode-dollars" onclick="setMode('dollars')">By $</button>
+      </div>
+      <input type="number" id="trade-amount" min="0.0001" step="any" placeholder="Shares" />
       <button class="btn-buy"  onclick="tradeFromMarket('buy')">Buy</button>
       <button class="btn-sell" onclick="tradeFromMarket('sell')">Sell</button>
       <div class="cost-preview" id="cost-preview"></div>
@@ -188,6 +196,17 @@
   let stocks = [];
   let chartInstance = null;
   let selectedTicker = null;
+  let tradeMode = 'shares';
+
+  function setMode(mode) {
+    tradeMode = mode;
+    document.getElementById('mode-shares').classList.toggle('active', mode === 'shares');
+    document.getElementById('mode-dollars').classList.toggle('active', mode === 'dollars');
+    const input = document.getElementById('trade-amount');
+    input.placeholder = mode === 'shares' ? 'Shares' : 'Dollar amount';
+    input.value = '';
+    document.getElementById('cost-preview').textContent = '';
+  }
 
   // ── Grid ──────────────────────────────────────────────────────────────────
 
@@ -310,13 +329,18 @@
     });
   }
 
-  // Update cost preview as user types shares
-  document.getElementById('trade-shares').addEventListener('input', () => {
-    const shares = parseFloat(document.getElementById('trade-shares').value);
+  // Update cost preview as user types
+  document.getElementById('trade-amount').addEventListener('input', () => {
+    const amount = parseFloat(document.getElementById('trade-amount').value);
     const stock  = stocks.find(s => s.ticker === selectedTicker);
     const el     = document.getElementById('cost-preview');
-    if (!shares || !stock) { el.textContent = ''; return; }
-    el.innerHTML = `Est. cost: <span>${fmt(shares * stock.price)}</span>`;
+    if (!amount || !stock) { el.textContent = ''; return; }
+    if (tradeMode === 'dollars') {
+      const shares = amount / stock.price;
+      el.innerHTML = `≈ <span>${shares.toFixed(6)} shares</span>`;
+    } else {
+      el.innerHTML = `Est. cost: <span>${fmt(amount * stock.price)}</span>`;
+    }
   });
 
   // ── Lookup arbitrary ticker ───────────────────────────────────────────────
@@ -349,10 +373,20 @@
   // ── Trade from market page ────────────────────────────────────────────────
 
   async function tradeFromMarket(action) {
-    const shares = parseFloat(document.getElementById('trade-shares').value);
-    if (!selectedTicker || !shares || shares <= 0) {
-      showToast('Enter a valid number of shares.', false); return;
+    const amount = parseFloat(document.getElementById('trade-amount').value);
+    if (!selectedTicker || !amount || amount <= 0) {
+      showToast('Enter a valid amount.', false); return;
     }
+
+    let shares;
+    if (tradeMode === 'dollars') {
+      const stock = stocks.find(s => s.ticker === selectedTicker);
+      if (!stock) { showToast('Price not loaded yet. Try again.', false); return; }
+      shares = amount / stock.price;
+    } else {
+      shares = amount;
+    }
+
     const r = await fetch(`/api/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
