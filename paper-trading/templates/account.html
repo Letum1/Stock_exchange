@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Account — Paper Trading</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+    header {
+      background: #1a1d27; border-bottom: 1px solid #2d3148;
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 800; color: #7c85ff; }
+    .hdr-right { display: flex; align-items: center; gap: 12px; }
+    .btn-sm { padding: 6px 14px; border: none; border-radius: 6px; font-size: 0.8rem;
+              font-weight: 600; cursor: pointer; background: #2d3148; color: #94a3b8; transition: opacity .15s; }
+    .btn-sm:hover { opacity: .8; }
+
+    .container { max-width: 560px; margin: 40px auto; padding: 0 20px; display: grid; gap: 20px; }
+
+    .profile-card {
+      background: #1a1d27; border: 1px solid #2d3148; border-radius: 14px;
+      padding: 28px 28px 24px;
+    }
+    .profile-card h2 {
+      font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: #64748b; margin-bottom: 20px;
+    }
+
+    .id-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #13151f; border: 1px solid #2d3148; border-radius: 8px;
+      padding: 12px 16px; margin-bottom: 20px;
+    }
+    .id-row .id-label { font-size: 0.78rem; color: #64748b; }
+    .id-row .id-value { font-size: 1.1rem; font-weight: 800; color: #7c85ff; letter-spacing: .05em; }
+    .id-row .id-lock  { font-size: 0.72rem; color: #475569; }
+
+    label { font-size: 0.78rem; color: #94a3b8; display: block; margin-bottom: 5px; }
+    input[type="text"], input[type="password"] {
+      width: 100%; background: #13151f; border: 1px solid #2d3148; border-radius: 7px;
+      color: #e2e8f0; padding: 10px 13px; font-size: 0.9rem; outline: none;
+      transition: border-color .15s; margin-bottom: 14px;
+    }
+    input:focus { border-color: #7c85ff; }
+    input[readonly] { opacity: .45; cursor: not-allowed; }
+
+    .save-btn {
+      padding: 9px 22px; border: none; border-radius: 7px;
+      font-size: 0.88rem; font-weight: 700; cursor: pointer;
+      background: #7c85ff; color: #fff; transition: opacity .15s;
+    }
+    .save-btn:hover { opacity: .85; }
+
+    .alert { border-radius: 7px; padding: 9px 13px; font-size: 0.83rem; margin-bottom: 14px; display: none; }
+    .alert.ok  { background: #14532d; border: 1px solid #166534; color: #86efac; }
+    .alert.err { background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5; }
+
+    .divider { border: none; border-top: 1px solid #2d3148; margin: 20px 0; }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 9px;
+      padding: 12px 18px; max-width: 300px; font-size: 0.86rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      opacity: 0; transform: translateY(10px);
+      transition: opacity .22s, transform .22s;
+      pointer-events: none; z-index: 999;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.ok   { border-left: 3px solid #4ade80; }
+    .toast.err  { border-left: 3px solid #f87171; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📈 Paper Trading</h1>
+  <div class="hdr-right">
+    <a href="/"><button class="btn-sm">← Back to Trading</button></a>
+    {% if is_admin %}
+    <a href="/admin"><button class="btn-sm" style="background:#78350f;color:#fcd34d">Admin Panel</button></a>
+    {% endif %}
+    <button class="btn-sm" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ID Card -->
+  <div class="profile-card">
+    <h2>Your Account</h2>
+
+    <div class="id-row">
+      <div>
+        <div class="id-label">User ID</div>
+        <div class="id-value">#{{ user_id }}</div>
+      </div>
+      <div class="id-lock">🔒 Cannot be changed</div>
+    </div>
+
+    <!-- Change Username -->
+    <div class="alert" id="un-alert"></div>
+    <label>Username</label>
+    <input type="text" id="new-username" value="{{ username }}" placeholder="New username (min 3 chars)" autocomplete="username"/>
+    <button class="save-btn" onclick="changeUsername()">Save Username</button>
+
+    <hr class="divider"/>
+
+    <!-- Change Password -->
+    <h2 style="margin-bottom:16px">Change Password</h2>
+    <div class="alert" id="pw-alert"></div>
+    <label>Current Password</label>
+    <input type="password" id="cur-password" placeholder="Enter current password" autocomplete="current-password"/>
+    <label>New Password</label>
+    <input type="password" id="new-password" placeholder="At least 6 characters" autocomplete="new-password"/>
+    <label>Confirm New Password</label>
+    <input type="password" id="new-password2" placeholder="Repeat new password" autocomplete="new-password"/>
+    <button class="save-btn" onclick="changePassword()">Save Password</button>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  async function changeUsername() {
+    const username = document.getElementById('new-username').value.trim();
+    const r = await fetch('/api/account/username', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    const d = await r.json();
+    showAlert('un-alert', d.message || d.error, r.ok);
+    if (r.ok) showToast('Username updated!', true);
+  }
+
+  async function changePassword() {
+    const current_password = document.getElementById('cur-password').value;
+    const new_password     = document.getElementById('new-password').value;
+    const new_password2    = document.getElementById('new-password2').value;
+
+    if (new_password !== new_password2) {
+      showAlert('pw-alert', 'New passwords do not match', false);
+      return;
+    }
+
+    const r = await fetch('/api/account/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password, new_password }),
+    });
+    const d = await r.json();
+    showAlert('pw-alert', d.message || d.error, r.ok);
+    if (r.ok) {
+      document.getElementById('cur-password').value  = '';
+      document.getElementById('new-password').value  = '';
+      document.getElementById('new-password2').value = '';
+      showToast('Password changed!', true);
+    }
+  }
+
+  async function logout() {
+    await fetch('/api/logout', { method: 'POST' });
+    window.location.href = '/login';
+  }
+
+  function showAlert(id, msg, ok) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.className   = 'alert ' + (ok ? 'ok' : 'err');
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+  }
+
+  let toastTimer;
+  function showToast(msg, ok) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + (ok ? 'ok' : 'err');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = 'toast'; }, 3000);
+  }
+</script>
+</body>
+</html>
