@@ -274,6 +274,96 @@ def change_password():
     return jsonify({"message": "Password changed successfully"})
 
 
+# ── Market API ────────────────────────────────────────────────────────────────
+
+WATCHLIST = [
+    "AAPL","MSFT","GOOGL","AMZN","NVDA","META","TSLA",
+    "JPM","V","WMT","XOM","JNJ","BRK-B","NFLX","AMD",
+    "DIS","PYPL","INTC","BA","GS",
+]
+
+@app.route("/market")
+@login_required
+def market_page():
+    return render_template(
+        "market.html",
+        username=session.get("username"),
+        is_admin=session.get("is_admin", False),
+    )
+
+
+@app.route("/api/market/stocks")
+@login_required
+def market_stocks():
+    results = []
+    for ticker in WATCHLIST:
+        try:
+            t    = yf.Ticker(ticker)
+            fi   = t.fast_info
+            price     = round(float(fi.last_price), 2)
+            prev      = round(float(fi.previous_close), 2)
+            change    = round(price - prev, 2)
+            change_pct = round((change / prev) * 100, 2) if prev else 0
+            results.append({
+                "ticker":     ticker,
+                "name":       t.info.get("shortName", ticker),
+                "price":      price,
+                "prev_close": prev,
+                "change":     change,
+                "change_pct": change_pct,
+            })
+        except Exception:
+            pass
+    return jsonify(results)
+
+
+@app.route("/api/market/chart/<ticker>")
+@login_required
+def market_chart(ticker):
+    try:
+        hist = yf.Ticker(ticker.upper()).history(period="1mo", interval="1d")
+        if hist.empty:
+            return jsonify({"error": "No data"}), 404
+        data = [
+            {"date": str(idx.date()), "close": round(float(row["Close"]), 2)}
+            for idx, row in hist.iterrows()
+        ]
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/market/info/<ticker>")
+@login_required
+def market_info(ticker):
+    try:
+        t    = yf.Ticker(ticker.upper())
+        info = t.info
+        fi   = t.fast_info
+        price      = round(float(fi.last_price), 2)
+        prev       = round(float(fi.previous_close), 2)
+        change     = round(price - prev, 2)
+        change_pct = round((change / prev) * 100, 2) if prev else 0
+        return jsonify({
+            "ticker":       ticker.upper(),
+            "name":         info.get("shortName", ticker),
+            "price":        price,
+            "change":       change,
+            "change_pct":   change_pct,
+            "open":         round(float(fi.open), 2) if fi.open else None,
+            "high":         round(float(fi.day_high), 2) if fi.day_high else None,
+            "low":          round(float(fi.day_low), 2) if fi.day_low else None,
+            "volume":       int(fi.last_volume) if fi.last_volume else None,
+            "market_cap":   info.get("marketCap"),
+            "pe_ratio":     info.get("trailingPE"),
+            "week52_high":  info.get("fiftyTwoWeekHigh"),
+            "week52_low":   info.get("fiftyTwoWeekLow"),
+            "sector":       info.get("sector"),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Portfolio API ─────────────────────────────────────────────────────────────
 
 @app.route("/api/portfolio")
