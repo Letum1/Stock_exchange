@@ -25,3 +25,22 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+
+## Paper Trading App (Python / Flask)
+
+A standalone Python Flask app at `paper-trading/`.
+
+- **Runtime**: Python 3.11
+- **Dependencies**: Flask, yfinance (installed via pip)
+- **Storage**: SQLite (`paper-trading/portfolio.db`, auto-created)
+- **Port**: 5000
+- **Workflow**: `Paper Trading` → `cd paper-trading && python app.py`
+
+### API Endpoints
+- `GET /` — HTML frontend
+- `GET /api/portfolio` — portfolio snapshot (cash, holdings, P&L)
+- `GET /api/quote/<ticker>` — fetch live price via yfinance
+- `POST /api/buy` — buy shares `{ ticker, shares }`
+- `POST /api/sell` — sell shares `{ ticker, shares }`
+- `GET /api/trades` — last 50 trades
+- `POST /api/reset` — reset to $100,000
