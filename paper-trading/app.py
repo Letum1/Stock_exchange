@@ -150,6 +150,17 @@ def admin_page():
     return render_template("admin.html", username=session.get("username"))
 
 
+@app.route("/account")
+@login_required
+def account_page():
+    return render_template(
+        "account.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
+    )
+
+
 # ── Auth API ──────────────────────────────────────────────────────────────────
 
 @app.route("/api/register", methods=["POST"])
@@ -214,6 +225,53 @@ def login():
 def logout():
     session.clear()
     return jsonify({"message": "Logged out"})
+
+
+@app.route("/api/account/username", methods=["POST"])
+@login_required
+def change_username():
+    uid  = current_user_id()
+    data = request.get_json()
+    new_username = (data.get("username") or "").strip()
+
+    if len(new_username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters"}), 400
+
+    db = get_db()
+    existing = db.execute(
+        "SELECT id FROM users WHERE username = ? AND id != ?", (new_username, uid)
+    ).fetchone()
+    if existing:
+        return jsonify({"error": "Username already taken"}), 400
+
+    db.execute("UPDATE users SET username = ? WHERE id = ?", (new_username, uid))
+    db.commit()
+    session["username"] = new_username
+    return jsonify({"message": "Username updated successfully", "username": new_username})
+
+
+@app.route("/api/account/password", methods=["POST"])
+@login_required
+def change_password():
+    uid  = current_user_id()
+    data = request.get_json()
+    current_pw  = data.get("current_password") or ""
+    new_pw      = data.get("new_password") or ""
+
+    if len(new_pw) < 6:
+        return jsonify({"error": "New password must be at least 6 characters"}), 400
+
+    db   = get_db()
+    user = db.execute("SELECT password FROM users WHERE id = ?", (uid,)).fetchone()
+    if not check_password_hash(user["password"], current_pw):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    db.execute(
+        "UPDATE users SET password = ? WHERE id = ?",
+        (generate_password_hash(new_pw), uid),
+    )
+    db.commit()
+    return jsonify({"message": "Password changed successfully"})
 
 
 # ── Portfolio API ─────────────────────────────────────────────────────────────
