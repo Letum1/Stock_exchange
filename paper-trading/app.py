@@ -2,6 +2,7 @@ import os
 import sqlite3
 from functools import wraps
 
+import requests
 import yfinance as yf
 from flask import (
     Flask, g, jsonify, redirect, render_template,
@@ -514,6 +515,33 @@ def trades():
         (uid,),
     ).fetchall()
     return jsonify([dict(r) for r in rows])
+
+
+# ── Ticker search ─────────────────────────────────────────────────────────────
+
+@app.route("/api/search")
+@login_required
+def search_ticker():
+    q = request.args.get("q", "").strip()
+    if not q or len(q) < 1:
+        return jsonify([])
+    try:
+        resp = requests.get(
+            "https://query2.finance.yahoo.com/v1/finance/search",
+            params={"q": q, "quotesCount": 8, "newsCount": 0, "enableFuzzyQuery": "true"},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=4,
+        )
+        data   = resp.json()
+        quotes = data.get("quotes", [])
+        results = [
+            {"symbol": x["symbol"], "name": x.get("shortname") or x.get("longname") or ""}
+            for x in quotes
+            if x.get("quoteType") in ("EQUITY", "ETF", "INDEX", "MUTUALFUND")
+        ]
+        return jsonify(results[:7])
+    except Exception:
+        return jsonify([])
 
 
 # ── Admin API ─────────────────────────────────────────────────────────────────

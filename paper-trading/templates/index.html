@@ -56,6 +56,22 @@
       color: #e2e8f0; padding: 9px 12px; font-size: 0.9rem; outline: none; transition: border-color .15s;
     }
     input:focus { border-color: #7c85ff; }
+
+    .ticker-wrap { position: relative; }
+    .ac-dropdown {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 100;
+      background: #1a1d27; border: 1px solid #2d3148; border-radius: 9px;
+      overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+      display: none;
+    }
+    .ac-dropdown.open { display: block; }
+    .ac-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 13px; cursor: pointer; transition: background .12s;
+    }
+    .ac-item:hover, .ac-item.focused { background: #2d3148; }
+    .ac-symbol { font-weight: 800; font-size: 0.88rem; color: #7c85ff; min-width: 60px; }
+    .ac-name   { font-size: 0.78rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button { padding: 9px 18px; border: none; border-radius: 7px;
              font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: opacity .15s; }
     button:hover { opacity: .85; }
@@ -195,9 +211,11 @@
       <button class="mode-btn"        id="mode-dollars" onclick="setMode('dollars')">By $</button>
     </div>
     <div class="trade-row">
-      <div>
+      <div class="ticker-wrap">
         <label>Ticker</label>
-        <input id="ticker" type="text" placeholder="e.g. AAPL" style="text-transform:uppercase"/>
+        <input id="ticker" type="text" placeholder="Search name or symbol…" autocomplete="off"
+               oninput="onTickerInput()" onkeydown="onTickerKey(event)"/>
+        <div class="ac-dropdown" id="ac-dropdown"></div>
       </div>
       <div>
         <label id="amount-label">Shares</label>
@@ -380,6 +398,74 @@
       el.innerHTML = `Est. cost: <strong style="color:#38bdf8">${fmt(amount * price)}</strong>`;
     }
   }
+
+  // ── Ticker autocomplete ───────────────────────────────────────────────────
+  let acResults  = [];
+  let acFocused  = -1;
+  let acDebounce = null;
+
+  function onTickerInput() {
+    const q = document.getElementById('ticker').value.trim();
+    acFocused = -1;
+    clearTimeout(acDebounce);
+    if (!q) { closeAc(); return; }
+    acDebounce = setTimeout(() => fetchAc(q), 220);
+  }
+
+  async function fetchAc(q) {
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    if (!r.ok) return;
+    acResults = await r.json();
+    renderAc();
+  }
+
+  function renderAc() {
+    const dd = document.getElementById('ac-dropdown');
+    if (!acResults.length) { closeAc(); return; }
+    dd.innerHTML = acResults.map((x, i) =>
+      `<div class="ac-item" data-i="${i}" onmousedown="pickAc(${i})">
+         <span class="ac-symbol">${x.symbol}</span>
+         <span class="ac-name">${x.name}</span>
+       </div>`
+    ).join('');
+    dd.classList.add('open');
+  }
+
+  function pickAc(i) {
+    const item = acResults[i];
+    if (!item) return;
+    document.getElementById('ticker').value = item.symbol;
+    closeAc();
+  }
+
+  function closeAc() {
+    document.getElementById('ac-dropdown').classList.remove('open');
+    acFocused = -1;
+  }
+
+  function onTickerKey(e) {
+    const items = document.querySelectorAll('.ac-item');
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      acFocused = Math.min(acFocused + 1, items.length - 1);
+      items.forEach((el, i) => el.classList.toggle('focused', i === acFocused));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      acFocused = Math.max(acFocused - 1, 0);
+      items.forEach((el, i) => el.classList.toggle('focused', i === acFocused));
+    } else if (e.key === 'Enter' && acFocused >= 0) {
+      e.preventDefault();
+      pickAc(acFocused);
+    } else if (e.key === 'Escape') {
+      closeAc();
+    }
+  }
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', e => {
+    if (!document.getElementById('ticker').contains(e.target)) closeAc();
+  });
 
   async function loadPortfolio() {
     const r = await fetch('/api/portfolio');
