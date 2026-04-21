@@ -277,6 +277,7 @@ def change_password():
 # ── Market API ────────────────────────────────────────────────────────────────
 
 WATCHLIST = [
+    "^GSPC",
     "AAPL","MSFT","GOOGL","AMZN","NVDA","META","TSLA",
     "JPM","V","WMT","XOM","JNJ","BRK-B","NFLX","AMD",
     "DIS","PYPL","INTC","BA","GS",
