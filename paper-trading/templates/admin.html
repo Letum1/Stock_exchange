@@ -131,7 +131,7 @@
   <div class="card">
     <h2>All Users</h2>
     <div class="search-bar">
-      <input type="text" class="wide" id="search" placeholder="Filter by username…" oninput="renderTable()"/>
+      <input type="text" class="wide" id="search" placeholder="Search by ID or username…" oninput="renderTable()"/>
       <button class="btn-sm" onclick="loadUsers()" style="background:#2d3148;color:#94a3b8">↻ Refresh</button>
     </div>
     <table>
@@ -199,8 +199,10 @@
   }
 
   function renderTable() {
-    const q    = document.getElementById('search').value.toLowerCase();
-    const rows = users.filter(u => u.username.toLowerCase().includes(q));
+    const q    = document.getElementById('search').value.toLowerCase().trim();
+    const rows = users.filter(u =>
+      u.username.toLowerCase().includes(q) || String(u.id).includes(q)
+    );
     const tb   = document.getElementById('users-body');
 
     if (!rows.length) {
