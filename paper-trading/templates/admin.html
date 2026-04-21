@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Panel — Paper Trading</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+    header {
+      background: #1a1d27; border-bottom: 1px solid #2d3148;
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 1.15rem; font-weight: 800; color: #f59e0b; }
+    .hdr-right { display: flex; align-items: center; gap: 12px; }
+    .tag { background: #78350f; color: #fcd34d; font-size: 0.72rem; font-weight: 700;
+           padding: 3px 9px; border-radius: 20px; letter-spacing: .05em; }
+    .btn-sm { padding: 6px 14px; border: none; border-radius: 6px; font-size: 0.8rem;
+              font-weight: 600; cursor: pointer; background: #2d3148; color: #94a3b8;
+              transition: opacity .15s; }
+    .btn-sm:hover { opacity: .8; }
+    .btn-go { background: #4f46e5; color: #fff; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 26px 20px; display: grid; gap: 22px; }
+
+    .stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 14px; }
+    .stat { background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px; padding: 14px 16px; }
+    .stat .lbl { font-size: 0.72rem; color: #64748b; margin-bottom: 4px; }
+    .stat .val { font-size: 1.3rem; font-weight: 700; color: #f1f5f9; }
+    .stat .val.amber { color: #f59e0b; }
+    .stat .val.red   { color: #f87171; }
+    .stat .val.green { color: #4ade80; }
+
+    .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 20px 22px; }
+    .card h2 { font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+               letter-spacing: .08em; color: #64748b; margin-bottom: 16px; }
+
+    .search-bar { display: flex; gap: 10px; margin-bottom: 16px; }
+    input[type="text"], input[type="number"] {
+      background: #13151f; border: 1px solid #2d3148; border-radius: 7px;
+      color: #e2e8f0; padding: 8px 12px; font-size: 0.88rem; outline: none;
+      transition: border-color .15s;
+    }
+    input[type="text"]:focus, input[type="number"]:focus { border-color: #f59e0b; }
+    input[type="text"].wide { flex: 1; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th { text-align: left; padding: 8px 10px; font-size: 0.72rem; color: #64748b;
+         font-weight: 600; border-bottom: 1px solid #2d3148; white-space: nowrap; }
+    td { padding: 10px; border-bottom: 1px solid #1e2130; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #1e2130; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; }
+    .badge.admin  { background: #78350f; color: #fcd34d; }
+    .badge.banned { background: #450a0a; color: #f87171; }
+    .badge.active { background: #14532d; color: #4ade80; }
+
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    button { border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
+             transition: opacity .15s; font-size: 0.8rem; padding: 5px 11px; }
+    button:hover { opacity: .8; }
+    .btn-add    { background: #14532d; color: #4ade80; }
+    .btn-remove { background: #450a0a; color: #f87171; }
+    .btn-set    { background: #1e3a5f; color: #38bdf8; }
+    .btn-ban    { background: #78350f; color: #fcd34d; }
+    .btn-unban  { background: #2d3148; color: #94a3b8; }
+    .btn-assets { background: #312e81; color: #a5b4fc; }
+    .btn-delete { background: #3b0764; color: #e879f9; }
+
+    .modal-bg {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      z-index: 200; align-items: center; justify-content: center;
+    }
+    .modal-bg.open { display: flex; }
+    .modal {
+      background: #1a1d27; border: 1px solid #2d3148; border-radius: 14px;
+      padding: 28px 30px; width: 100%; max-width: 400px;
+    }
+    .modal h3 { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+    .modal p  { font-size: 0.83rem; color: #64748b; margin-bottom: 20px; }
+    .modal label { font-size: 0.78rem; color: #94a3b8; display: block; margin-bottom: 5px; }
+    .modal input { width: 100%; margin-bottom: 14px; }
+    .modal-footer { display: flex; gap: 10px; justify-content: flex-end; }
+    .btn-confirm { background: #f59e0b; color: #0f1117; padding: 8px 18px; border-radius: 7px; font-size: 0.88rem; }
+    .btn-cancel  { background: #2d3148; color: #94a3b8; padding: 8px 18px; border-radius: 7px; font-size: 0.88rem; }
+
+    .holdings-list { font-size: 0.78rem; color: #64748b; }
+    .holdings-list span { color: #7c85ff; font-weight: 600; margin-right: 6px; }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 9px;
+      padding: 12px 18px; max-width: 320px; font-size: 0.86rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      opacity: 0; transform: translateY(10px);
+      transition: opacity .22s, transform .22s;
+      pointer-events: none; z-index: 999;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.ok   { border-left: 3px solid #4ade80; }
+    .toast.err  { border-left: 3px solid #f87171; }
+    .toast.info { border-left: 3px solid #f59e0b; }
+    .empty { color: #475569; font-size: 0.83rem; padding: 18px 0; text-align: center; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚙️ Admin Panel</h1>
+  <div class="hdr-right">
+    <span class="tag">ADMIN</span>
+    <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
+    <a href="/"><button class="btn-sm btn-go">Trading App</button></a>
+    <button class="btn-sm" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Stats -->
+  <div class="stats-bar" id="stats-bar">
+    <div class="stat"><div class="lbl">Total Users</div><div class="val amber" id="st-users">—</div></div>
+    <div class="stat"><div class="lbl">Active</div><div class="val green" id="st-active">—</div></div>
+    <div class="stat"><div class="lbl">Banned</div><div class="val red" id="st-banned">—</div></div>
+    <div class="stat"><div class="lbl">Total Cash in System</div><div class="val" id="st-cash">—</div></div>
+  </div>
+
+  <!-- Users table -->
+  <div class="card">
+    <h2>All Users</h2>
+    <div class="search-bar">
+      <input type="text" class="wide" id="search" placeholder="Filter by username…" oninput="renderTable()"/>
+      <button class="btn-sm" onclick="loadUsers()" style="background:#2d3148;color:#94a3b8">↻ Refresh</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Username</th><th>Status</th><th>Cash</th>
+          <th>Holdings</th><th>Registered</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="users-body">
+        <tr><td colspan="7" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- Balance Modal -->
+<div class="modal-bg" id="balance-modal">
+  <div class="modal">
+    <h3 id="bm-title">Adjust Balance</h3>
+    <p id="bm-subtitle">Current balance: —</p>
+    <div id="bm-body"></div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal('balance-modal')">Cancel</button>
+      <button class="btn-confirm" id="bm-confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-bg" id="confirm-modal">
+  <div class="modal">
+    <h3 id="cm-title">Are you sure?</h3>
+    <p id="cm-body">This action cannot be undone.</p>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal('confirm-modal')">Cancel</button>
+      <button class="btn-confirm" id="cm-confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const fmt = n => '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+  let users = [];
+
+  async function loadUsers() {
+    const r = await fetch('/api/admin/users');
+    if (r.status === 403) { window.location.href = '/'; return; }
+    users = await r.json();
+    updateStats();
+    renderTable();
+  }
+
+  function updateStats() {
+    const active  = users.filter(u => !u.is_banned).length;
+    const banned  = users.filter(u => u.is_banned).length;
+    const cash    = users.reduce((s, u) => s + u.cash, 0);
+    document.getElementById('st-users').textContent  = users.length;
+    document.getElementById('st-active').textContent = active;
+    document.getElementById('st-banned').textContent = banned;
+    document.getElementById('st-cash').textContent   = fmt(cash);
+  }
+
+  function renderTable() {
+    const q    = document.getElementById('search').value.toLowerCase();
+    const rows = users.filter(u => u.username.toLowerCase().includes(q));
+    const tb   = document.getElementById('users-body');
+
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="empty">No users found.</td></tr>';
+      return;
+    }
+
+    tb.innerHTML = rows.map(u => `
+      <tr>
+        <td style="color:#64748b">${u.id}</td>
+        <td style="font-weight:700">${u.username}
+          ${u.is_admin ? '<span class="badge admin" style="margin-left:6px">ADMIN</span>' : ''}
+        </td>
+        <td>
+          ${u.is_banned
+            ? '<span class="badge banned">BANNED</span>'
+            : '<span class="badge active">ACTIVE</span>'}
+        </td>
+        <td style="color:#38bdf8;font-weight:600">${fmt(u.cash)}</td>
+        <td class="holdings-list">
+          ${u.holdings.length
+            ? u.holdings.map(h => `<span>${h.ticker}</span>${h.shares.toFixed(4)}`).join(' &nbsp;')
+            : '<span style="color:#475569">—</span>'}
+        </td>
+        <td style="color:#64748b;font-size:.78rem">${u.created ? u.created.slice(0,10) : '—'}</td>
+        <td>
+          <div class="actions">
+            ${!u.is_admin ? `
+              <button class="btn-add"    onclick="openBalance(${u.id},'${u.username}',${u.cash},'add')">+ Add</button>
+              <button class="btn-remove" onclick="openBalance(${u.id},'${u.username}',${u.cash},'remove')">− Remove</button>
+              <button class="btn-set"    onclick="openBalance(${u.id},'${u.username}',${u.cash},'set')">Set</button>
+              <button class="btn-assets" onclick="confirmClearAssets(${u.id},'${u.username}')">Clear Assets</button>
+              ${u.is_banned
+                ? `<button class="btn-unban" onclick="confirmBan(${u.id},'${u.username}',false)">Unban</button>`
+                : `<button class="btn-ban"   onclick="confirmBan(${u.id},'${u.username}',true)">Ban</button>`}
+              <button class="btn-delete" onclick="confirmDelete(${u.id},'${u.username}')">Delete</button>
+            ` : '<span style="color:#64748b;font-size:.78rem">Protected</span>'}
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Balance modal ──────────────────────────────────────────────────────────
+  let _balanceCb = null;
+
+  function openBalance(userId, username, currentCash, mode) {
+    const labels = { add: 'Add Balance', remove: 'Remove Balance', set: 'Set Balance' };
+    document.getElementById('bm-title').textContent    = `${labels[mode]}: ${username}`;
+    document.getElementById('bm-subtitle').textContent = `Current balance: ${fmt(currentCash)}`;
+
+    const placeholder = mode === 'add' ? 'Amount to add' : mode === 'remove' ? 'Amount to remove' : 'New balance';
+    document.getElementById('bm-body').innerHTML = `
+      <label>Amount (USD)</label>
+      <input type="number" id="bm-amount" min="0" step="0.01" placeholder="${placeholder}" />
+    `;
+
+    document.getElementById('bm-confirm').onclick = async () => {
+      const amount = parseFloat(document.getElementById('bm-amount').value);
+      if (isNaN(amount) || amount < 0) { showToast('Enter a valid positive amount', false); return; }
+      closeModal('balance-modal');
+
+      let url, body;
+      if (mode === 'set') {
+        url  = '/api/admin/set-balance';
+        body = { user_id: userId, amount };
+      } else {
+        url  = '/api/admin/balance';
+        body = { user_id: userId, amount: mode === 'add' ? amount : -amount };
+      }
+
+      const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const d = await r.json();
+      showToast(d.message || d.error, r.ok);
+      if (r.ok) loadUsers();
+    };
+
+    document.getElementById('balance-modal').classList.add('open');
+    setTimeout(() => document.getElementById('bm-amount').focus(), 100);
+  }
+
+  // ── Generic confirm modal ──────────────────────────────────────────────────
+  function openConfirm(title, body, onConfirm) {
+    document.getElementById('cm-title').textContent = title;
+    document.getElementById('cm-body').textContent  = body;
+    document.getElementById('cm-confirm').onclick   = () => { closeModal('confirm-modal'); onConfirm(); };
+    document.getElementById('confirm-modal').classList.add('open');
+  }
+
+  function confirmBan(userId, username, ban) {
+    openConfirm(
+      ban ? `Ban ${username}?` : `Unban ${username}?`,
+      ban ? 'The user will be immediately locked out.' : 'The user will regain full access.',
+      async () => {
+        const r = await fetch('/api/admin/ban', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({user_id:userId,banned:ban}) });
+        const d = await r.json();
+        showToast(d.message || d.error, r.ok);
+        if (r.ok) loadUsers();
+      }
+    );
+  }
+
+  function confirmClearAssets(userId, username) {
+    openConfirm(
+      `Clear all assets for ${username}?`,
+      'All stock holdings will be permanently removed. Cash is not affected.',
+      async () => {
+        const r = await fetch('/api/admin/clear-assets', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({user_id:userId}) });
+        const d = await r.json();
+        showToast(d.message || d.error, r.ok);
+        if (r.ok) loadUsers();
+      }
+    );
+  }
+
+  function confirmDelete(userId, username) {
+    openConfirm(
+      `Delete ${username}?`,
+      'This will permanently delete the account, all holdings, and all trade history.',
+      async () => {
+        const r = await fetch('/api/admin/delete-user', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({user_id:userId}) });
+        const d = await r.json();
+        showToast(d.message || d.error, r.ok);
+        if (r.ok) loadUsers();
+      }
+    );
+  }
+
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  // Close modals on backdrop click
+  document.querySelectorAll('.modal-bg').forEach(bg => {
+    bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
+  });
+
+  async function logout() {
+    await fetch('/api/logout', { method:'POST' });
+    window.location.href = '/login';
+  }
+
+  let toastTimer;
+  function showToast(msg, ok) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + (ok ? 'ok' : 'err');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = 'toast'; }, 3500);
+  }
+
+  loadUsers();
+</script>
+</body>
+</html>
