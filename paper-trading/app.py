@@ -1,4 +1,6 @@
+import json
 import os
+import random
 import sqlite3
 from functools import wraps
 
@@ -67,6 +69,59 @@ def init_db():
                 total     REAL    NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS items (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT    NOT NULL UNIQUE,
+                description TEXT    DEFAULT '',
+                emoji       TEXT    DEFAULT '📦',
+                rarity      TEXT    DEFAULT 'common',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS user_items (
+                user_id  INTEGER NOT NULL REFERENCES users(id),
+                item_id  INTEGER NOT NULL REFERENCES items(id),
+                quantity INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, item_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS item_listings (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                seller_id        INTEGER NOT NULL REFERENCES users(id),
+                item_id          INTEGER NOT NULL REFERENCES items(id),
+                quantity         INTEGER NOT NULL,
+                price            REAL,
+                accepts_items    TEXT,
+                status           TEXT NOT NULL DEFAULT 'OPEN',
+                created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS item_trades (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                listing_id    INTEGER,
+                seller_id     INTEGER NOT NULL,
+                buyer_id      INTEGER NOT NULL,
+                item_id       INTEGER NOT NULL,
+                quantity      INTEGER NOT NULL,
+                payment_type  TEXT NOT NULL,
+                cash_amount   REAL,
+                paid_item_id  INTEGER,
+                paid_item_qty INTEGER,
+                timestamp     DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id    INTEGER NOT NULL REFERENCES users(id),
+                recipient_id INTEGER NOT NULL REFERENCES users(id),
+                content      TEXT NOT NULL,
+                timestamp    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                is_read      INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_msg_pair ON messages(sender_id, recipient_id, id);
+            CREATE INDEX IF NOT EXISTS idx_listings_status ON item_listings(status);
         """)
         db.commit()
 
@@ -125,6 +180,7 @@ def index():
     return render_template(
         "index.html",
         username=session.get("username"),
+        user_id=session.get("user_id"),
         is_admin=session.get("is_admin", False),
     )
 
@@ -148,7 +204,11 @@ def register_page():
 def admin_page():
     if not session.get("is_admin"):
         return redirect(url_for("index"))
-    return render_template("admin.html", username=session.get("username"))
+    return render_template(
+        "admin.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+    )
 
 
 @app.route("/account")
@@ -169,11 +229,22 @@ def register():
     data = request.get_json()
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
+    captcha_input = data.get("captcha")
 
     if len(username) < 3:
         return jsonify({"error": "Username must be at least 3 characters"}), 400
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    expected = session.get("captcha_answer")
+    if expected is None:
+        return jsonify({"error": "Captcha expired. Refresh the page and try again."}), 400
+    try:
+        if int(captcha_input) != int(expected):
+            return jsonify({"error": "Wrong captcha answer. Try again."}), 400
+    except (TypeError, ValueError):
+        return jsonify({"error": "Please enter a number for the captcha"}), 400
+    session.pop("captcha_answer", None)
 
     db = get_db()
     if db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
@@ -290,6 +361,7 @@ def market_page():
     return render_template(
         "market.html",
         username=session.get("username"),
+        user_id=session.get("user_id"),
         is_admin=session.get("is_admin", False),
     )
 
@@ -544,7 +616,598 @@ def search_ticker():
         return jsonify([])
 
 
+# ── Captcha (anti-bot) ────────────────────────────────────────────────────────
+
+CAPTCHA_OPS = [
+    ("+", lambda a, b: a + b),
+    ("−", lambda a, b: a - b),
+    ("×", lambda a, b: a * b),
+]
+
+def make_captcha():
+    op_sym, op_fn = random.choice(CAPTCHA_OPS)
+    a = random.randint(2, 9)
+    b = random.randint(2, 9)
+    if op_sym == "−" and b > a:
+        a, b = b, a
+    return f"{a} {op_sym} {b}", op_fn(a, b)
+
+
+@app.route("/api/captcha")
+def captcha():
+    question, answer = make_captcha()
+    session["captcha_answer"] = answer
+    return jsonify({"question": question})
+
+
+# ── Pages: Items / Chat / Profile ─────────────────────────────────────────────
+
+@app.route("/items")
+@login_required
+def items_page():
+    return render_template(
+        "items.html",
+        username=session.get("username"),
+        is_admin=session.get("is_admin", False),
+    )
+
+
+@app.route("/chat")
+@login_required
+def chat_page():
+    return render_template(
+        "chat.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
+    )
+
+
+@app.route("/profile/<int:user_id>")
+@login_required
+def profile_page(user_id):
+    db   = get_db()
+    user = db.execute("SELECT id, username FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        return render_template(
+            "profile.html",
+            not_found=True,
+            target_id=user_id,
+            target_username=None,
+            username=session.get("username"),
+            is_admin=session.get("is_admin", False),
+            current_user_id=session.get("user_id"),
+        )
+    return render_template(
+        "profile.html",
+        not_found=False,
+        target_id=user["id"],
+        target_username=user["username"],
+        username=session.get("username"),
+        is_admin=session.get("is_admin", False),
+        current_user_id=session.get("user_id"),
+    )
+
+
+# ── Items API ─────────────────────────────────────────────────────────────────
+
+def _serialize_item(row):
+    return {
+        "id": row["id"], "name": row["name"], "description": row["description"],
+        "emoji": row["emoji"], "rarity": row["rarity"],
+    }
+
+
+@app.route("/api/items")
+@login_required
+def api_items():
+    db   = get_db()
+    rows = db.execute("SELECT * FROM items ORDER BY id").fetchall()
+    return jsonify([_serialize_item(r) for r in rows])
+
+
+@app.route("/api/inventory")
+@login_required
+def api_inventory():
+    uid = current_user_id()
+    db  = get_db()
+    rows = db.execute(
+        """SELECT ui.item_id, ui.quantity, i.name, i.description, i.emoji, i.rarity
+           FROM user_items ui JOIN items i ON i.id = ui.item_id
+           WHERE ui.user_id = ? AND ui.quantity > 0
+           ORDER BY i.name""",
+        (uid,),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/inventory/<int:user_id>")
+@login_required
+def api_user_inventory(user_id):
+    db   = get_db()
+    rows = db.execute(
+        """SELECT ui.item_id, ui.quantity, i.name, i.emoji, i.rarity
+           FROM user_items ui JOIN items i ON i.id = ui.item_id
+           WHERE ui.user_id = ? AND ui.quantity > 0
+           ORDER BY i.name""",
+        (user_id,),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/listings")
+@login_required
+def api_listings():
+    db   = get_db()
+    rows = db.execute(
+        """SELECT l.id, l.seller_id, u.username AS seller_name, l.item_id, l.quantity,
+                  l.price, l.accepts_items, l.created_at,
+                  i.name AS item_name, i.emoji AS item_emoji, i.rarity AS item_rarity
+           FROM item_listings l
+           JOIN users u ON u.id = l.seller_id
+           JOIN items i ON i.id = l.item_id
+           WHERE l.status = 'OPEN'
+           ORDER BY l.id DESC LIMIT 200"""
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["accepts_items"] = json.loads(d["accepts_items"]) if d["accepts_items"] else []
+        out.append(d)
+    return jsonify(out)
+
+
+@app.route("/api/listings/mine")
+@login_required
+def api_my_listings():
+    uid  = current_user_id()
+    db   = get_db()
+    rows = db.execute(
+        """SELECT l.id, l.item_id, l.quantity, l.price, l.accepts_items, l.status, l.created_at,
+                  i.name AS item_name, i.emoji AS item_emoji
+           FROM item_listings l
+           JOIN items i ON i.id = l.item_id
+           WHERE l.seller_id = ? ORDER BY l.id DESC LIMIT 100""",
+        (uid,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["accepts_items"] = json.loads(d["accepts_items"]) if d["accepts_items"] else []
+        out.append(d)
+    return jsonify(out)
+
+
+@app.route("/api/listings/create", methods=["POST"])
+@login_required
+def create_listing():
+    uid  = current_user_id()
+    data = request.get_json()
+    try:
+        item_id  = int(data.get("item_id"))
+        quantity = int(data.get("quantity"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid item or quantity"}), 400
+
+    price = data.get("price")
+    if price in ("", None):
+        price = None
+    else:
+        try:
+            price = float(price)
+            if price <= 0:
+                return jsonify({"error": "Price must be positive"}), 400
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid price"}), 400
+
+    accepts_raw = data.get("accepts_items") or []
+    accepts = []
+    for opt in accepts_raw:
+        try:
+            iid = int(opt.get("item_id"))
+            qty = int(opt.get("quantity"))
+            if iid <= 0 or qty <= 0: continue
+            accepts.append({"item_id": iid, "quantity": qty})
+        except (TypeError, ValueError, AttributeError):
+            continue
+
+    if price is None and not accepts:
+        return jsonify({"error": "Must accept either cash or at least one item offer"}), 400
+    if quantity <= 0:
+        return jsonify({"error": "Quantity must be positive"}), 400
+
+    db = get_db()
+    own = db.execute(
+        "SELECT quantity FROM user_items WHERE user_id = ? AND item_id = ?", (uid, item_id)
+    ).fetchone()
+    if not own or own["quantity"] < quantity:
+        return jsonify({"error": "You do not own enough of this item"}), 400
+
+    # Lock the items by removing from inventory (returned on cancel)
+    db.execute(
+        "UPDATE user_items SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?",
+        (quantity, uid, item_id),
+    )
+    db.execute(
+        """INSERT INTO item_listings (seller_id, item_id, quantity, price, accepts_items)
+           VALUES (?, ?, ?, ?, ?)""",
+        (uid, item_id, quantity, price, json.dumps(accepts) if accepts else None),
+    )
+    db.commit()
+    return jsonify({"message": "Listing created"})
+
+
+@app.route("/api/listings/<int:listing_id>/cancel", methods=["POST"])
+@login_required
+def cancel_listing(listing_id):
+    uid  = current_user_id()
+    db   = get_db()
+    row  = db.execute("SELECT * FROM item_listings WHERE id = ?", (listing_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Listing not found"}), 404
+    if row["seller_id"] != uid:
+        return jsonify({"error": "Not your listing"}), 403
+    if row["status"] != "OPEN":
+        return jsonify({"error": "Listing is not open"}), 400
+
+    # Return items to seller
+    _add_user_item(db, uid, row["item_id"], row["quantity"])
+    db.execute("UPDATE item_listings SET status = 'CANCELLED' WHERE id = ?", (listing_id,))
+    db.commit()
+    return jsonify({"message": "Listing cancelled, items returned"})
+
+
+def _add_user_item(db, user_id, item_id, quantity):
+    existing = db.execute(
+        "SELECT quantity FROM user_items WHERE user_id = ? AND item_id = ?", (user_id, item_id)
+    ).fetchone()
+    if existing:
+        db.execute(
+            "UPDATE user_items SET quantity = quantity + ? WHERE user_id = ? AND item_id = ?",
+            (quantity, user_id, item_id),
+        )
+    else:
+        db.execute(
+            "INSERT INTO user_items (user_id, item_id, quantity) VALUES (?, ?, ?)",
+            (user_id, item_id, quantity),
+        )
+
+
+@app.route("/api/listings/<int:listing_id>/buy", methods=["POST"])
+@login_required
+def buy_listing(listing_id):
+    uid = current_user_id()
+    db  = get_db()
+    row = db.execute("SELECT * FROM item_listings WHERE id = ?", (listing_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Listing not found"}), 404
+    if row["status"] != "OPEN":
+        return jsonify({"error": "Listing no longer available"}), 400
+    if row["seller_id"] == uid:
+        return jsonify({"error": "Cannot buy your own listing"}), 400
+    if row["price"] is None:
+        return jsonify({"error": "This listing does not accept cash"}), 400
+
+    price = row["price"]
+    cash  = db.execute("SELECT cash FROM portfolios WHERE user_id = ?", (uid,)).fetchone()["cash"]
+    if cash < price:
+        return jsonify({"error": f"Insufficient funds. Need ${price:.2f}, have ${cash:.2f}"}), 400
+
+    # Transfer cash
+    db.execute("UPDATE portfolios SET cash = cash - ? WHERE user_id = ?", (price, uid))
+    db.execute("UPDATE portfolios SET cash = cash + ? WHERE user_id = ?", (price, row["seller_id"]))
+    # Transfer items
+    _add_user_item(db, uid, row["item_id"], row["quantity"])
+    # Close listing
+    db.execute("UPDATE item_listings SET status = 'SOLD' WHERE id = ?", (listing_id,))
+    # History
+    db.execute(
+        """INSERT INTO item_trades (listing_id, seller_id, buyer_id, item_id, quantity,
+                                    payment_type, cash_amount)
+           VALUES (?, ?, ?, ?, ?, 'CASH', ?)""",
+        (listing_id, row["seller_id"], uid, row["item_id"], row["quantity"], price),
+    )
+    db.commit()
+    return jsonify({"message": f"Bought item for ${price:.2f}"})
+
+
+@app.route("/api/listings/<int:listing_id>/trade", methods=["POST"])
+@login_required
+def trade_listing(listing_id):
+    uid  = current_user_id()
+    data = request.get_json()
+    try:
+        offer_index = int(data.get("offer_index"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid offer"}), 400
+
+    db  = get_db()
+    row = db.execute("SELECT * FROM item_listings WHERE id = ?", (listing_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Listing not found"}), 404
+    if row["status"] != "OPEN":
+        return jsonify({"error": "Listing no longer available"}), 400
+    if row["seller_id"] == uid:
+        return jsonify({"error": "Cannot trade with your own listing"}), 400
+
+    accepts = json.loads(row["accepts_items"]) if row["accepts_items"] else []
+    if not accepts:
+        return jsonify({"error": "This listing does not accept item trades"}), 400
+    if offer_index < 0 or offer_index >= len(accepts):
+        return jsonify({"error": "Invalid offer choice"}), 400
+
+    offer = accepts[offer_index]
+    paid_item_id  = int(offer["item_id"])
+    paid_item_qty = int(offer["quantity"])
+
+    own = db.execute(
+        "SELECT quantity FROM user_items WHERE user_id = ? AND item_id = ?", (uid, paid_item_id)
+    ).fetchone()
+    if not own or own["quantity"] < paid_item_qty:
+        return jsonify({"error": "You do not own enough of the offered item"}), 400
+
+    # Take buyer's offered items, give to seller
+    db.execute(
+        "UPDATE user_items SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?",
+        (paid_item_qty, uid, paid_item_id),
+    )
+    _add_user_item(db, row["seller_id"], paid_item_id, paid_item_qty)
+    # Give buyer the listed items
+    _add_user_item(db, uid, row["item_id"], row["quantity"])
+    db.execute("UPDATE item_listings SET status = 'SOLD' WHERE id = ?", (listing_id,))
+    db.execute(
+        """INSERT INTO item_trades (listing_id, seller_id, buyer_id, item_id, quantity,
+                                    payment_type, paid_item_id, paid_item_qty)
+           VALUES (?, ?, ?, ?, ?, 'ITEM', ?, ?)""",
+        (listing_id, row["seller_id"], uid, row["item_id"], row["quantity"],
+         paid_item_id, paid_item_qty),
+    )
+    db.commit()
+    return jsonify({"message": "Trade complete!"})
+
+
+# ── Messages API ──────────────────────────────────────────────────────────────
+
+@app.route("/api/users/search")
+@login_required
+def search_users():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify([])
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, username FROM users WHERE username LIKE ? AND id != ? LIMIT 8",
+        (f"%{q}%", current_user_id()),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/messages/conversations")
+@login_required
+def conversations():
+    uid = current_user_id()
+    db  = get_db()
+    rows = db.execute(
+        """SELECT
+            CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END AS other_id,
+            MAX(id) AS last_id
+           FROM messages
+           WHERE sender_id = ? OR recipient_id = ?
+           GROUP BY other_id
+           ORDER BY last_id DESC""",
+        (uid, uid, uid),
+    ).fetchall()
+    out = []
+    for r in rows:
+        last = db.execute(
+            "SELECT sender_id, content, timestamp FROM messages WHERE id = ?",
+            (r["last_id"],),
+        ).fetchone()
+        user = db.execute(
+            "SELECT id, username FROM users WHERE id = ?", (r["other_id"],),
+        ).fetchone()
+        unread = db.execute(
+            """SELECT COUNT(*) AS n FROM messages
+               WHERE sender_id = ? AND recipient_id = ? AND is_read = 0""",
+            (r["other_id"], uid),
+        ).fetchone()["n"]
+        if user:
+            out.append({
+                "user_id":   user["id"],
+                "username":  user["username"],
+                "preview":   last["content"][:60],
+                "from_me":   last["sender_id"] == uid,
+                "timestamp": last["timestamp"],
+                "unread":    unread,
+            })
+    return jsonify(out)
+
+
+@app.route("/api/messages/<int:other_id>")
+@login_required
+def messages_with(other_id):
+    uid = current_user_id()
+    db  = get_db()
+    rows = db.execute(
+        """SELECT id, sender_id, recipient_id, content, timestamp, is_read
+           FROM messages
+           WHERE (sender_id = ? AND recipient_id = ?)
+              OR (sender_id = ? AND recipient_id = ?)
+           ORDER BY id ASC LIMIT 500""",
+        (uid, other_id, other_id, uid),
+    ).fetchall()
+    db.execute(
+        "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND recipient_id = ?",
+        (other_id, uid),
+    )
+    db.commit()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/messages/unread-count")
+@login_required
+def unread_count():
+    uid = current_user_id()
+    db  = get_db()
+    row = db.execute(
+        "SELECT COUNT(*) AS n FROM messages WHERE recipient_id = ? AND is_read = 0",
+        (uid,),
+    ).fetchone()
+    return jsonify({"count": row["n"]})
+
+
+@app.route("/api/messages/send", methods=["POST"])
+@login_required
+def send_message():
+    uid  = current_user_id()
+    data = request.get_json()
+    try:
+        recipient_id = int(data.get("recipient_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid recipient"}), 400
+    content = (data.get("content") or "").strip()
+    if not content:
+        return jsonify({"error": "Message cannot be empty"}), 400
+    if len(content) > 1000:
+        return jsonify({"error": "Message too long (max 1000 chars)"}), 400
+    if recipient_id == uid:
+        return jsonify({"error": "Cannot message yourself"}), 400
+
+    db = get_db()
+    if not db.execute("SELECT id FROM users WHERE id = ?", (recipient_id,)).fetchone():
+        return jsonify({"error": "User not found"}), 404
+
+    db.execute(
+        "INSERT INTO messages (sender_id, recipient_id, content) VALUES (?, ?, ?)",
+        (uid, recipient_id, content),
+    )
+    db.commit()
+    return jsonify({"message": "Sent"})
+
+
+# ── Profile API ───────────────────────────────────────────────────────────────
+
+@app.route("/api/profile/<int:user_id>")
+@login_required
+def api_profile(user_id):
+    db   = get_db()
+    user = db.execute(
+        "SELECT id, username, is_admin, is_banned, created FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if not user:
+        return jsonify({"error": "Not found"}), 404
+
+    trade_count = db.execute(
+        "SELECT COUNT(*) AS n FROM trades WHERE user_id = ?", (user_id,)
+    ).fetchone()["n"]
+    item_trade_count = db.execute(
+        "SELECT COUNT(*) AS n FROM item_trades WHERE buyer_id = ? OR seller_id = ?",
+        (user_id, user_id),
+    ).fetchone()["n"]
+    item_count = db.execute(
+        "SELECT COALESCE(SUM(quantity), 0) AS n FROM user_items WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()["n"]
+    holdings_count = db.execute(
+        "SELECT COUNT(*) AS n FROM holdings WHERE user_id = ?", (user_id,)
+    ).fetchone()["n"]
+
+    return jsonify({
+        "id":       user["id"],
+        "username": user["username"],
+        "is_admin": bool(user["is_admin"]),
+        "is_banned": bool(user["is_banned"]),
+        "created":  user["created"],
+        "trade_count":      trade_count,
+        "item_trade_count": item_trade_count,
+        "item_count":       item_count,
+        "holdings_count":   holdings_count,
+    })
+
+
 # ── Admin API ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/items", methods=["POST"])
+@admin_required
+def admin_create_item():
+    data        = request.get_json()
+    name        = (data.get("name") or "").strip()
+    description = (data.get("description") or "").strip()
+    emoji       = (data.get("emoji") or "📦").strip()[:4] or "📦"
+    rarity      = (data.get("rarity") or "common").strip().lower()
+    if rarity not in ("common", "uncommon", "rare", "epic", "legendary"):
+        rarity = "common"
+    if len(name) < 2:
+        return jsonify({"error": "Name must be at least 2 characters"}), 400
+
+    db = get_db()
+    if db.execute("SELECT id FROM items WHERE name = ?", (name,)).fetchone():
+        return jsonify({"error": "Item with that name already exists"}), 400
+    db.execute(
+        "INSERT INTO items (name, description, emoji, rarity) VALUES (?, ?, ?, ?)",
+        (name, description, emoji, rarity),
+    )
+    db.commit()
+    return jsonify({"message": f"Item '{name}' created"})
+
+
+@app.route("/api/admin/items/<int:item_id>", methods=["DELETE"])
+@admin_required
+def admin_delete_item(item_id):
+    db = get_db()
+    if not db.execute("SELECT id FROM items WHERE id = ?", (item_id,)).fetchone():
+        return jsonify({"error": "Item not found"}), 404
+    # Cancel all open listings of this item, return to sellers
+    listings = db.execute(
+        "SELECT id, seller_id, quantity FROM item_listings WHERE item_id = ? AND status = 'OPEN'",
+        (item_id,),
+    ).fetchall()
+    for l in listings:
+        _add_user_item(db, l["seller_id"], item_id, l["quantity"])
+        db.execute("UPDATE item_listings SET status = 'CANCELLED' WHERE id = ?", (l["id"],))
+    db.execute("DELETE FROM user_items WHERE item_id = ?", (item_id,))
+    db.execute("DELETE FROM items WHERE id = ?", (item_id,))
+    db.commit()
+    return jsonify({"message": "Item deleted"})
+
+
+@app.route("/api/admin/items/grant", methods=["POST"])
+@admin_required
+def admin_grant_item():
+    data = request.get_json()
+    try:
+        user_id  = int(data.get("user_id"))
+        item_id  = int(data.get("item_id"))
+        quantity = int(data.get("quantity"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid input"}), 400
+    if quantity == 0:
+        return jsonify({"error": "Quantity cannot be zero"}), 400
+
+    db = get_db()
+    if not db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone():
+        return jsonify({"error": "User not found"}), 404
+    if not db.execute("SELECT id FROM items WHERE id = ?", (item_id,)).fetchone():
+        return jsonify({"error": "Item not found"}), 404
+
+    if quantity > 0:
+        _add_user_item(db, user_id, item_id, quantity)
+    else:
+        existing = db.execute(
+            "SELECT quantity FROM user_items WHERE user_id = ? AND item_id = ?",
+            (user_id, item_id),
+        ).fetchone()
+        held = existing["quantity"] if existing else 0
+        new_qty = max(0, held + quantity)
+        if existing:
+            db.execute(
+                "UPDATE user_items SET quantity = ? WHERE user_id = ? AND item_id = ?",
+                (new_qty, user_id, item_id),
+            )
+    db.commit()
+    return jsonify({"message": f"Granted {quantity}× to user"})
+
 
 @app.route("/api/admin/trades")
 @admin_required

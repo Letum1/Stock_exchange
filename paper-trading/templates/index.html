@@ -172,6 +172,9 @@
     <a href="/admin"><button class="btn-sm btn-admin">Admin Panel</button></a>
     {% endif %}
     <a href="/market"><button class="btn-sm">Markets</button></a>
+    <a href="/items"><button class="btn-sm">🎒 Items</button></a>
+    <a href="/chat"><button class="btn-sm" id="nav-chat">💬 Chat</button></a>
+    <a href="/profile/{{ user_id if user_id else '' }}" id="nav-profile"><button class="btn-sm">Profile</button></a>
     <a href="/account"><button class="btn-sm">My Account</button></a>
     <button class="btn-sm" onclick="logout()">Logout</button>
   </div>

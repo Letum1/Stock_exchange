@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Profile{% if target_username %} — {{ target_username }}{% endif %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+    header { background: #1a1d27; border-bottom: 1px solid #2d3148;
+             padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 1.2rem; font-weight: 800; color: #7c85ff; }
+    .hdr-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .btn-sm { padding: 6px 14px; border: none; border-radius: 6px; font-size: 0.8rem;
+              font-weight: 600; cursor: pointer; background: #2d3148; color: #94a3b8;
+              transition: opacity .15s; text-decoration: none; display: inline-block; }
+    .btn-sm:hover { opacity: .85; }
+
+    .container { max-width: 900px; margin: 30px auto; padding: 0 20px; display: grid; gap: 22px; }
+
+    .hero {
+      background: linear-gradient(135deg, #1a1d27 0%, #1e2130 100%);
+      border: 1px solid #2d3148; border-radius: 14px; padding: 32px 30px;
+      display: flex; gap: 24px; align-items: center; flex-wrap: wrap;
+    }
+    .avatar-big {
+      width: 88px; height: 88px; border-radius: 50%;
+      background: linear-gradient(135deg, #7c85ff, #4f46e5);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2.4rem; font-weight: 800; color: #fff; flex-shrink: 0;
+      box-shadow: 0 6px 20px rgba(124,133,255,0.3);
+    }
+    .hero-info { flex: 1; min-width: 200px; }
+    .hero-name { font-size: 1.7rem; font-weight: 800; }
+    .hero-meta { color: #64748b; font-size: 0.85rem; margin-top: 4px; }
+    .hero-badges { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 14px;
+             font-size: 0.72rem; font-weight: 700; letter-spacing: .03em; }
+    .badge.admin  { background: #78350f; color: #fcd34d; }
+    .badge.banned { background: #450a0a; color: #f87171; }
+    .badge.you    { background: #14532d; color: #86efac; }
+
+    .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn { padding: 9px 18px; border: none; border-radius: 8px; font-size: 0.88rem;
+           font-weight: 700; cursor: pointer; transition: opacity .15s; text-decoration: none;
+           display: inline-flex; align-items: center; gap: 6px; }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: #7c85ff; color: #fff; }
+
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+    .stat-card {
+      background: #1a1d27; border: 1px solid #2d3148; border-radius: 11px;
+      padding: 18px 20px;
+    }
+    .stat-card .lbl { font-size: 0.72rem; color: #64748b; text-transform: uppercase;
+                      letter-spacing: .05em; margin-bottom: 6px; }
+    .stat-card .val { font-size: 1.7rem; font-weight: 800; color: #f1f5f9; }
+    .stat-card .val.amber { color: #fcd34d; }
+    .stat-card .val.green { color: #4ade80; }
+    .stat-card .val.blue  { color: #7dd3fc; }
+
+    .section { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 22px 24px; }
+    .section h2 { font-size: 0.82rem; font-weight: 700; text-transform: uppercase;
+                  letter-spacing: .08em; color: #64748b; margin-bottom: 16px; }
+
+    .grid-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+    .pubitem {
+      background: #13151f; border: 1px solid #2d3148; border-radius: 10px;
+      padding: 14px 12px; text-align: center;
+    }
+    .pubitem .emj  { font-size: 2rem; line-height: 1; margin-bottom: 6px; }
+    .pubitem .nm   { font-size: 0.85rem; font-weight: 700; }
+    .pubitem .qty  { color: #7c85ff; font-weight: 800; font-size: 0.78rem; margin-top: 4px; }
+
+    .empty { color: #475569; font-size: 0.88rem; padding: 20px; text-align: center; }
+
+    .not-found {
+      background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px;
+      padding: 60px 40px; text-align: center;
+    }
+    .not-found h2 { font-size: 1.4rem; margin-bottom: 8px; }
+    .not-found p  { color: #64748b; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📈 Paper Trading</h1>
+  <div class="hdr-right">
+    <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
+    {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
+    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/market" class="btn-sm">Markets</a>
+    <a href="/items" class="btn-sm">🎒 Items</a>
+    <a href="/chat" class="btn-sm">💬 Chat</a>
+    <a href="/account" class="btn-sm">Account</a>
+    <button class="btn-sm" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="container">
+
+{% if not_found %}
+  <div class="not-found">
+    <h2>User not found</h2>
+    <p>No user with ID #{{ target_id }} exists.</p>
+    <a href="/" class="btn btn-primary">← Back to Portfolio</a>
+  </div>
+{% else %}
+
+  <div class="hero">
+    <div class="avatar-big" id="avatar">{{ target_username[0]|upper }}</div>
+    <div class="hero-info">
+      <div class="hero-name">{{ target_username }}</div>
+      <div class="hero-meta">User ID #{{ target_id }} · <span id="member-since">…</span></div>
+      <div class="hero-badges" id="badges"></div>
+    </div>
+    <div class="hero-actions">
+      {% if target_id == current_user_id %}
+        <a href="/account" class="btn btn-primary">⚙️ Edit My Account</a>
+      {% else %}
+        <a href="/chat?to={{ target_id }}" class="btn btn-primary">💬 Send Message</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stats" id="stats">
+    <div class="stat-card"><div class="lbl">Stock Trades</div><div class="val amber" id="st-trades">…</div></div>
+    <div class="stat-card"><div class="lbl">Holdings</div><div class="val blue" id="st-holdings">…</div></div>
+    <div class="stat-card"><div class="lbl">Items Owned</div><div class="val green" id="st-items">…</div></div>
+    <div class="stat-card"><div class="lbl">Item Trades</div><div class="val" id="st-itrades">…</div></div>
+  </div>
+
+  <div class="section">
+    <h2>🎒 Public Inventory</h2>
+    <div id="inv-area"><div class="empty">Loading…</div></div>
+  </div>
+
+{% endif %}
+
+</div>
+
+<script>
+{% if not not_found %}
+  const TARGET_ID = {{ target_id }};
+
+  async function loadProfile() {
+    const r = await fetch('/api/profile/' + TARGET_ID);
+    if (!r.ok) return;
+    const p = await r.json();
+
+    document.getElementById('st-trades').textContent   = p.trade_count;
+    document.getElementById('st-holdings').textContent = p.holdings_count;
+    document.getElementById('st-items').textContent    = p.item_count;
+    document.getElementById('st-itrades').textContent  = p.item_trade_count;
+
+    const ms = document.getElementById('member-since');
+    if (p.created) {
+      const d = new Date(p.created.replace(' ', 'T') + 'Z');
+      ms.textContent = isNaN(d) ? `Member since ${p.created}` : `Member since ${d.toLocaleDateString([], {year:'numeric', month:'long'})}`;
+    }
+
+    const badges = document.getElementById('badges');
+    const out = [];
+    if (p.is_admin)  out.push('<span class="badge admin">⭐ ADMIN</span>');
+    if (p.is_banned) out.push('<span class="badge banned">🚫 BANNED</span>');
+    if (TARGET_ID === {{ current_user_id }}) out.push('<span class="badge you">This is you</span>');
+    badges.innerHTML = out.join('');
+  }
+
+  async function loadInventory() {
+    const r = await fetch('/api/inventory/' + TARGET_ID);
+    const items = await r.json();
+    const el = document.getElementById('inv-area');
+    if (!items.length) {
+      el.innerHTML = '<div class="empty">No items in inventory.</div>';
+      return;
+    }
+    el.innerHTML = '<div class="grid-items">' + items.map(it => `
+      <div class="pubitem">
+        <div class="emj">${it.emoji}</div>
+        <div class="nm">${escapeHtml(it.name)}</div>
+        <div class="qty">×${it.quantity}</div>
+      </div>`).join('') + '</div>';
+  }
+
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  loadProfile();
+  loadInventory();
+{% endif %}
+
+  async function logout() { await fetch('/api/logout', {method:'POST'}); window.location.href='/login'; }
+</script>
+</body>
+</html>
