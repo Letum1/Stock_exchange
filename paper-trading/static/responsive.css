@@ -1,0 +1,58 @@
+/* Phone-friendly fixes shared by all pages */
+
+/* Prevent iOS Safari from zooming when tapping any input/select/textarea.
+   iOS auto-zooms whenever an input's font-size is below 16px. */
+input, select, textarea {
+  font-size: 16px !important;
+}
+
+/* Tap targets a bit bigger on phones */
+button, .btn, .btn-sm {
+  touch-action: manipulation;
+}
+
+@media (max-width: 720px) {
+  body { font-size: 15px; }
+
+  /* Header: stack and wrap on small screens */
+  header {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+  header h1 { font-size: 1rem !important; }
+  .hdr-right, .hdr-nav, .nav, nav {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+  .hdr-user { font-size: 0.78rem !important; }
+
+  /* Buttons */
+  .btn-sm { padding: 8px 12px !important; font-size: 0.85rem !important; }
+
+  /* Cards / containers full-width */
+  .container, main, .content, .grid, .wrap {
+    padding: 10px !important;
+  }
+  .card { padding: 12px !important; }
+
+  /* Tables: allow horizontal scroll instead of breaking layout */
+  .table-wrap, .scroll-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  table { font-size: 0.82rem !important; }
+  th, td { padding: 6px 8px !important; white-space: nowrap; }
+
+  /* Modals fit screen */
+  .modal-content, .modal {
+    max-width: 95vw !important;
+    margin: 10px !important;
+  }
+
+  /* Stats / grids stack */
+  .stats, .stats-row, .grid-2, .grid-3, .row {
+    grid-template-columns: 1fr !important;
+    flex-direction: column !important;
+  }
+}

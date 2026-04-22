@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="/static/responsive.css"/>
+  <title>Trade with {{ other_username }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+           background: #0a0b14; color: #e2e8f0; min-height: 100vh; }
+    header { background: #13151f; border-bottom: 1px solid #2d3148;
+             padding: 14px 22px; display:flex; justify-content:space-between;
+             align-items:center; flex-wrap:wrap; gap:8px; }
+    header h1 { font-size: 1.1rem; color: #7c85ff; }
+    .hdr-right { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn-sm { background:#1d1f2a; color:#e2e8f0; border:1px solid #2d3148;
+              padding:7px 14px; border-radius:7px; font-size:.83rem; cursor:pointer;
+              text-decoration:none; display:inline-block; }
+    .btn-sm:hover { background:#272a37; }
+    .btn-primary { background:#7c85ff; color:#fff; border:none; }
+    .btn-danger  { background:#dc2626; color:#fff; border:none; }
+    .btn-success { background:#16a34a; color:#fff; border:none; }
+    .btn-warn    { background:#d97706; color:#fff; border:none; }
+
+    .container { max-width: 1200px; margin: 22px auto; padding: 0 18px; }
+    .status-bar { background:#13151f; border:1px solid #2d3148; border-radius:10px;
+                  padding:14px 18px; margin-bottom:18px; display:flex;
+                  justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+    .status { font-weight:700; }
+    .status.OPEN     { color:#fbbf24; }
+    .status.REVIEW   { color:#7c85ff; }
+    .status.COMPLETED{ color:#16a34a; }
+    .status.CANCELLED{ color:#dc2626; }
+
+    .countdown { font-size:1.6rem; font-weight:800; color:#fbbf24; }
+
+    .grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:18px; }
+    .side { background:#13151f; border:1px solid #2d3148; border-radius:10px; padding:16px; }
+    .side.you { border-color:#7c85ff; }
+    .side h3 { font-size:.95rem; margin-bottom:12px; display:flex;
+               justify-content:space-between; align-items:center; }
+    .accept-tag { font-size:.72rem; background:#16a34a; color:#fff;
+                  padding:3px 10px; border-radius:12px; font-weight:700; }
+    .accept-tag.no { background:#272a37; color:#64748b; }
+    .confirm-tag { font-size:.72rem; background:#7c85ff; color:#fff;
+                   padding:3px 10px; border-radius:12px; font-weight:700; margin-left:6px; }
+
+    .offers { min-height: 90px; }
+    .offer-row { display:flex; justify-content:space-between; align-items:center;
+                 padding:8px 10px; background:#1d1f2a; border-radius:6px;
+                 margin-bottom:6px; font-size:.9rem; }
+    .offer-row .meta { color:#94a3b8; font-size:.8rem; }
+    .x-btn { background:#dc2626; color:#fff; border:none; width:24px; height:24px;
+             border-radius:4px; cursor:pointer; font-weight:700; font-size:.85rem; }
+    .empty-offers { color:#64748b; font-style:italic; text-align:center; padding:20px; }
+
+    .add-section { margin-top:14px; padding-top:14px; border-top:1px solid #2d3148; }
+    .add-tabs { display:flex; gap:6px; margin-bottom:10px; }
+    .tab { background:#1d1f2a; color:#94a3b8; border:none; padding:7px 14px;
+           border-radius:6px; cursor:pointer; font-size:.82rem; }
+    .tab.active { background:#7c85ff; color:#fff; }
+    .add-form { display:flex; gap:8px; flex-wrap:wrap; }
+    .add-form input, .add-form select {
+      background:#0a0b14; border:1px solid #2d3148; color:#e2e8f0;
+      padding:9px 12px; border-radius:6px; flex:1; min-width:0;
+    }
+    .add-btn { background:#7c85ff; color:#fff; border:none; padding:9px 16px;
+               border-radius:6px; cursor:pointer; font-weight:700; }
+
+    .actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin:18px 0; }
+    .actions button { padding:12px 24px; border-radius:8px; cursor:pointer;
+                      font-size:.95rem; font-weight:700; border:none; }
+
+    .chat-box { background:#13151f; border:1px solid #2d3148; border-radius:10px;
+                padding:14px; }
+    .chat-box h3 { font-size:.9rem; margin-bottom:10px; color:#7c85ff; }
+    .chat-msgs { height: 220px; overflow-y:auto; padding:6px; background:#0a0b14;
+                 border-radius:6px; margin-bottom:10px; font-size:.88rem; }
+    .msg { padding:6px 10px; margin:4px 0; border-radius:6px; max-width:80%; word-wrap:break-word; }
+    .msg.me { background:#7c85ff; color:#fff; margin-left:auto; }
+    .msg.them { background:#1d1f2a; color:#e2e8f0; }
+    .chat-form { display:flex; gap:8px; }
+    .chat-form input { flex:1; background:#0a0b14; border:1px solid #2d3148;
+                       color:#e2e8f0; padding:10px 12px; border-radius:6px; }
+
+    .toast { position:fixed; bottom:20px; right:20px; background:#dc2626; color:#fff;
+             padding:12px 18px; border-radius:8px; opacity:0; transition:.2s;
+             font-size:.88rem; pointer-events:none; max-width:90vw; }
+    .toast.show { opacity:1; }
+    .toast.ok { background:#16a34a; }
+
+    @media (max-width: 720px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🤝 Trade with {{ other_username }}</h1>
+  <div class="hdr-right">
+    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/items" class="btn-sm">🎒 Items</a>
+    <a href="/profile/{{ other_id }}" class="btn-sm">@{{ other_username }}'s Profile</a>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="status-bar">
+    <div>
+      Status: <span class="status" id="status-text">…</span>
+      <span id="status-info" style="color:#94a3b8;font-size:.85rem;margin-left:8px"></span>
+    </div>
+    <div class="countdown" id="countdown" style="display:none">30s</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="side you" id="side-you">
+      <h3>
+        <span>Your offer <span id="you-name" style="color:#94a3b8;font-weight:400">(you)</span></span>
+        <span>
+          <span class="accept-tag no" id="you-accept">Not accepted</span>
+          <span class="confirm-tag" id="you-confirm" style="display:none">✓ Confirmed</span>
+        </span>
+      </h3>
+      <div class="offers" id="you-offers"></div>
+
+      <div class="add-section" id="add-section">
+        <div class="add-tabs">
+          <button class="tab active" data-kind="cash"  onclick="setTab('cash')">💵 Cash</button>
+          <button class="tab" data-kind="item"  onclick="setTab('item')">🎒 Item</button>
+          <button class="tab" data-kind="stock" onclick="setTab('stock')">📈 Stock/Crypto</button>
+        </div>
+        <div class="add-form" id="add-form-cash">
+          <input type="number" id="cash-amt" placeholder="Amount $" step="0.01" min="0.01"/>
+          <button class="add-btn" onclick="addCash()">Add Cash</button>
+        </div>
+        <div class="add-form" id="add-form-item" style="display:none">
+          <select id="item-sel"><option>Loading…</option></select>
+          <input type="number" id="item-qty" placeholder="Qty" min="1" value="1" style="max-width:90px"/>
+          <button class="add-btn" onclick="addItem()">Add Item</button>
+        </div>
+        <div class="add-form" id="add-form-stock" style="display:none">
+          <select id="stock-sel"><option>Loading…</option></select>
+          <input type="number" id="stock-qty" placeholder="Shares" step="0.0001" min="0.0001" style="max-width:120px"/>
+          <button class="add-btn" onclick="addStock()">Add Shares</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="side" id="side-them">
+      <h3>
+        <span><span id="them-name">{{ other_username }}</span>'s offer</span>
+        <span>
+          <span class="accept-tag no" id="them-accept">Not accepted</span>
+          <span class="confirm-tag" id="them-confirm" style="display:none">✓ Confirmed</span>
+        </span>
+      </h3>
+      <div class="offers" id="them-offers"></div>
+    </div>
+  </div>
+
+  <div class="actions" id="actions">
+    <button class="btn-success" id="accept-btn" onclick="acceptTrade()">✓ Accept Trade</button>
+    <button class="btn-warn" id="confirm-btn" onclick="confirmTrade()" style="display:none">⏱ Confirm Final</button>
+    <button class="btn-danger" id="cancel-btn" onclick="cancelTrade()">✗ Cancel Trade</button>
+  </div>
+
+  <div class="chat-box">
+    <h3>💬 Chat with {{ other_username }}</h3>
+    <div class="chat-msgs" id="chat-msgs"></div>
+    <form class="chat-form" onsubmit="sendChat(event)">
+      <input type="text" id="chat-input" placeholder="Message…" maxlength="1000" autocomplete="off"/>
+      <button type="submit" class="add-btn">Send</button>
+    </form>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const TRADE_ID = {{ trade_id }};
+  const OTHER_ID = {{ other_id }};
+  const MY_ID    = {{ user_id }};
+  let mySide = null;
+  let allItems = [];
+  let inventory = [];
+  let holdings = [];
+
+  function toast(msg, ok) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (ok ? ' ok' : '');
+    setTimeout(() => el.className = 'toast', 3000);
+  }
+
+  async function loadCatalog() {
+    const [items, inv, port] = await Promise.all([
+      fetch('/api/items').then(r => r.json()),
+      fetch('/api/inventory').then(r => r.json()),
+      fetch('/api/portfolio').then(r => r.json()),
+    ]);
+    allItems = items;
+    inventory = inv;
+    holdings = port.holdings || [];
+
+    // Inventory dropdown
+    const isel = document.getElementById('item-sel');
+    if (inventory.length === 0) {
+      isel.innerHTML = '<option value="">No items in inventory</option>';
+    } else {
+      isel.innerHTML = inventory.map(i =>
+        `<option value="${i.item_id}">${i.emoji} ${i.name} (×${i.quantity})</option>`).join('');
+    }
+
+    // Holdings dropdown
+    const ssel = document.getElementById('stock-sel');
+    if (holdings.length === 0) {
+      ssel.innerHTML = '<option value="">No holdings to trade</option>';
+    } else {
+      ssel.innerHTML = holdings.map(h =>
+        `<option value="${h.ticker}">${h.ticker} (${h.shares.toFixed(4)} shares @ $${h.price.toFixed(2)})</option>`).join('');
+    }
+  }
+
+  function setTab(kind) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.kind === kind));
+    document.getElementById('add-form-cash').style.display  = kind === 'cash' ? 'flex' : 'none';
+    document.getElementById('add-form-item').style.display  = kind === 'item' ? 'flex' : 'none';
+    document.getElementById('add-form-stock').style.display = kind === 'stock'? 'flex' : 'none';
+  }
+
+  function fmt(n) { return Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+  function renderOffers(elId, offers, isYou) {
+    const el = document.getElementById(elId);
+    if (offers.length === 0) {
+      el.innerHTML = '<div class="empty-offers">— nothing offered yet —</div>';
+      return;
+    }
+    el.innerHTML = offers.map(o => {
+      let label = '';
+      if (o.kind === 'cash')  label = `💵 $${fmt(o.qty)}`;
+      else if (o.kind === 'item')  label = `${o.item_emoji || '📦'} ${o.item_name || 'Item'} ×${o.qty}`;
+      else if (o.kind === 'stock') label = `📈 ${o.ref} · ${Number(o.qty).toFixed(4)} shares`;
+      const x = isYou
+        ? `<button class="x-btn" onclick="removeOffer(${o.id})" title="Remove">×</button>`
+        : '';
+      return `<div class="offer-row"><div>${label}</div>${x}</div>`;
+    }).join('');
+  }
+
+  let lastStatus = '';
+  async function loadState() {
+    const r = await fetch('/api/trades/' + TRADE_ID);
+    const s = await r.json();
+    if (s.error) { toast(s.error); return; }
+    mySide = s.your_side;
+
+    document.getElementById('status-text').textContent = s.status;
+    document.getElementById('status-text').className = 'status ' + s.status;
+
+    const youOffers  = mySide === 'A' ? s.a_offers : s.b_offers;
+    const themOffers = mySide === 'A' ? s.b_offers : s.a_offers;
+    renderOffers('you-offers',  youOffers,  true);
+    renderOffers('them-offers', themOffers, false);
+
+    const youAccept  = mySide === 'A' ? s.accept_a : s.accept_b;
+    const themAccept = mySide === 'A' ? s.accept_b : s.accept_a;
+    const youConfirm = mySide === 'A' ? s.confirm_a : s.confirm_b;
+    const themConfirm = mySide === 'A' ? s.confirm_b : s.confirm_a;
+
+    const yA = document.getElementById('you-accept');
+    yA.textContent = youAccept ? '✓ Accepted' : 'Not accepted';
+    yA.className = 'accept-tag' + (youAccept ? '' : ' no');
+    const tA = document.getElementById('them-accept');
+    tA.textContent = themAccept ? '✓ Accepted' : 'Not accepted';
+    tA.className = 'accept-tag' + (themAccept ? '' : ' no');
+
+    document.getElementById('you-confirm').style.display = youConfirm ? 'inline-block' : 'none';
+    document.getElementById('them-confirm').style.display = themConfirm ? 'inline-block' : 'none';
+
+    // Buttons
+    const acceptBtn = document.getElementById('accept-btn');
+    const confirmBtn = document.getElementById('confirm-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const addSec = document.getElementById('add-section');
+    const cd = document.getElementById('countdown');
+
+    if (s.status === 'OPEN') {
+      acceptBtn.style.display = youAccept ? 'none' : 'inline-block';
+      confirmBtn.style.display = 'none';
+      cancelBtn.style.display = 'inline-block';
+      addSec.style.display = 'block';
+      cd.style.display = 'none';
+      document.getElementById('status-info').textContent =
+        youAccept && themAccept ? '— starting review…' :
+        youAccept ? '— waiting for them to accept' :
+        themAccept ? '— they accepted, your turn' : '— add things, then accept';
+    } else if (s.status === 'REVIEW') {
+      acceptBtn.style.display = 'none';
+      confirmBtn.style.display = youConfirm ? 'none' : 'inline-block';
+      cancelBtn.style.display = 'inline-block';
+      addSec.style.display = 'none';   // locked during review
+      cd.style.display = 'block';
+      cd.textContent = (s.review_remaining || 0) + 's';
+      document.getElementById('status-info').textContent =
+        '— 30s review window. Both sides must Confirm Final.';
+    } else if (s.status === 'COMPLETED') {
+      acceptBtn.style.display = 'none';
+      confirmBtn.style.display = 'none';
+      cancelBtn.style.display = 'none';
+      addSec.style.display = 'none';
+      cd.style.display = 'none';
+      document.getElementById('status-info').textContent = '— assets transferred 🎉';
+      if (lastStatus !== 'COMPLETED') { toast('Trade complete!', true); loadCatalog(); }
+    } else if (s.status === 'CANCELLED') {
+      acceptBtn.style.display = 'none';
+      confirmBtn.style.display = 'none';
+      cancelBtn.style.display = 'none';
+      addSec.style.display = 'none';
+      cd.style.display = 'none';
+      document.getElementById('status-info').textContent = '— cancelled, everything refunded';
+      if (lastStatus !== 'CANCELLED') { toast('Trade cancelled', false); loadCatalog(); }
+    }
+    lastStatus = s.status;
+  }
+
+  async function api(path, body) {
+    const r = await fetch(path, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: body ? JSON.stringify(body) : '{}'
+    });
+    return r.json();
+  }
+
+  async function addCash() {
+    const amt = parseFloat(document.getElementById('cash-amt').value);
+    if (!(amt > 0)) return toast('Enter a positive amount');
+    const j = await api(`/api/trades/${TRADE_ID}/add`, {kind:'cash', qty:amt});
+    if (j.error) toast(j.error); else { document.getElementById('cash-amt').value=''; loadCatalog(); loadState(); }
+  }
+  async function addItem() {
+    const id = document.getElementById('item-sel').value;
+    const qty = parseInt(document.getElementById('item-qty').value);
+    if (!id) return toast('No items in inventory');
+    if (!(qty > 0)) return toast('Enter a positive quantity');
+    const j = await api(`/api/trades/${TRADE_ID}/add`, {kind:'item', ref:id, qty:qty});
+    if (j.error) toast(j.error); else { loadCatalog(); loadState(); }
+  }
+  async function addStock() {
+    const t = document.getElementById('stock-sel').value;
+    const q = parseFloat(document.getElementById('stock-qty').value);
+    if (!t) return toast('No holdings');
+    if (!(q > 0)) return toast('Enter a positive amount');
+    const j = await api(`/api/trades/${TRADE_ID}/add`, {kind:'stock', ref:t, qty:q});
+    if (j.error) toast(j.error); else { document.getElementById('stock-qty').value=''; loadCatalog(); loadState(); }
+  }
+  async function removeOffer(id) {
+    const j = await api(`/api/trades/${TRADE_ID}/remove`, {offer_id:id});
+    if (j.error) toast(j.error); else { loadCatalog(); loadState(); }
+  }
+  async function acceptTrade() {
+    const j = await api(`/api/trades/${TRADE_ID}/accept`);
+    if (j.error) toast(j.error); else loadState();
+  }
+  async function confirmTrade() {
+    const j = await api(`/api/trades/${TRADE_ID}/confirm`);
+    if (j.error) toast(j.error); else { if (j.completed) toast('Trade complete!', true); loadState(); }
+  }
+  async function cancelTrade() {
+    if (!confirm('Cancel this trade? All offers will be returned.')) return;
+    const j = await api(`/api/trades/${TRADE_ID}/cancel`);
+    if (j.error) toast(j.error); else loadState();
+  }
+
+  // ── Chat ────────────────────────────────────────────────────────────────
+  let lastMsgId = 0;
+  async function loadChat() {
+    const r = await fetch('/api/messages/' + OTHER_ID);
+    const msgs = await r.json();
+    const box = document.getElementById('chat-msgs');
+    const wasNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 50;
+    box.innerHTML = msgs.map(m =>
+      `<div class="msg ${m.sender_id === MY_ID ? 'me' : 'them'}">${escapeHtml(m.content)}</div>`
+    ).join('');
+    if (wasNearBottom) box.scrollTop = box.scrollHeight;
+  }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  async function sendChat(e) {
+    e.preventDefault();
+    const inp = document.getElementById('chat-input');
+    const txt = inp.value.trim();
+    if (!txt) return;
+    inp.value = '';
+    await fetch('/api/messages/send', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({recipient_id: OTHER_ID, content: txt})
+    });
+    loadChat();
+  }
+
+  loadCatalog();
+  loadState();
+  loadChat();
+  setInterval(loadState, 2500);
+  setInterval(loadChat, 4000);
+</script>
+</body>
+</html>

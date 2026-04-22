@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="/static/responsive.css"/>
   <title>Items Marketplace — Paper Trading</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -207,7 +208,8 @@
             <div class="emj">${l.item_emoji}</div>
             <div class="nm">${l.quantity}× ${escapeHtml(l.item_name)}</div>
             <div class="meta">${rarityBadge(l.item_rarity)}<span class="qty">×${l.quantity}</span></div>
-            <div class="seller">Seller: <a href="/profile/${l.seller_id}">${escapeHtml(l.seller_name)}</a></div>
+            <div class="seller">Seller: <a href="/trades" class="btn-sm">🤝 Trades</a>
+    <a href="/profile/${l.seller_id}">${escapeHtml(l.seller_name)}</a></div>
             ${l.price != null ? `<div class="price-cash">💵 $${l.price.toFixed(2)}</div>` : ''}
             ${accepts ? `<div class="price-trade">🔄 ${accepts}</div>` : ''}
             <div class="btn-row">
