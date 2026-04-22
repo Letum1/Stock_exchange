@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="/static/responsive.css"/>
   <title>Market — Paper Trading</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
@@ -171,6 +172,7 @@
     <a href="/market" class="btn-sm btn-active">Markets</a>
     <a href="/items" class="btn-sm">🎒 Items</a>
     <a href="/chat" class="btn-sm">💬 Chat</a>
+    <a href="/trades" class="btn-sm">🤝 Trades</a>
     <a href="/profile/{{ user_id }}" class="btn-sm">Profile</a>
     <a href="/account" class="btn-sm">Account</a>
     <button class="btn-sm" onclick="doLogout()">Logout</button>
@@ -220,6 +222,7 @@
     </div>
   </div>
 
+  <h2 style="font-size:.9rem;color:#94a3b8;margin:6px 2px 10px;text-transform:uppercase;letter-spacing:.5px">📈 Stocks</h2>
   <!-- Stock grid -->
   <div class="grid" id="stock-grid">
     <!-- skeleton cards -->
@@ -230,6 +233,11 @@
         <div class="skeleton" style="width:80px;height:20px;margin-top:10px"></div>
       </div>
     `).join('')}
+  </div>
+
+  <h2 style="font-size:.9rem;color:#94a3b8;margin:18px 2px 10px;text-transform:uppercase;letter-spacing:.5px">🪙 Crypto</h2>
+  <div class="grid" id="crypto-grid">
+    <div class="stock-card"><div class="sc-top"><div class="skeleton" style="width:60px;height:16px"></div></div></div>
   </div>
 
 </div>
@@ -378,6 +386,28 @@
     renderGrid(stocks);
     const now = new Date().toLocaleTimeString();
     document.getElementById('refresh-info').textContent = `Updated ${now} · auto-refresh every 60s`;
+  }
+
+  let cryptos = [];
+  async function loadCrypto() {
+    const r = await fetch('/api/market/crypto');
+    cryptos = await r.json();
+    const grid = document.getElementById('crypto-grid');
+    grid.innerHTML = cryptos.map(s => {
+      const up = s.change >= 0;
+      return `
+        <div class="stock-card ${selectedTicker === s.ticker ? 'selected' : ''}"
+             onclick="selectStock('${s.ticker}')">
+          <div class="sc-top">
+            <div>
+              <div class="sc-ticker">${s.name}</div>
+              <div class="sc-name">${s.ticker}</div>
+            </div>
+            <div class="sc-change ${up ? 'up' : 'down'}">${up ? '+' : ''}${s.change_pct.toFixed(2)}%</div>
+          </div>
+          <div class="sc-price">${fmt(s.price)}</div>
+        </div>`;
+    }).join('');
   }
 
   function renderGrid(list) {
@@ -569,7 +599,9 @@
   }
 
   loadStocks();
+  loadCrypto();
   setInterval(loadStocks, 60000);
+  setInterval(loadCrypto, 60000);
 </script>
 </body>
 </html>

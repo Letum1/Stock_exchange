@@ -120,8 +120,34 @@ def init_db():
                 is_read      INTEGER NOT NULL DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS trade_sessions (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_a             INTEGER NOT NULL REFERENCES users(id),
+                user_b             INTEGER NOT NULL REFERENCES users(id),
+                status             TEXT NOT NULL DEFAULT 'OPEN',
+                accept_a           INTEGER NOT NULL DEFAULT 0,
+                accept_b           INTEGER NOT NULL DEFAULT 0,
+                confirm_a          INTEGER NOT NULL DEFAULT 0,
+                confirm_b          INTEGER NOT NULL DEFAULT 0,
+                review_started_at  DATETIME,
+                created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+                completed_at       DATETIME
+            );
+
+            CREATE TABLE IF NOT EXISTS trade_offers (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                trade_id   INTEGER NOT NULL REFERENCES trade_sessions(id),
+                side       TEXT NOT NULL,
+                kind       TEXT NOT NULL,
+                ref        TEXT,
+                qty        REAL NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE INDEX IF NOT EXISTS idx_msg_pair ON messages(sender_id, recipient_id, id);
             CREATE INDEX IF NOT EXISTS idx_listings_status ON item_listings(status);
+            CREATE INDEX IF NOT EXISTS idx_trades_status ON trade_sessions(status);
+            CREATE INDEX IF NOT EXISTS idx_offers_trade ON trade_offers(trade_id);
         """)
         db.commit()
 
@@ -355,6 +381,12 @@ WATCHLIST = [
     "DIS","PYPL","INTC","BA","GS",
 ]
 
+# Small set of cryptocurrencies (yfinance tickers).
+CRYPTO_WATCHLIST = [
+    "BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD", "XRP-USD",
+    "ADA-USD", "BNB-USD", "LTC-USD",
+]
+
 @app.route("/market")
 @login_required
 def market_page():
@@ -381,6 +413,31 @@ def market_stocks():
             results.append({
                 "ticker":     ticker,
                 "name":       t.info.get("shortName", ticker),
+                "price":      price,
+                "prev_close": prev,
+                "change":     change,
+                "change_pct": change_pct,
+            })
+        except Exception:
+            pass
+    return jsonify(results)
+
+
+@app.route("/api/market/crypto")
+@login_required
+def market_crypto():
+    results = []
+    for ticker in CRYPTO_WATCHLIST:
+        try:
+            t    = yf.Ticker(ticker)
+            fi   = t.fast_info
+            price      = round(float(fi.last_price), 2)
+            prev       = round(float(fi.previous_close), 2)
+            change     = round(price - prev, 2)
+            change_pct = round((change / prev) * 100, 2) if prev else 0
+            results.append({
+                "ticker":     ticker,
+                "name":       ticker.replace("-USD", ""),
                 "price":      price,
                 "prev_close": prev,
                 "change":     change,
@@ -1348,6 +1405,491 @@ def admin_delete_user():
     db.execute("DELETE FROM users     WHERE id = ?",      (user_id,))
     db.commit()
     return jsonify({"message": "User deleted"})
+
+
+# ── Trade sessions (negotiated 1-on-1 trade) ──────────────────────────────────
+
+from datetime import datetime, timedelta
+
+REVIEW_SECONDS = 30
+
+
+def _add_holding(db, user_id, ticker, shares):
+    existing = db.execute(
+        "SELECT shares FROM holdings WHERE user_id = ? AND ticker = ?", (user_id, ticker)
+    ).fetchone()
+    if existing:
+        db.execute(
+            "UPDATE holdings SET shares = shares + ? WHERE user_id = ? AND ticker = ?",
+            (shares, user_id, ticker),
+        )
+    else:
+        db.execute(
+            "INSERT INTO holdings (user_id, ticker, shares) VALUES (?, ?, ?)",
+            (user_id, ticker, shares),
+        )
+
+
+def _remove_holding(db, user_id, ticker, shares):
+    existing = db.execute(
+        "SELECT shares FROM holdings WHERE user_id = ? AND ticker = ?", (user_id, ticker)
+    ).fetchone()
+    if not existing or existing["shares"] + 1e-9 < shares:
+        return False
+    new_shares = existing["shares"] - shares
+    if new_shares < 1e-9:
+        db.execute("DELETE FROM holdings WHERE user_id = ? AND ticker = ?", (user_id, ticker))
+    else:
+        db.execute(
+            "UPDATE holdings SET shares = ? WHERE user_id = ? AND ticker = ?",
+            (new_shares, user_id, ticker),
+        )
+    return True
+
+
+def _trade_get(db, trade_id):
+    return db.execute(
+        "SELECT * FROM trade_sessions WHERE id = ?", (trade_id,)
+    ).fetchone()
+
+
+def _trade_side(row, uid):
+    if uid == row["user_a"]: return "A"
+    if uid == row["user_b"]: return "B"
+    return None
+
+
+def _refund_trade_offers(db, trade_id):
+    row = _trade_get(db, trade_id)
+    offers = db.execute(
+        "SELECT * FROM trade_offers WHERE trade_id = ?", (trade_id,)
+    ).fetchall()
+    for o in offers:
+        owner = row["user_a"] if o["side"] == "A" else row["user_b"]
+        if o["kind"] == "cash":
+            db.execute(
+                "UPDATE portfolios SET cash = cash + ? WHERE user_id = ?",
+                (o["qty"], owner),
+            )
+        elif o["kind"] == "item":
+            _add_user_item(db, owner, int(o["ref"]), int(o["qty"]))
+        elif o["kind"] == "stock":
+            _add_holding(db, owner, o["ref"], o["qty"])
+    db.execute("DELETE FROM trade_offers WHERE trade_id = ?", (trade_id,))
+
+
+def _execute_trade(db, trade_id):
+    row = _trade_get(db, trade_id)
+    a, b = row["user_a"], row["user_b"]
+    offers = db.execute(
+        "SELECT * FROM trade_offers WHERE trade_id = ?", (trade_id,)
+    ).fetchall()
+    for o in offers:
+        recipient = b if o["side"] == "A" else a
+        if o["kind"] == "cash":
+            db.execute(
+                "UPDATE portfolios SET cash = cash + ? WHERE user_id = ?",
+                (o["qty"], recipient),
+            )
+        elif o["kind"] == "item":
+            _add_user_item(db, recipient, int(o["ref"]), int(o["qty"]))
+        elif o["kind"] == "stock":
+            _add_holding(db, recipient, o["ref"], o["qty"])
+    db.execute("DELETE FROM trade_offers WHERE trade_id = ?", (trade_id,))
+    db.execute(
+        "UPDATE trade_sessions SET status = 'COMPLETED', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (trade_id,),
+    )
+
+
+def _check_review_expiry(db, row):
+    """If REVIEW window past 30s, auto-cancel + refund. Returns updated row."""
+    if row["status"] == "REVIEW" and row["review_started_at"]:
+        try:
+            started = datetime.fromisoformat(row["review_started_at"].replace(" ", "T"))
+        except ValueError:
+            return row
+        if datetime.utcnow() - started > timedelta(seconds=REVIEW_SECONDS):
+            _refund_trade_offers(db, row["id"])
+            db.execute(
+                "UPDATE trade_sessions SET status = 'CANCELLED' WHERE id = ?",
+                (row["id"],),
+            )
+            db.commit()
+            row = _trade_get(db, row["id"])
+    return row
+
+
+def _reset_acceptance(db, trade_id):
+    """Any change to offers resets accepts/confirms and clears REVIEW."""
+    db.execute(
+        """UPDATE trade_sessions
+           SET accept_a = 0, accept_b = 0, confirm_a = 0, confirm_b = 0,
+               review_started_at = NULL,
+               status = CASE WHEN status IN ('REVIEW','OPEN') THEN 'OPEN' ELSE status END
+           WHERE id = ?""",
+        (trade_id,),
+    )
+
+
+@app.route("/trades")
+@login_required
+def trades_hub_page():
+    return render_template(
+        "trades_hub.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
+    )
+
+
+@app.route("/trade/<int:trade_id>")
+@login_required
+def trade_page(trade_id):
+    db  = get_db()
+    row = _trade_get(db, trade_id)
+    if not row:
+        return "Trade not found", 404
+    uid = current_user_id()
+    if uid not in (row["user_a"], row["user_b"]):
+        return "Not your trade", 403
+    other_id = row["user_b"] if uid == row["user_a"] else row["user_a"]
+    other = db.execute("SELECT username FROM users WHERE id = ?", (other_id,)).fetchone()
+    return render_template(
+        "trade.html",
+        trade_id=trade_id,
+        username=session.get("username"),
+        user_id=uid,
+        other_id=other_id,
+        other_username=(other["username"] if other else "?"),
+        is_admin=session.get("is_admin", False),
+    )
+
+
+@app.route("/api/trades/start", methods=["POST"])
+@login_required
+def trade_start():
+    uid  = current_user_id()
+    data = request.get_json() or {}
+    try:
+        other_id = int(data.get("other_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid user"}), 400
+    if other_id == uid:
+        return jsonify({"error": "Cannot trade with yourself"}), 400
+
+    db = get_db()
+    if not db.execute("SELECT id FROM users WHERE id = ?", (other_id,)).fetchone():
+        return jsonify({"error": "User not found"}), 404
+
+    # Re-use existing OPEN/REVIEW trade with this user (either order)
+    existing = db.execute(
+        """SELECT id FROM trade_sessions
+           WHERE status IN ('OPEN','REVIEW')
+             AND ((user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?))
+           ORDER BY id DESC LIMIT 1""",
+        (uid, other_id, other_id, uid),
+    ).fetchone()
+    if existing:
+        return jsonify({"trade_id": existing["id"], "reused": True})
+
+    cur = db.execute(
+        "INSERT INTO trade_sessions (user_a, user_b) VALUES (?, ?)",
+        (uid, other_id),
+    )
+    db.commit()
+    return jsonify({"trade_id": cur.lastrowid, "reused": False})
+
+
+@app.route("/api/trades/active")
+@login_required
+def trade_active_list():
+    uid = current_user_id()
+    db  = get_db()
+    rows = db.execute(
+        """SELECT t.*, ua.username AS user_a_name, ub.username AS user_b_name
+           FROM trade_sessions t
+           JOIN users ua ON ua.id = t.user_a
+           JOIN users ub ON ub.id = t.user_b
+           WHERE (t.user_a = ? OR t.user_b = ?)
+             AND t.status IN ('OPEN','REVIEW')
+           ORDER BY t.id DESC""",
+        (uid, uid),
+    ).fetchall()
+    out = []
+    for r in rows:
+        other_id   = r["user_b"] if uid == r["user_a"] else r["user_a"]
+        other_name = r["user_b_name"] if uid == r["user_a"] else r["user_a_name"]
+        out.append({
+            "id": r["id"], "status": r["status"],
+            "other_id": other_id, "other_username": other_name,
+            "created_at": r["created_at"],
+        })
+    return jsonify(out)
+
+
+def _serialize_offer(db, o):
+    d = {"id": o["id"], "side": o["side"], "kind": o["kind"], "qty": o["qty"], "ref": o["ref"]}
+    if o["kind"] == "item":
+        item = db.execute(
+            "SELECT name, emoji, rarity FROM items WHERE id = ?", (int(o["ref"]),)
+        ).fetchone()
+        if item:
+            d["item_name"] = item["name"]
+            d["item_emoji"] = item["emoji"]
+            d["item_rarity"] = item["rarity"]
+    return d
+
+
+@app.route("/api/trades/<int:trade_id>")
+@login_required
+def trade_state(trade_id):
+    uid = current_user_id()
+    db  = get_db()
+    row = _trade_get(db, trade_id)
+    if not row:
+        return jsonify({"error": "Trade not found"}), 404
+    if uid not in (row["user_a"], row["user_b"]):
+        return jsonify({"error": "Not your trade"}), 403
+
+    row = _check_review_expiry(db, row)
+
+    offers = db.execute(
+        "SELECT * FROM trade_offers WHERE trade_id = ? ORDER BY id", (trade_id,)
+    ).fetchall()
+    a_offers = [_serialize_offer(db, o) for o in offers if o["side"] == "A"]
+    b_offers = [_serialize_offer(db, o) for o in offers if o["side"] == "B"]
+
+    user_a = db.execute("SELECT id, username FROM users WHERE id = ?", (row["user_a"],)).fetchone()
+    user_b = db.execute("SELECT id, username FROM users WHERE id = ?", (row["user_b"],)).fetchone()
+
+    review_remaining = None
+    if row["status"] == "REVIEW" and row["review_started_at"]:
+        try:
+            started = datetime.fromisoformat(row["review_started_at"].replace(" ", "T"))
+            elapsed = (datetime.utcnow() - started).total_seconds()
+            review_remaining = max(0, REVIEW_SECONDS - int(elapsed))
+        except ValueError:
+            pass
+
+    return jsonify({
+        "id": row["id"],
+        "status": row["status"],
+        "user_a": dict(user_a) if user_a else None,
+        "user_b": dict(user_b) if user_b else None,
+        "accept_a": bool(row["accept_a"]),
+        "accept_b": bool(row["accept_b"]),
+        "confirm_a": bool(row["confirm_a"]),
+        "confirm_b": bool(row["confirm_b"]),
+        "review_remaining": review_remaining,
+        "your_side": _trade_side(row, uid),
+        "a_offers": a_offers,
+        "b_offers": b_offers,
+        "your_id": uid,
+    })
+
+
+@app.route("/api/trades/<int:trade_id>/add", methods=["POST"])
+@login_required
+def trade_add(trade_id):
+    uid  = current_user_id()
+    data = request.get_json() or {}
+    db   = get_db()
+    row  = _trade_get(db, trade_id)
+    if not row:
+        return jsonify({"error": "Trade not found"}), 404
+    side = _trade_side(row, uid)
+    if not side:
+        return jsonify({"error": "Not your trade"}), 403
+    if row["status"] not in ("OPEN", "REVIEW"):
+        return jsonify({"error": "Trade is closed"}), 400
+
+    kind = (data.get("kind") or "").lower()
+    if kind not in ("cash", "item", "stock"):
+        return jsonify({"error": "Invalid kind"}), 400
+
+    try:
+        qty = float(data.get("qty"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid quantity"}), 400
+    if qty <= 0:
+        return jsonify({"error": "Quantity must be positive"}), 400
+
+    if kind == "cash":
+        cash = db.execute(
+            "SELECT cash FROM portfolios WHERE user_id = ?", (uid,)
+        ).fetchone()["cash"]
+        if cash + 1e-9 < qty:
+            return jsonify({"error": f"Insufficient funds. Have ${cash:.2f}"}), 400
+        db.execute(
+            "UPDATE portfolios SET cash = cash - ? WHERE user_id = ?", (qty, uid),
+        )
+        db.execute(
+            "INSERT INTO trade_offers (trade_id, side, kind, qty) VALUES (?, ?, 'cash', ?)",
+            (trade_id, side, qty),
+        )
+
+    elif kind == "item":
+        try:
+            item_id = int(data.get("ref"))
+            qty_i   = int(qty)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid item"}), 400
+        if qty_i <= 0:
+            return jsonify({"error": "Quantity must be positive"}), 400
+        own = db.execute(
+            "SELECT quantity FROM user_items WHERE user_id = ? AND item_id = ?",
+            (uid, item_id),
+        ).fetchone()
+        if not own or own["quantity"] < qty_i:
+            return jsonify({"error": "You don't own enough of that item"}), 400
+        db.execute(
+            "UPDATE user_items SET quantity = quantity - ? WHERE user_id = ? AND item_id = ?",
+            (qty_i, uid, item_id),
+        )
+        db.execute(
+            "INSERT INTO trade_offers (trade_id, side, kind, ref, qty) VALUES (?, ?, 'item', ?, ?)",
+            (trade_id, side, str(item_id), qty_i),
+        )
+
+    elif kind == "stock":
+        ticker = (data.get("ref") or "").upper().strip()
+        if not ticker:
+            return jsonify({"error": "Invalid ticker"}), 400
+        if not _remove_holding(db, uid, ticker, qty):
+            return jsonify({"error": f"You don't own enough shares of {ticker}"}), 400
+        db.execute(
+            "INSERT INTO trade_offers (trade_id, side, kind, ref, qty) VALUES (?, ?, 'stock', ?, ?)",
+            (trade_id, side, ticker, qty),
+        )
+
+    _reset_acceptance(db, trade_id)
+    db.commit()
+    return jsonify({"message": "Added"})
+
+
+@app.route("/api/trades/<int:trade_id>/remove", methods=["POST"])
+@login_required
+def trade_remove(trade_id):
+    uid  = current_user_id()
+    data = request.get_json() or {}
+    db   = get_db()
+    row  = _trade_get(db, trade_id)
+    if not row:
+        return jsonify({"error": "Trade not found"}), 404
+    side = _trade_side(row, uid)
+    if not side:
+        return jsonify({"error": "Not your trade"}), 403
+    if row["status"] not in ("OPEN", "REVIEW"):
+        return jsonify({"error": "Trade is closed"}), 400
+
+    try:
+        offer_id = int(data.get("offer_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid offer"}), 400
+
+    o = db.execute(
+        "SELECT * FROM trade_offers WHERE id = ? AND trade_id = ?", (offer_id, trade_id),
+    ).fetchone()
+    if not o:
+        return jsonify({"error": "Offer not found"}), 404
+    if o["side"] != side:
+        return jsonify({"error": "That isn't your offer"}), 403
+
+    # Refund this single offer
+    if o["kind"] == "cash":
+        db.execute("UPDATE portfolios SET cash = cash + ? WHERE user_id = ?", (o["qty"], uid))
+    elif o["kind"] == "item":
+        _add_user_item(db, uid, int(o["ref"]), int(o["qty"]))
+    elif o["kind"] == "stock":
+        _add_holding(db, uid, o["ref"], o["qty"])
+
+    db.execute("DELETE FROM trade_offers WHERE id = ?", (offer_id,))
+    _reset_acceptance(db, trade_id)
+    db.commit()
+    return jsonify({"message": "Removed"})
+
+
+@app.route("/api/trades/<int:trade_id>/accept", methods=["POST"])
+@login_required
+def trade_accept(trade_id):
+    uid = current_user_id()
+    db  = get_db()
+    row = _trade_get(db, trade_id)
+    if not row:
+        return jsonify({"error": "Trade not found"}), 404
+    side = _trade_side(row, uid)
+    if not side:
+        return jsonify({"error": "Not your trade"}), 403
+    row = _check_review_expiry(db, row)
+    if row["status"] != "OPEN":
+        return jsonify({"error": "Trade is not open for acceptance"}), 400
+
+    has_offers = db.execute(
+        "SELECT COUNT(*) AS n FROM trade_offers WHERE trade_id = ?", (trade_id,),
+    ).fetchone()["n"]
+    if has_offers == 0:
+        return jsonify({"error": "Add at least one item before accepting"}), 400
+
+    col = "accept_a" if side == "A" else "accept_b"
+    db.execute(f"UPDATE trade_sessions SET {col} = 1 WHERE id = ?", (trade_id,))
+
+    # Re-fetch and check both
+    row = _trade_get(db, trade_id)
+    if row["accept_a"] and row["accept_b"]:
+        db.execute(
+            "UPDATE trade_sessions SET status = 'REVIEW', review_started_at = CURRENT_TIMESTAMP, "
+            "confirm_a = 0, confirm_b = 0 WHERE id = ?",
+            (trade_id,),
+        )
+    db.commit()
+    return jsonify({"message": "Accepted"})
+
+
+@app.route("/api/trades/<int:trade_id>/confirm", methods=["POST"])
+@login_required
+def trade_confirm(trade_id):
+    uid = current_user_id()
+    db  = get_db()
+    row = _trade_get(db, trade_id)
+    if not row:
+        return jsonify({"error": "Trade not found"}), 404
+    side = _trade_side(row, uid)
+    if not side:
+        return jsonify({"error": "Not your trade"}), 403
+    row = _check_review_expiry(db, row)
+    if row["status"] != "REVIEW":
+        return jsonify({"error": "Trade is not in review"}), 400
+
+    col = "confirm_a" if side == "A" else "confirm_b"
+    db.execute(f"UPDATE trade_sessions SET {col} = 1 WHERE id = ?", (trade_id,))
+    row = _trade_get(db, trade_id)
+    if row["confirm_a"] and row["confirm_b"]:
+        _execute_trade(db, trade_id)
+        db.commit()
+        return jsonify({"message": "Trade complete!", "completed": True})
+    db.commit()
+    return jsonify({"message": "Confirmed — waiting for the other side"})
+
+
+@app.route("/api/trades/<int:trade_id>/cancel", methods=["POST"])
+@login_required
+def trade_cancel(trade_id):
+    uid = current_user_id()
+    db  = get_db()
+    row = _trade_get(db, trade_id)
+    if not row:
+        return jsonify({"error": "Trade not found"}), 404
+    side = _trade_side(row, uid)
+    if not side:
+        return jsonify({"error": "Not your trade"}), 403
+    if row["status"] not in ("OPEN", "REVIEW"):
+        return jsonify({"error": "Trade is already closed"}), 400
+
+    _refund_trade_offers(db, trade_id)
+    db.execute("UPDATE trade_sessions SET status = 'CANCELLED' WHERE id = ?", (trade_id,))
+    db.commit()
+    return jsonify({"message": "Trade cancelled, items returned"})
 
 
 if __name__ == "__main__":
