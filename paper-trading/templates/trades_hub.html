@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="/static/responsive.css"/>
+  <title>Active Trades</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+           background: #0a0b14; color: #e2e8f0; min-height: 100vh; }
+    header { background: #13151f; border-bottom: 1px solid #2d3148;
+             padding: 14px 22px; display:flex; justify-content:space-between;
+             flex-wrap:wrap; gap:8px; align-items:center; }
+    header h1 { font-size: 1.1rem; color: #7c85ff; }
+    .hdr-right { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn-sm { background:#1d1f2a; color:#e2e8f0; border:1px solid #2d3148;
+              padding:7px 14px; border-radius:7px; font-size:.83rem; cursor:pointer;
+              text-decoration:none; display:inline-block; }
+    .btn-sm:hover { background:#272a37; }
+    .container { max-width: 900px; margin: 28px auto; padding: 0 18px; }
+    h2 { font-size: 1rem; margin-bottom: 14px; color:#94a3b8; text-transform:uppercase; letter-spacing:.5px; }
+    .card { background:#13151f; border:1px solid #2d3148; border-radius:10px;
+            padding:14px 18px; margin-bottom:10px; display:flex; justify-content:space-between;
+            align-items:center; gap:12px; flex-wrap:wrap; }
+    .card a.btn { background:#7c85ff; color:#fff; padding:8px 16px; border-radius:6px;
+                  text-decoration:none; font-weight:700; font-size:.85rem; }
+    .status-pill { padding:3px 10px; border-radius:12px; font-size:.72rem; font-weight:700; }
+    .OPEN   { background:#7c2d12; color:#fbbf24; }
+    .REVIEW { background:#3730a3; color:#a5b4fc; }
+    .empty { color:#64748b; text-align:center; padding:30px; font-style:italic; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🤝 My Trades</h1>
+  <div class="hdr-right">
+    {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
+    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/market" class="btn-sm">Markets</a>
+    <a href="/items" class="btn-sm">🎒 Items</a>
+    <a href="/chat" class="btn-sm">💬 Chat</a>
+    <a href="/profile/{{ user_id }}" class="btn-sm">Profile</a>
+  </div>
+</header>
+
+<div class="container">
+  <h2>Active trades</h2>
+  <div id="list">Loading…</div>
+  <p style="color:#64748b;font-size:.85rem;margin-top:18px">
+    Tip: to start a new trade, open someone's profile and click 🤝 Trade.
+  </p>
+</div>
+
+<script>
+  async function load() {
+    const r = await fetch('/api/trades/active');
+    const list = await r.json();
+    const el = document.getElementById('list');
+    if (!list.length) {
+      el.innerHTML = '<div class="empty">No active trades. Visit a profile to start one.</div>';
+      return;
+    }
+    el.innerHTML = list.map(t => `
+      <div class="card">
+        <div>
+          <div style="font-weight:700">Trade #${t.id} with @${t.other_username}</div>
+          <div style="color:#64748b;font-size:.78rem;margin-top:3px">Started ${t.created_at}</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span class="status-pill ${t.status}">${t.status}</span>
+          <a href="/trade/${t.id}" class="btn">Open</a>
+        </div>
+      </div>`).join('');
+  }
+  load();
+  setInterval(load, 5000);
+</script>
+</body>
+</html>

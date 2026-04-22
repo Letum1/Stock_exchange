@@ -39,13 +39,20 @@ A standalone Python Flask app at `paper-trading/`.
 
 ### Pages
 - `/` — portfolio dashboard (buy/sell with confirm modal, ticker autocomplete)
-- `/market` — live market with watchlist + chart
+- `/market` — live market: stocks + crypto sections, with chart
 - `/items` — items marketplace (browse listings, manage inventory, my listings)
 - `/chat` — DM chat with sidebar of conversations, polling every 4s
-- `/profile/<id>` — public profile (stats, badges, public inventory)
+- `/trades` — active 1-on-1 negotiated trades hub
+- `/trade/<id>` — negotiated trade page (add cash/items/stocks/crypto, accept,
+  30-second review window, confirm, cancel, embedded chat)
+- `/profile/<id>` — public profile (stats, badges, public inventory, Trade button)
 - `/account` — change username & password
 - `/admin` — admin panel (users, balance, trades, items catalog, grant items)
 - `/login` `/register` — auth (register requires anti-bot math captcha)
+
+### Mobile/UX
+- All templates link `/static/responsive.css` which forces inputs to 16px
+  font-size (prevents iOS auto-zoom on tap) and adds responsive nav/grid rules.
 
 ### Backend modules in `app.py`
 - Auth (with math captcha for register), portfolio + trading, market data, ticker search
