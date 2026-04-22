@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Items Marketplace — Paper Trading</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+    header { background: #1a1d27; border-bottom: 1px solid #2d3148;
+             padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 1.2rem; font-weight: 800; color: #7c85ff; }
+    .hdr-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .btn-sm { padding: 6px 14px; border: none; border-radius: 6px; font-size: 0.8rem;
+              font-weight: 600; cursor: pointer; background: #2d3148; color: #94a3b8;
+              transition: opacity .15s; text-decoration: none; display: inline-block; }
+    .btn-sm:hover { opacity: .85; }
+    .btn-sm.active { background: #7c85ff; color: #fff; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 26px 20px; display: grid; gap: 22px; }
+
+    .tabs { display: flex; gap: 6px; border-bottom: 1px solid #2d3148; padding-bottom: 10px; }
+    .tab { padding: 9px 18px; font-size: 0.88rem; font-weight: 700; cursor: pointer;
+           background: transparent; border: none; color: #64748b; border-radius: 7px; transition: background .15s, color .15s; }
+    .tab.active { background: #7c85ff; color: #fff; }
+    .tab:hover:not(.active) { background: #1a1d27; color: #e2e8f0; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+    .card-i { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px;
+              padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+    .card-i .emj  { font-size: 2.4rem; text-align: center; line-height: 1; padding: 6px 0; }
+    .card-i .nm   { font-size: 1rem; font-weight: 700; text-align: center; }
+    .card-i .desc { font-size: .78rem; color: #64748b; text-align: center; min-height: 32px; }
+    .card-i .meta { display: flex; justify-content: space-between; align-items: center; font-size: .78rem; color: #94a3b8; }
+
+    .rarity { display: inline-block; padding: 2px 9px; border-radius: 12px;
+              font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+    .rarity-common    { background: #2d3148; color: #94a3b8; }
+    .rarity-uncommon  { background: #14532d; color: #86efac; }
+    .rarity-rare      { background: #1e3a5f; color: #7dd3fc; }
+    .rarity-epic      { background: #3b0764; color: #d8b4fe; }
+    .rarity-legendary { background: #78350f; color: #fcd34d; }
+
+    .qty { background: #13151f; border: 1px solid #2d3148; border-radius: 5px;
+           padding: 2px 8px; font-weight: 700; color: #7c85ff; }
+    .price-cash { color: #4ade80; font-weight: 800; font-size: .95rem; }
+    .price-trade { color: #f59e0b; font-weight: 600; font-size: .82rem; }
+
+    .btn { padding: 8px 14px; border: none; border-radius: 7px; font-size: .82rem;
+           font-weight: 700; cursor: pointer; transition: opacity .15s; }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: #7c85ff; color: #fff; }
+    .btn-cash    { background: #14532d; color: #86efac; }
+    .btn-swap    { background: #78350f; color: #fcd34d; }
+    .btn-cancel  { background: #450a0a; color: #fca5a5; }
+    .btn-row { display: flex; gap: 6px; }
+    .btn-row .btn { flex: 1; }
+
+    .seller { font-size: .78rem; color: #64748b; }
+    .seller a { color: #7c85ff; text-decoration: none; }
+    .seller a:hover { text-decoration: underline; }
+
+    .empty { color: #475569; font-size: 0.9rem; padding: 40px 0; text-align: center;
+             background: #1a1d27; border: 1px dashed #2d3148; border-radius: 12px; }
+
+    h2 { font-size: 0.85rem; font-weight: 700; text-transform: uppercase;
+         letter-spacing: .08em; color: #64748b; margin-bottom: 14px; }
+
+    /* Modal */
+    .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.75);
+                z-index: 200; align-items: center; justify-content: center; }
+    .modal-bg.open { display: flex; }
+    .modal { background: #1a1d27; border: 1px solid #2d3148; border-radius: 14px;
+             padding: 28px 30px; width: 100%; max-width: 480px; max-height: 86vh; overflow-y: auto; }
+    .modal h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 8px; }
+    .modal p  { font-size: .85rem; color: #64748b; margin-bottom: 18px; }
+    .modal label { font-size: 0.78rem; color: #94a3b8; display: block; margin: 10px 0 5px; }
+    .modal input, .modal select {
+      width: 100%; background: #13151f; border: 1px solid #2d3148; border-radius: 7px;
+      color: #e2e8f0; padding: 10px 12px; font-size: 0.9rem; outline: none; margin-bottom: 6px;
+    }
+    .modal input:focus, .modal select:focus { border-color: #7c85ff; }
+    .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
+    .accept-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+    .accept-row select { flex: 1; margin: 0; }
+    .accept-row input  { width: 90px; margin: 0; }
+    .accept-row button { background: #450a0a; color: #fca5a5; border: none; border-radius: 5px;
+                         padding: 6px 10px; cursor: pointer; }
+
+    .toast { position: fixed; bottom: 24px; right: 24px;
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 9px;
+      padding: 12px 18px; max-width: 320px; font-size: 0.86rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45); opacity: 0; transform: translateY(10px);
+      transition: opacity .22s, transform .22s; pointer-events: none; z-index: 999; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.ok   { border-left: 3px solid #4ade80; }
+    .toast.err  { border-left: 3px solid #f87171; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🎒 Items Marketplace</h1>
+  <div class="hdr-right">
+    <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
+    {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
+    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/market" class="btn-sm">Markets</a>
+    <a href="/chat" class="btn-sm">💬 Chat</a>
+    <a href="/account" class="btn-sm">Account</a>
+    <button class="btn-sm" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('market')"  id="tab-market">🏪 Marketplace</button>
+    <button class="tab"        onclick="switchTab('inv')"     id="tab-inv">🎒 My Inventory</button>
+    <button class="tab"        onclick="switchTab('mine')"    id="tab-mine">📋 My Listings</button>
+  </div>
+
+  <div id="view-market"></div>
+  <div id="view-inv" style="display:none"></div>
+  <div id="view-mine" style="display:none"></div>
+
+</div>
+
+<!-- Sell modal -->
+<div class="modal-bg" id="sell-modal">
+  <div class="modal">
+    <h3 id="sm-title">List Item for Sale</h3>
+    <p>Set a cash price, accept item trades, or both.</p>
+    <label>Quantity to list</label>
+    <input type="number" id="sm-qty" min="1" value="1"/>
+    <label>Cash price (optional)</label>
+    <input type="number" id="sm-price" min="0" step="0.01" placeholder="e.g. 10.00 — leave empty for trade-only"/>
+    <label style="margin-top:14px">Accept item trades (optional)</label>
+    <div id="sm-accepts"></div>
+    <button class="btn btn-primary" style="width:100%;margin-top:6px" onclick="addAcceptRow()">+ Add accepted item</button>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeModal('sell-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitListing()">Create Listing</button>
+    </div>
+  </div>
+</div>
+
+<!-- Trade modal (offer item) -->
+<div class="modal-bg" id="trade-modal">
+  <div class="modal">
+    <h3>Pick what to offer</h3>
+    <p id="tm-summary">—</p>
+    <div id="tm-options"></div>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeModal('trade-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const ME = {{ user_id|default('null') }};
+  let allItems = [];
+  let inventory = [];
+  let listings = [];
+  let myListings = [];
+  let sellingItemId = null;
+  let acceptRows = [];
+
+  async function loadAll() {
+    const [a, b, c, d] = await Promise.all([
+      fetch('/api/items').then(r => r.json()),
+      fetch('/api/inventory').then(r => r.json()),
+      fetch('/api/listings').then(r => r.json()),
+      fetch('/api/listings/mine').then(r => r.json()),
+    ]);
+    allItems   = a;
+    inventory  = b;
+    listings   = c;
+    myListings = d;
+    renderMarket();
+    renderInventory();
+    renderMine();
+  }
+
+  function rarityBadge(r) { return `<span class="rarity rarity-${r}">${r}</span>`; }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function renderMarket() {
+    const el = document.getElementById('view-market');
+    if (!listings.length) {
+      el.innerHTML = '<div class="empty">No active listings yet. Check back soon, or list one of your items!</div>';
+      return;
+    }
+    el.innerHTML = `<h2>Active listings (${listings.length})</h2><div class="grid">` +
+      listings.map(l => {
+        const accepts = (l.accepts_items || []).map(a => {
+          const it = allItems.find(x => x.id === a.item_id);
+          return it ? `${a.quantity}× ${it.emoji} ${escapeHtml(it.name)}` : '';
+        }).filter(Boolean).join(' or ');
+        const isMine = l.seller_id === ME;
+        return `
+          <div class="card-i">
+            <div class="emj">${l.item_emoji}</div>
+            <div class="nm">${l.quantity}× ${escapeHtml(l.item_name)}</div>
+            <div class="meta">${rarityBadge(l.item_rarity)}<span class="qty">×${l.quantity}</span></div>
+            <div class="seller">Seller: <a href="/profile/${l.seller_id}">${escapeHtml(l.seller_name)}</a></div>
+            ${l.price != null ? `<div class="price-cash">💵 $${l.price.toFixed(2)}</div>` : ''}
+            ${accepts ? `<div class="price-trade">🔄 ${accepts}</div>` : ''}
+            <div class="btn-row">
+              ${isMine
+                ? `<button class="btn btn-cancel" onclick="cancelListing(${l.id})">Cancel</button>`
+                : `${l.price != null ? `<button class="btn btn-cash" onclick="buyListing(${l.id}, ${l.price})">Buy $${l.price.toFixed(2)}</button>` : ''}
+                   ${accepts ? `<button class="btn btn-swap" onclick="openTrade(${l.id})">Trade</button>` : ''}`}
+            </div>
+          </div>`;
+      }).join('') + '</div>';
+  }
+
+  function renderInventory() {
+    const el = document.getElementById('view-inv');
+    if (!inventory.length) {
+      el.innerHTML = '<div class="empty">You don\'t own any items yet. The admin can grant you items, or trade for them on the marketplace.</div>';
+      return;
+    }
+    el.innerHTML = `<h2>You own ${inventory.length} item type${inventory.length===1?'':'s'}</h2><div class="grid">` +
+      inventory.map(it => `
+        <div class="card-i">
+          <div class="emj">${it.emoji}</div>
+          <div class="nm">${escapeHtml(it.name)}</div>
+          <div class="desc">${escapeHtml(it.description || '')}</div>
+          <div class="meta">${rarityBadge(it.rarity)}<span class="qty">×${it.quantity}</span></div>
+          <button class="btn btn-primary" onclick="openSell(${it.item_id}, '${escapeHtml(it.name).replace(/'/g, "\\'")}', ${it.quantity})">List for Sale</button>
+        </div>`).join('') + '</div>';
+  }
+
+  function renderMine() {
+    const el = document.getElementById('view-mine');
+    const open = myListings.filter(l => l.status === 'OPEN');
+    const past = myListings.filter(l => l.status !== 'OPEN');
+    let html = `<h2>Open listings (${open.length})</h2>`;
+    if (!open.length) html += '<div class="empty">No active listings.</div>';
+    else html += `<div class="grid">` + open.map(l => `
+      <div class="card-i">
+        <div class="emj">${l.item_emoji}</div>
+        <div class="nm">${l.quantity}× ${escapeHtml(l.item_name)}</div>
+        ${l.price != null ? `<div class="price-cash">💵 $${l.price.toFixed(2)}</div>` : ''}
+        ${(l.accepts_items||[]).length ? `<div class="price-trade">🔄 ${l.accepts_items.length} item offer(s) accepted</div>` : ''}
+        <button class="btn btn-cancel" onclick="cancelListing(${l.id})">Cancel</button>
+      </div>`).join('') + '</div>';
+
+    if (past.length) {
+      html += `<h2 style="margin-top:24px">Past listings</h2><div class="grid">` + past.map(l => `
+        <div class="card-i" style="opacity:.55">
+          <div class="emj">${l.item_emoji}</div>
+          <div class="nm">${l.quantity}× ${escapeHtml(l.item_name)}</div>
+          <div class="meta"><span style="color:${l.status==='SOLD'?'#4ade80':'#f87171'}">${l.status}</span></div>
+        </div>`).join('') + '</div>';
+    }
+    el.innerHTML = html;
+  }
+
+  function switchTab(t) {
+    ['market','inv','mine'].forEach(k => {
+      document.getElementById('view-'+k).style.display = (k===t) ? '' : 'none';
+      document.getElementById('tab-'+k).classList.toggle('active', k===t);
+    });
+  }
+
+  // ── Listing creation ─────────────────────────────────────────────────────
+  function openSell(itemId, name, maxQty) {
+    sellingItemId = itemId;
+    document.getElementById('sm-title').textContent = `List "${name}" for Sale`;
+    document.getElementById('sm-qty').value = 1;
+    document.getElementById('sm-qty').max = maxQty;
+    document.getElementById('sm-price').value = '';
+    acceptRows = [];
+    document.getElementById('sm-accepts').innerHTML = '';
+    document.getElementById('sell-modal').classList.add('open');
+  }
+
+  function addAcceptRow() {
+    if (!allItems.length) return showToast('No items defined yet', false);
+    const idx = acceptRows.length;
+    acceptRows.push({});
+    const row = document.createElement('div');
+    row.className = 'accept-row';
+    row.innerHTML = `
+      <select id="acc-item-${idx}">${allItems.map(it => `<option value="${it.id}">${it.emoji} ${escapeHtml(it.name)}</option>`).join('')}</select>
+      <input type="number" id="acc-qty-${idx}" min="1" value="1" placeholder="Qty"/>
+      <button onclick="this.parentNode.remove()">✕</button>
+    `;
+    document.getElementById('sm-accepts').appendChild(row);
+  }
+
+  async function submitListing() {
+    const quantity = +document.getElementById('sm-qty').value;
+    const priceVal = document.getElementById('sm-price').value;
+    const price = priceVal === '' ? null : +priceVal;
+    const accepts = [];
+    document.querySelectorAll('#sm-accepts .accept-row').forEach((row, i) => {
+      const sel = row.querySelector('select');
+      const qi  = row.querySelector('input');
+      if (sel && qi && +qi.value > 0) accepts.push({ item_id: +sel.value, quantity: +qi.value });
+    });
+    const r = await fetch('/api/listings/create', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ item_id: sellingItemId, quantity, price, accepts_items: accepts }),
+    });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok);
+    if (r.ok) { closeModal('sell-modal'); loadAll(); }
+  }
+
+  async function cancelListing(id) {
+    if (!confirm('Cancel this listing? Your items will be returned.')) return;
+    const r = await fetch('/api/listings/'+id+'/cancel', { method: 'POST' });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok);
+    if (r.ok) loadAll();
+  }
+
+  async function buyListing(id, price) {
+    if (!confirm(`Buy this listing for $${price.toFixed(2)}?`)) return;
+    const r = await fetch('/api/listings/'+id+'/buy', { method: 'POST' });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok);
+    if (r.ok) loadAll();
+  }
+
+  function openTrade(listingId) {
+    const l = listings.find(x => x.id === listingId);
+    if (!l) return;
+    document.getElementById('tm-summary').textContent = `You'll receive: ${l.quantity}× ${l.item_emoji} ${l.item_name}`;
+    const optsEl = document.getElementById('tm-options');
+    optsEl.innerHTML = (l.accepts_items || []).map((a, i) => {
+      const it   = allItems.find(x => x.id === a.item_id);
+      const own  = inventory.find(x => x.item_id === a.item_id);
+      const have = own ? own.quantity : 0;
+      const can  = have >= a.quantity;
+      if (!it) return '';
+      return `
+        <div style="background:#13151f;border:1px solid #2d3148;border-radius:8px;padding:12px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div><span style="font-size:1.4rem">${it.emoji}</span> <b>${a.quantity}× ${escapeHtml(it.name)}</b></div>
+            <small style="color:${can?'#86efac':'#f87171'}">You own: ${have}</small>
+          </div>
+          <button class="btn ${can?'btn-swap':'btn-cancel'}" style="width:100%" ${can?'':'disabled'}
+            onclick="${can ? `confirmTrade(${listingId}, ${i})` : ''}">${can ? 'Offer this trade' : 'Not enough'}</button>
+        </div>`;
+    }).join('');
+    document.getElementById('trade-modal').classList.add('open');
+  }
+
+  async function confirmTrade(listingId, idx) {
+    const r = await fetch('/api/listings/'+listingId+'/trade', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ offer_index: idx }),
+    });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok);
+    if (r.ok) { closeModal('trade-modal'); loadAll(); }
+  }
+
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+  document.querySelectorAll('.modal-bg').forEach(bg => {
+    bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
+  });
+
+  let toastTimer;
+  function showToast(msg, ok) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + (ok ? 'ok' : 'err');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = 'toast'; }, 3500);
+  }
+
+  async function logout() { await fetch('/api/logout', {method:'POST'}); window.location.href='/login'; }
+
+  loadAll();
+  setInterval(loadAll, 8000);
+</script>
+</body>
+</html>
