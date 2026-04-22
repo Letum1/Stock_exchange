@@ -79,7 +79,11 @@
 <header>
   <h1>📈 Paper Trading</h1>
   <div class="hdr-right">
-    <a href="/"><button class="btn-sm">← Back to Trading</button></a>
+    <a href="/"><button class="btn-sm">← Trading</button></a>
+    <a href="/market"><button class="btn-sm">Markets</button></a>
+    <a href="/items"><button class="btn-sm">🎒 Items</button></a>
+    <a href="/chat"><button class="btn-sm">💬 Chat</button></a>
+    <a href="/profile/{{ user_id }}"><button class="btn-sm">Profile</button></a>
     {% if is_admin %}
     <a href="/admin"><button class="btn-sm" style="background:#78350f;color:#fcd34d">Admin Panel</button></a>
     {% endif %}

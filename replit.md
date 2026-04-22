@@ -37,11 +37,24 @@ A standalone Python Flask app at `paper-trading/`.
 - **Port**: 5000
 - **Workflow**: `Paper Trading` → `cd paper-trading && python app.py`
 
-### API Endpoints
-- `GET /` — HTML frontend
-- `GET /api/portfolio` — portfolio snapshot (cash, holdings, P&L)
-- `GET /api/quote/<ticker>` — fetch live price via yfinance
-- `POST /api/buy` — buy shares `{ ticker, shares }`
-- `POST /api/sell` — sell shares `{ ticker, shares }`
-- `GET /api/trades` — last 50 trades
-- `POST /api/reset` — reset to $100,000
+### Pages
+- `/` — portfolio dashboard (buy/sell with confirm modal, ticker autocomplete)
+- `/market` — live market with watchlist + chart
+- `/items` — items marketplace (browse listings, manage inventory, my listings)
+- `/chat` — DM chat with sidebar of conversations, polling every 4s
+- `/profile/<id>` — public profile (stats, badges, public inventory)
+- `/account` — change username & password
+- `/admin` — admin panel (users, balance, trades, items catalog, grant items)
+- `/login` `/register` — auth (register requires anti-bot math captcha)
+
+### Backend modules in `app.py`
+- Auth (with math captcha for register), portfolio + trading, market data, ticker search
+- Items: catalog, inventory, listings (cash and/or item-for-item swaps), trade history
+- Messages: 1-to-1 DMs with conversations summary + unread counts
+- Profile: public stats endpoint
+- Admin: user management, item create/delete/grant, trading activity feed
+
+### Data model (SQLite at `paper-trading/portfolio.db`)
+`users`, `portfolios`, `holdings`, `trades`, `items`, `user_items`,
+`item_listings` (with optional cash price + JSON `accepts_items` for swaps),
+`item_trades`, `messages`. New tables auto-create on startup.

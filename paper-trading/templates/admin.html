@@ -128,6 +128,9 @@
     <span class="tag">ADMIN</span>
     <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
     <a href="/"><button class="btn-sm btn-go">Trading App</button></a>
+    <a href="/items"><button class="btn-sm">🎒 Items</button></a>
+    <a href="/chat"><button class="btn-sm">💬 Chat</button></a>
+    <a href="/profile/{{ user_id }}"><button class="btn-sm">Profile</button></a>
     <button class="btn-sm" onclick="logout()">Logout</button>
   </div>
 </header>
@@ -188,6 +191,40 @@
         <tr><td colspan="7" class="empty">Loading…</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <!-- Items Management -->
+  <div class="card">
+    <h2>🎒 Items Catalog</h2>
+    <div class="filter-bar" style="margin-bottom:14px">
+      <input type="text" id="new-item-name"  placeholder="Item name (e.g. Golden Sword)" style="flex:2"/>
+      <input type="text" id="new-item-emoji" placeholder="Emoji" style="width:80px" maxlength="4"/>
+      <select id="new-item-rarity" style="background:#13151f;border:1px solid #2d3148;color:#e2e8f0;padding:8px 12px;border-radius:7px;font-size:.88rem">
+        <option value="common">Common</option>
+        <option value="uncommon">Uncommon</option>
+        <option value="rare">Rare</option>
+        <option value="epic">Epic</option>
+        <option value="legendary">Legendary</option>
+      </select>
+      <button class="btn-sm btn-add" onclick="createItem()">+ Create Item</button>
+    </div>
+    <input type="text" id="new-item-desc" placeholder="Description (optional)" style="width:100%;margin-bottom:14px"/>
+    <table>
+      <thead><tr><th>ID</th><th>Item</th><th>Rarity</th><th>Description</th><th>Actions</th></tr></thead>
+      <tbody id="items-body"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Grant Item -->
+  <div class="card">
+    <h2>🎁 Grant Items to User</h2>
+    <div class="filter-bar">
+      <input type="number" id="grant-uid" placeholder="User ID" style="width:120px"/>
+      <select id="grant-item" style="background:#13151f;border:1px solid #2d3148;color:#e2e8f0;padding:8px 12px;border-radius:7px;font-size:.88rem;flex:1"></select>
+      <input type="number" id="grant-qty" placeholder="Qty (negative to remove)" style="width:200px" value="1"/>
+      <button class="btn-sm btn-add" onclick="grantItem()">Grant</button>
+    </div>
+    <p style="color:#64748b;font-size:.78rem;margin-top:6px">Tip: positive numbers add items, negative numbers remove them.</p>
   </div>
 
 </div>
@@ -451,8 +488,91 @@
     toastTimer = setTimeout(() => { el.className = 'toast'; }, 3500);
   }
 
+  // ── Items management ────────────────────────────────────────────────────
+  let allItems = [];
+  async function loadItems() {
+    const r = await fetch('/api/items');
+    allItems = await r.json();
+
+    const tbody = document.getElementById('items-body');
+    if (!allItems.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">No items yet — create one above.</td></tr>';
+    } else {
+      tbody.innerHTML = allItems.map(it => `
+        <tr>
+          <td style="color:#475569">#${it.id}</td>
+          <td><span style="font-size:1.2rem">${it.emoji}</span> <b>${escapeHtml(it.name)}</b></td>
+          <td><span class="rarity rarity-${it.rarity}">${it.rarity}</span></td>
+          <td style="color:#94a3b8;font-size:.82rem">${escapeHtml(it.description || '')}</td>
+          <td><button class="btn-delete" onclick="deleteItem(${it.id}, '${escapeHtml(it.name).replace(/'/g, "\\'")}')">Delete</button></td>
+        </tr>
+      `).join('');
+    }
+
+    const sel = document.getElementById('grant-item');
+    sel.innerHTML = allItems.length
+      ? allItems.map(it => `<option value="${it.id}">${it.emoji} ${escapeHtml(it.name)}</option>`).join('')
+      : '<option value="">— No items —</option>';
+  }
+
+  async function createItem() {
+    const name   = document.getElementById('new-item-name').value.trim();
+    const emoji  = document.getElementById('new-item-emoji').value.trim() || '📦';
+    const rarity = document.getElementById('new-item-rarity').value;
+    const description = document.getElementById('new-item-desc').value.trim();
+    if (!name) return showToast('Enter an item name', false);
+    const r = await fetch('/api/admin/items', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, emoji, rarity, description }),
+    });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok);
+    if (r.ok) {
+      document.getElementById('new-item-name').value = '';
+      document.getElementById('new-item-emoji').value = '';
+      document.getElementById('new-item-desc').value = '';
+      loadItems();
+    }
+  }
+
+  async function deleteItem(id, name) {
+    if (!confirm(`Delete "${name}"? All inventories and listings of this item will be wiped.`)) return;
+    const r = await fetch('/api/admin/items/' + id, { method: 'DELETE' });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok);
+    if (r.ok) loadItems();
+  }
+
+  async function grantItem() {
+    const user_id  = +document.getElementById('grant-uid').value;
+    const item_id  = +document.getElementById('grant-item').value;
+    const quantity = +document.getElementById('grant-qty').value;
+    if (!user_id || !item_id || !quantity) return showToast('Fill in all fields', false);
+    const r = await fetch('/api/admin/items/grant', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ user_id, item_id, quantity }),
+    });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
   loadUsers();
   loadTrades();
+  loadItems();
 </script>
+
+<style>
+  .rarity { display: inline-block; padding: 2px 9px; border-radius: 12px;
+            font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .rarity-common    { background: #2d3148; color: #94a3b8; }
+  .rarity-uncommon  { background: #14532d; color: #86efac; }
+  .rarity-rare      { background: #1e3a5f; color: #7dd3fc; }
+  .rarity-epic      { background: #3b0764; color: #d8b4fe; }
+  .rarity-legendary { background: #78350f; color: #fcd34d; }
+</style>
 </body>
 </html>
