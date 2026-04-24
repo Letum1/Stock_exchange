@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="/static/responsive.css"/>
+  <title>BON Mine — Paper Trading</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0;
+           min-height: 100vh; overflow-x: hidden; }
+
+    header {
+      background: #1a1d27; border-bottom: 1px solid #2d3148;
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 10px;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 800; color: #fcd34d; }
+    .hdr-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .btn-sm { padding: 6px 14px; border: none; border-radius: 6px; font-size: 0.8rem;
+              font-weight: 600; cursor: pointer; background: #2d3148; color: #94a3b8;
+              transition: opacity .15s; text-decoration: none; display: inline-block; }
+    .btn-sm:hover { opacity: .85; }
+
+    .wrap {
+      max-width: 1200px; margin: 24px auto; padding: 0 16px;
+      display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 22px;
+    }
+    @media (max-width: 860px) {
+      .wrap { grid-template-columns: minmax(0, 1fr); }
+    }
+
+    .panel {
+      background: #1a1d27; border: 1px solid #2d3148; border-radius: 14px;
+      padding: 22px;
+    }
+    .panel h2 {
+      font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: #64748b; margin-bottom: 14px;
+    }
+
+    .world-head {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px; margin-bottom: 14px;
+    }
+    .world-name { font-size: 1.4rem; font-weight: 800; color: #f1f5f9; }
+    .layer-pill {
+      padding: 6px 14px; border-radius: 24px; font-size: .85rem; font-weight: 700;
+      background: #2d3148; color: #fcd34d;
+    }
+
+    .progress-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .progress-bar {
+      flex: 1; height: 10px; background: #13151f; border-radius: 6px; overflow: hidden;
+      border: 1px solid #2d3148;
+    }
+    .progress-fill {
+      height: 100%; background: linear-gradient(90deg, #fcd34d, #f59e0b);
+      transition: width .25s; border-radius: 6px;
+    }
+    .progress-label { font-size: .8rem; color: #94a3b8; white-space: nowrap; min-width: 90px; text-align: right; }
+
+    .grid-shell {
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px; background: #13151f; border-radius: 12px; border: 1px solid #2d3148;
+    }
+    .grid {
+      display: grid; gap: 4px;
+      width: 100%; max-width: 540px; aspect-ratio: 1 / 1;
+    }
+    .block {
+      border-radius: 6px; cursor: pointer; transition: transform .08s, opacity .25s, background .12s;
+      position: relative; box-shadow: inset 0 -2px 0 rgba(0,0,0,.25), inset 0 2px 0 rgba(255,255,255,.08);
+      border: 1px solid rgba(0,0,0,.3);
+    }
+    .block:hover { transform: scale(1.04); filter: brightness(1.15); }
+    .block:active { transform: scale(.92); }
+    .block.mined {
+      cursor: default; opacity: .15; background: #0f1117 !important;
+      box-shadow: inset 0 0 0 1px #1e2130; border-color: transparent;
+      pointer-events: none;
+    }
+    .block.flash {
+      animation: flash .3s ease-out;
+    }
+    @keyframes flash {
+      0%   { box-shadow: 0 0 0 4px #fcd34d, inset 0 -2px 0 rgba(0,0,0,.25); }
+      100% { box-shadow: inset 0 -2px 0 rgba(0,0,0,.25); }
+    }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+    .stat {
+      background: #13151f; border: 1px solid #2d3148; border-radius: 9px;
+      padding: 10px 12px;
+    }
+    .stat .lbl { font-size: .68rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+    .stat .val { font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-top: 2px; }
+
+    .members { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+    .member {
+      display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+      background: #13151f; border: 1px solid #2d3148; border-radius: 8px;
+      font-size: .85rem;
+    }
+    .member .dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; flex-shrink: 0; }
+    .member a { color: #e2e8f0; text-decoration: none; font-weight: 600; }
+    .member a:hover { color: #7c85ff; }
+    .member .you { font-size: .68rem; color: #4ade80; margin-left: auto; }
+
+    .worlds-list { display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; }
+    .world-card {
+      background: #13151f; border: 1px solid #2d3148; border-radius: 9px;
+      padding: 10px 12px; cursor: pointer; display: flex; align-items: center; gap: 10px;
+      transition: border-color .12s, background .12s;
+    }
+    .world-card:hover { border-color: #7c85ff; background: #1e2130; }
+    .world-card.active { border-color: #fcd34d; }
+    .world-swatch { width: 32px; height: 32px; border-radius: 6px; flex-shrink: 0;
+                    box-shadow: inset 0 -2px 0 rgba(0,0,0,.25), inset 0 2px 0 rgba(255,255,255,.08); }
+    .world-info { flex: 1; min-width: 0; }
+    .world-info .nm { font-size: .85rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .world-info .meta { font-size: .7rem; color: #64748b; }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 9px;
+      padding: 12px 18px; max-width: 300px; font-size: 0.86rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      opacity: 0; transform: translateY(10px);
+      transition: opacity .22s, transform .22s; pointer-events: none; z-index: 999;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.ok   { border-left: 3px solid #4ade80; }
+    .toast.err  { border-left: 3px solid #f87171; }
+    .toast.info { border-left: 3px solid #fcd34d; }
+
+    .help { font-size: .78rem; color: #64748b; margin-top: 10px; line-height: 1.5; }
+    .small-btn { padding: 5px 10px; font-size: .75rem; border: none; border-radius: 6px;
+                 background: #2d3148; color: #94a3b8; cursor: pointer; }
+    .small-btn:hover { background: #3a3f5c; color: #e2e8f0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⛏️ BON Mine</h1>
+  <div class="hdr-right">
+    <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
+    {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
+    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/items" class="btn-sm">🎒 Items</a>
+    <a href="/chat" class="btn-sm">💬 Chat</a>
+    <a href="/account" class="btn-sm">Account</a>
+    <button class="btn-sm" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- Mine board -->
+  <div class="panel">
+    <div class="world-head">
+      <div>
+        <div class="world-name" id="world-name">Loading…</div>
+        <div style="font-size:.78rem;color:#64748b;margin-top:2px" id="world-owner"></div>
+      </div>
+      <div class="layer-pill" id="layer-pill">Layer —</div>
+    </div>
+
+    <div class="progress-row">
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+      <div class="progress-label" id="progress-label">— / —</div>
+    </div>
+
+    <div class="grid-shell">
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat"><div class="lbl">Layer</div><div class="val" id="st-layer">—</div></div>
+      <div class="stat"><div class="lbl">Mined</div><div class="val" id="st-mined">—</div></div>
+      <div class="stat"><div class="lbl">Miners online</div><div class="val" id="st-members">—</div></div>
+    </div>
+
+    <div class="help">
+      Click any block to mine it. When the entire layer is cleared, a new layer appears with a different colour and you go deeper.
+      Other players in the same world will see your progress in real time, and you'll see theirs.
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="panel">
+    <h2>Active Miners</h2>
+    <div class="members" id="members"></div>
+
+    <div style="margin-top:18px;display:flex;gap:8px">
+      <button class="small-btn" onclick="goToMyWorld()">🏠 My World</button>
+      <button class="small-btn" id="leave-btn" onclick="leaveWorld()" style="display:none">Leave</button>
+    </div>
+
+    <h2 style="margin-top:24px">Other Worlds</h2>
+    <div class="worlds-list" id="worlds-list">
+      <div style="color:#64748b;font-size:.83rem">Loading…</div>
+    </div>
+    <div class="help">Tap any world to join other miners in real time.</div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const ME = {{ user_id }};
+  let state = null;
+  let pollTimer = null;
+  let myWorldId = null;
+
+  function showToast(msg, kind) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + (kind || 'ok');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => { el.className = 'toast'; }, 2500);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderState(s, opts) {
+    opts = opts || {};
+    state = s;
+    document.getElementById('world-name').textContent = s.name;
+    document.getElementById('world-owner').textContent =
+      s.owner ? ('Owner: ' + s.owner.username + (s.owner.id === ME ? ' (you)' : '')) : '';
+    document.getElementById('layer-pill').textContent = `Layer ${s.layer + 1} · ${s.layer_name}`;
+    document.getElementById('layer-pill').style.background = s.color;
+    document.getElementById('layer-pill').style.color = '#0f1117';
+    document.getElementById('st-layer').textContent = (s.layer + 1) + ' (' + s.layer_name + ')';
+    document.getElementById('st-mined').textContent = s.blocks_mined + ' / ' + s.blocks_total;
+    document.getElementById('st-members').textContent = s.members.length;
+
+    const pct = s.blocks_total ? (s.blocks_mined / s.blocks_total * 100) : 0;
+    document.getElementById('progress-fill').style.width = pct + '%';
+    document.getElementById('progress-label').textContent = s.blocks_remaining + ' left';
+
+    document.getElementById('leave-btn').style.display =
+      (s.owner && s.owner.id === ME) ? 'none' : 'inline-block';
+
+    // Render grid
+    const grid = document.getElementById('grid');
+    grid.style.gridTemplateColumns = `repeat(${s.width}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${s.height}, 1fr)`;
+
+    // Build a map of mined blocks for quick check
+    const minedSet = new Set(s.blocks.filter(b => b.mined).map(b => b.x + ',' + b.y));
+
+    // Re-use existing block elements when possible (preserve animation); rebuild only on layer change or size change.
+    const needsRebuild = grid.dataset.gen !== String(s.generation) || grid.children.length !== s.width * s.height;
+    if (needsRebuild) {
+      grid.dataset.gen = String(s.generation);
+      grid.innerHTML = '';
+      for (let y = 0; y < s.height; y++) {
+        for (let x = 0; x < s.width; x++) {
+          const cell = document.createElement('div');
+          cell.className = 'block';
+          cell.style.background = s.color;
+          cell.dataset.x = x; cell.dataset.y = y;
+          cell.addEventListener('click', () => mineBlock(x, y, cell));
+          grid.appendChild(cell);
+        }
+      }
+    }
+
+    // Update mined state on every render
+    for (const cell of grid.children) {
+      const x = parseInt(cell.dataset.x, 10), y = parseInt(cell.dataset.y, 10);
+      const isMined = minedSet.has(x + ',' + y);
+      cell.classList.toggle('mined', isMined);
+      if (!isMined) cell.style.background = s.color;
+    }
+
+    // Members list
+    const mEl = document.getElementById('members');
+    mEl.innerHTML = s.members.map(m => `
+      <div class="member">
+        <span class="dot"></span>
+        <a href="/profile/${m.id}">${escapeHtml(m.username)}</a>
+        ${m.id === ME ? '<span class="you">YOU</span>' : ''}
+      </div>
+    `).join('') || '<div style="color:#64748b;font-size:.83rem">Empty</div>';
+  }
+
+  async function loadState(worldId) {
+    const url = worldId ? ('/api/mining/world/' + worldId + '?join=1') : '/api/mining/my-world';
+    const r = await fetch(url);
+    if (!r.ok) { showToast('Failed to load world', 'err'); return; }
+    const s = await r.json();
+    renderState(s);
+    if (worldId == null && myWorldId == null) myWorldId = s.id;
+  }
+
+  async function mineBlock(x, y, cell) {
+    if (!state || cell.classList.contains('mined')) return;
+    cell.classList.add('mined', 'flash');
+    const r = await fetch('/api/mining/mine', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ world_id: state.id, x, y }),
+    });
+    const d = await r.json();
+    if (!r.ok) { showToast(d.error || 'Could not mine', 'err'); }
+    if (d.layer_cleared) {
+      showToast('🎉 Layer cleared! Going deeper…', 'info');
+    }
+    if (d.state) renderState(d.state);
+  }
+
+  async function loadWorlds() {
+    const r = await fetch('/api/mining/worlds');
+    if (!r.ok) return;
+    const list = await r.json();
+    const el = document.getElementById('worlds-list');
+    if (!list.length) {
+      el.innerHTML = '<div style="color:#64748b;font-size:.83rem">No other worlds yet.</div>';
+      return;
+    }
+    el.innerHTML = list.map(w => `
+      <div class="world-card ${state && w.id === state.id ? 'active' : ''}" onclick="loadState(${w.id})">
+        <div class="world-swatch" style="background:${w.color}"></div>
+        <div class="world-info">
+          <div class="nm">${escapeHtml(w.name)}</div>
+          <div class="meta">Layer ${w.layer + 1} · ${escapeHtml(w.layer_name)} · ${w.members} miner${w.members === 1 ? '' : 's'}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function leaveWorld() {
+    if (!state || !state.id) return;
+    const r = await fetch('/api/mining/leave', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ world_id: state.id }),
+    });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok ? 'ok' : 'err');
+    if (r.ok) goToMyWorld();
+  }
+
+  function goToMyWorld() {
+    loadState(null);
+  }
+
+  async function logout() { await fetch('/api/logout', {method:'POST'}); window.location.href='/login'; }
+
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      if (state && state.id) {
+        const r = await fetch('/api/mining/world/' + state.id);
+        if (r.ok) renderState(await r.json());
+      }
+      loadWorlds();
+    }, 2000);
+  }
+
+  (async () => {
+    await loadState(null);
+    await loadWorlds();
+    startPolling();
+  })();
+</script>
+</body>
+</html>

@@ -144,11 +144,65 @@ def init_db():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS public_messages (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id  INTEGER NOT NULL REFERENCES users(id),
+                content    TEXT NOT NULL,
+                timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS public_mutes (
+                user_id    INTEGER PRIMARY KEY REFERENCES users(id),
+                muted_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                muted_by   INTEGER REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS mining_worlds (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id    INTEGER NOT NULL REFERENCES users(id),
+                name        TEXT NOT NULL,
+                width       INTEGER NOT NULL DEFAULT 10,
+                height      INTEGER NOT NULL DEFAULT 10,
+                layer       INTEGER NOT NULL DEFAULT 0,
+                generation  INTEGER NOT NULL DEFAULT 0,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS mining_blocks (
+                world_id    INTEGER NOT NULL REFERENCES mining_worlds(id),
+                generation  INTEGER NOT NULL,
+                x           INTEGER NOT NULL,
+                y           INTEGER NOT NULL,
+                mined_by    INTEGER REFERENCES users(id),
+                mined_at    DATETIME,
+                PRIMARY KEY (world_id, generation, x, y)
+            );
+
+            CREATE TABLE IF NOT EXISTS mining_world_members (
+                world_id    INTEGER NOT NULL REFERENCES mining_worlds(id),
+                user_id     INTEGER NOT NULL REFERENCES users(id),
+                joined_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (world_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS mining_user_stats (
+                user_id        INTEGER PRIMARY KEY REFERENCES users(id),
+                blocks_mined   INTEGER NOT NULL DEFAULT 0,
+                layers_cleared INTEGER NOT NULL DEFAULT 0
+            );
+
             CREATE INDEX IF NOT EXISTS idx_msg_pair ON messages(sender_id, recipient_id, id);
             CREATE INDEX IF NOT EXISTS idx_listings_status ON item_listings(status);
             CREATE INDEX IF NOT EXISTS idx_trades_status ON trade_sessions(status);
             CREATE INDEX IF NOT EXISTS idx_offers_trade ON trade_offers(trade_id);
+            CREATE INDEX IF NOT EXISTS idx_pubmsg_id ON public_messages(id);
+            CREATE INDEX IF NOT EXISTS idx_blocks_world ON mining_blocks(world_id, generation);
         """)
+        # Best-effort schema migrations on existing DBs
+        try:
+            db.execute("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
         db.commit()
 
 
@@ -1149,7 +1203,7 @@ def send_message():
 def api_profile(user_id):
     db   = get_db()
     user = db.execute(
-        "SELECT id, username, is_admin, is_banned, created FROM users WHERE id = ?",
+        "SELECT id, username, is_admin, is_banned, created, COALESCE(bio, '') AS bio FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
     if not user:
@@ -1176,11 +1230,162 @@ def api_profile(user_id):
         "is_admin": bool(user["is_admin"]),
         "is_banned": bool(user["is_banned"]),
         "created":  user["created"],
+        "bio":      user["bio"] or "",
         "trade_count":      trade_count,
         "item_trade_count": item_trade_count,
         "item_count":       item_count,
         "holdings_count":   holdings_count,
     })
+
+
+@app.route("/api/account/bio", methods=["POST"])
+@login_required
+def update_bio():
+    uid = current_user_id()
+    data = request.get_json() or {}
+    bio = (data.get("bio") or "").strip()
+    if len(bio) > 500:
+        return jsonify({"error": "Bio must be 500 characters or fewer"}), 400
+    db = get_db()
+    db.execute("UPDATE users SET bio = ? WHERE id = ?", (bio, uid))
+    db.commit()
+    return jsonify({"message": "Bio saved", "bio": bio})
+
+
+@app.route("/api/account/me")
+@login_required
+def my_account():
+    db = get_db()
+    row = db.execute(
+        "SELECT id, username, COALESCE(bio, '') AS bio FROM users WHERE id = ?",
+        (current_user_id(),),
+    ).fetchone()
+    return jsonify(dict(row))
+
+
+# ── Direct message: delete ────────────────────────────────────────────────────
+
+@app.route("/api/messages/<int:msg_id>", methods=["DELETE"])
+@login_required
+def delete_dm(msg_id):
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute(
+        "SELECT id, sender_id FROM messages WHERE id = ?", (msg_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Message not found"}), 404
+    if row["sender_id"] != uid and not session.get("is_admin"):
+        return jsonify({"error": "Not allowed"}), 403
+    db.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
+    db.commit()
+    return jsonify({"message": "Deleted"})
+
+
+# ── Public chat ──────────────────────────────────────────────────────────────
+
+PUBLIC_MSG_LIMIT = 100
+
+
+def _is_muted(db, uid):
+    row = db.execute("SELECT user_id FROM public_mutes WHERE user_id = ?", (uid,)).fetchone()
+    return row is not None
+
+
+@app.route("/api/public/messages")
+@login_required
+def public_messages_list():
+    db = get_db()
+    rows = db.execute(
+        """SELECT m.id, m.sender_id, m.content, m.timestamp, u.username, u.is_admin
+           FROM public_messages m
+           JOIN users u ON u.id = m.sender_id
+           ORDER BY m.id DESC LIMIT ?""",
+        (PUBLIC_MSG_LIMIT,),
+    ).fetchall()
+    rows = list(reversed(rows))
+    out = [{
+        "id": r["id"], "sender_id": r["sender_id"], "username": r["username"],
+        "is_admin": bool(r["is_admin"]),
+        "content": r["content"], "timestamp": r["timestamp"],
+    } for r in rows]
+    muted = _is_muted(db, current_user_id())
+    return jsonify({"messages": out, "muted": muted})
+
+
+@app.route("/api/public/send", methods=["POST"])
+@login_required
+def public_send():
+    uid = current_user_id()
+    db = get_db()
+    if _is_muted(db, uid):
+        return jsonify({"error": "You are muted from public chat"}), 403
+    data = request.get_json() or {}
+    content = (data.get("content") or "").strip()
+    if not content:
+        return jsonify({"error": "Message cannot be empty"}), 400
+    if len(content) > 500:
+        return jsonify({"error": "Message too long (max 500)"}), 400
+    db.execute(
+        "INSERT INTO public_messages (sender_id, content) VALUES (?, ?)", (uid, content)
+    )
+    db.commit()
+    return jsonify({"message": "Sent"})
+
+
+@app.route("/api/public/<int:msg_id>", methods=["DELETE"])
+@login_required
+def public_delete(msg_id):
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute(
+        "SELECT id, sender_id FROM public_messages WHERE id = ?", (msg_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Message not found"}), 404
+    if row["sender_id"] != uid and not session.get("is_admin"):
+        return jsonify({"error": "Not allowed"}), 403
+    db.execute("DELETE FROM public_messages WHERE id = ?", (msg_id,))
+    db.commit()
+    return jsonify({"message": "Deleted"})
+
+
+@app.route("/api/admin/public/mute", methods=["POST"])
+@admin_required
+def admin_mute():
+    data = request.get_json() or {}
+    try:
+        user_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid user"}), 400
+    mute = bool(data.get("muted"))
+    db = get_db()
+    row = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "User not found"}), 404
+    if row["is_admin"] and mute:
+        return jsonify({"error": "Cannot mute an admin"}), 400
+    if mute:
+        db.execute(
+            "INSERT OR REPLACE INTO public_mutes (user_id, muted_by) VALUES (?, ?)",
+            (user_id, current_user_id()),
+        )
+    else:
+        db.execute("DELETE FROM public_mutes WHERE user_id = ?", (user_id,))
+    db.commit()
+    return jsonify({"message": "Muted" if mute else "Unmuted"})
+
+
+@app.route("/api/admin/public/mutes")
+@admin_required
+def admin_mutes_list():
+    db = get_db()
+    rows = db.execute(
+        """SELECT u.id, u.username, m.muted_at
+           FROM public_mutes m JOIN users u ON u.id = m.user_id
+           ORDER BY m.muted_at DESC"""
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
 
 
 # ── Admin API ─────────────────────────────────────────────────────────────────
@@ -1365,6 +1570,35 @@ def admin_clear_assets():
     db.execute("DELETE FROM holdings WHERE user_id = ?", (user_id,))
     db.commit()
     return jsonify({"message": "All holdings cleared"})
+
+
+@app.route("/api/admin/grant-admin", methods=["POST"])
+@admin_required
+def admin_grant_admin():
+    data = request.get_json() or {}
+    try:
+        user_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid user"}), 400
+    make_admin = 1 if data.get("admin") else 0
+
+    db = get_db()
+    row = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "User not found"}), 404
+    if user_id == current_user_id() and not make_admin:
+        # Safety: don't let an admin demote themselves if they are the last admin
+        admin_count = db.execute(
+            "SELECT COUNT(*) AS n FROM users WHERE is_admin = 1"
+        ).fetchone()["n"]
+        if admin_count <= 1:
+            return jsonify({"error": "Cannot remove the last admin"}), 400
+
+    db.execute("UPDATE users SET is_admin = ? WHERE id = ?", (make_admin, user_id))
+    db.commit()
+    if user_id == current_user_id():
+        session["is_admin"] = bool(make_admin)
+    return jsonify({"message": ("Granted admin" if make_admin else "Revoked admin")})
 
 
 @app.route("/api/admin/ban", methods=["POST"])
@@ -1892,6 +2126,258 @@ def trade_cancel(trade_id):
     return jsonify({"message": "Trade cancelled, items returned"})
 
 
+# ── Mining game (BON) ────────────────────────────────────────────────────────
+
+# Layer color palette — cycled when player goes deeper.
+LAYER_COLORS = [
+    {"name": "Stone",   "color": "#6b7280"},
+    {"name": "Dirt",    "color": "#92400e"},
+    {"name": "Coal",    "color": "#1f2937"},
+    {"name": "Copper",  "color": "#c2410c"},
+    {"name": "Iron",    "color": "#cbd5e1"},
+    {"name": "Gold",    "color": "#fbbf24"},
+    {"name": "Emerald", "color": "#10b981"},
+    {"name": "Diamond", "color": "#67e8f9"},
+    {"name": "Ruby",    "color": "#ef4444"},
+    {"name": "Obsidian","color": "#0f0820"},
+]
+
+
+def _layer_info(layer):
+    return LAYER_COLORS[layer % len(LAYER_COLORS)]
+
+
+def _generate_blocks(db, world_id, generation, width, height):
+    rows = [(world_id, generation, x, y) for x in range(width) for y in range(height)]
+    db.executemany(
+        "INSERT OR IGNORE INTO mining_blocks (world_id, generation, x, y) VALUES (?, ?, ?, ?)",
+        rows,
+    )
+
+
+def _ensure_my_world(db, uid):
+    """Make sure the user has at least one world; auto-create their personal one."""
+    row = db.execute(
+        "SELECT id FROM mining_worlds WHERE owner_id = ? ORDER BY id LIMIT 1", (uid,)
+    ).fetchone()
+    if row:
+        return row["id"]
+    user = db.execute("SELECT username FROM users WHERE id = ?", (uid,)).fetchone()
+    name = f"{user['username'] if user else 'Player'}'s World"
+    cur = db.execute(
+        "INSERT INTO mining_worlds (owner_id, name, width, height, layer, generation) VALUES (?, ?, 10, 10, 0, 0)",
+        (uid, name),
+    )
+    world_id = cur.lastrowid
+    db.execute(
+        "INSERT OR IGNORE INTO mining_world_members (world_id, user_id) VALUES (?, ?)",
+        (world_id, uid),
+    )
+    _generate_blocks(db, world_id, 0, 10, 10)
+    db.commit()
+    return world_id
+
+
+def _world_state(db, world_id):
+    w = db.execute("SELECT * FROM mining_worlds WHERE id = ?", (world_id,)).fetchone()
+    if not w:
+        return None
+    blocks = db.execute(
+        """SELECT x, y, mined_by, mined_at FROM mining_blocks
+           WHERE world_id = ? AND generation = ?""",
+        (world_id, w["generation"]),
+    ).fetchall()
+    members = db.execute(
+        """SELECT u.id, u.username FROM mining_world_members m
+           JOIN users u ON u.id = m.user_id
+           WHERE m.world_id = ? ORDER BY m.joined_at""",
+        (world_id,),
+    ).fetchall()
+    owner = db.execute(
+        "SELECT id, username FROM users WHERE id = ?", (w["owner_id"],)
+    ).fetchone()
+    info = _layer_info(w["layer"])
+    total = w["width"] * w["height"]
+    mined_count = sum(1 for b in blocks if b["mined_by"])
+    return {
+        "id": w["id"],
+        "name": w["name"],
+        "owner": {"id": owner["id"], "username": owner["username"]} if owner else None,
+        "width": w["width"],
+        "height": w["height"],
+        "layer": w["layer"],
+        "generation": w["generation"],
+        "layer_name": info["name"],
+        "color": info["color"],
+        "blocks_total": total,
+        "blocks_mined": mined_count,
+        "blocks_remaining": total - mined_count,
+        "blocks": [
+            {"x": b["x"], "y": b["y"], "mined": bool(b["mined_by"])}
+            for b in blocks
+        ],
+        "members": [{"id": m["id"], "username": m["username"]} for m in members],
+    }
+
+
+@app.route("/mine")
+@login_required
+def mine_page():
+    return render_template(
+        "mine.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
+    )
+
+
+@app.route("/api/mining/my-world")
+@login_required
+def mining_my_world():
+    uid = current_user_id()
+    db = get_db()
+    world_id = _ensure_my_world(db, uid)
+    return jsonify(_world_state(db, world_id))
+
+
+@app.route("/api/mining/world/<int:world_id>")
+@login_required
+def mining_world_get(world_id):
+    db = get_db()
+    state = _world_state(db, world_id)
+    if not state:
+        return jsonify({"error": "World not found"}), 404
+    # auto-join if requested via ?join=1
+    if request.args.get("join") == "1":
+        uid = current_user_id()
+        db.execute(
+            "INSERT OR IGNORE INTO mining_world_members (world_id, user_id) VALUES (?, ?)",
+            (world_id, uid),
+        )
+        db.commit()
+        state = _world_state(db, world_id)
+    return jsonify(state)
+
+
+@app.route("/api/mining/worlds")
+@login_required
+def mining_worlds_list():
+    """All worlds the user can join (public list)."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT w.id, w.name, w.layer, w.width, w.height, u.username AS owner_username,
+                  (SELECT COUNT(*) FROM mining_world_members mm WHERE mm.world_id = w.id) AS members
+           FROM mining_worlds w JOIN users u ON u.id = w.owner_id
+           ORDER BY members DESC, w.id DESC LIMIT 50"""
+    ).fetchall()
+    out = []
+    for r in rows:
+        info = _layer_info(r["layer"])
+        out.append({
+            "id": r["id"], "name": r["name"], "layer": r["layer"],
+            "layer_name": info["name"], "color": info["color"],
+            "owner_username": r["owner_username"], "members": r["members"],
+        })
+    return jsonify(out)
+
+
+@app.route("/api/mining/mine", methods=["POST"])
+@login_required
+def mining_mine():
+    uid = current_user_id()
+    data = request.get_json() or {}
+    try:
+        world_id = int(data.get("world_id"))
+        x = int(data.get("x"))
+        y = int(data.get("y"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid coordinates"}), 400
+
+    db = get_db()
+    w = db.execute("SELECT * FROM mining_worlds WHERE id = ?", (world_id,)).fetchone()
+    if not w:
+        return jsonify({"error": "World not found"}), 404
+    if not (0 <= x < w["width"] and 0 <= y < w["height"]):
+        return jsonify({"error": "Out of bounds"}), 400
+
+    # Auto-join the world (no permissions for now)
+    db.execute(
+        "INSERT OR IGNORE INTO mining_world_members (world_id, user_id) VALUES (?, ?)",
+        (world_id, uid),
+    )
+
+    # Try to mine the block (only if not already mined this generation)
+    cur = db.execute(
+        """UPDATE mining_blocks
+           SET mined_by = ?, mined_at = CURRENT_TIMESTAMP
+           WHERE world_id = ? AND generation = ? AND x = ? AND y = ? AND mined_by IS NULL""",
+        (uid, world_id, w["generation"], x, y),
+    )
+    if cur.rowcount == 0:
+        return jsonify({"error": "Block already mined", "state": _world_state(db, world_id)}), 200
+
+    # Track user stats
+    db.execute(
+        """INSERT INTO mining_user_stats (user_id, blocks_mined, layers_cleared)
+           VALUES (?, 1, 0)
+           ON CONFLICT(user_id) DO UPDATE SET blocks_mined = blocks_mined + 1""",
+        (uid,),
+    )
+
+    # Check if layer is fully mined
+    remaining = db.execute(
+        """SELECT COUNT(*) AS n FROM mining_blocks
+           WHERE world_id = ? AND generation = ? AND mined_by IS NULL""",
+        (world_id, w["generation"]),
+    ).fetchone()["n"]
+
+    layer_cleared = False
+    if remaining == 0:
+        new_gen = w["generation"] + 1
+        new_layer = w["layer"] + 1
+        db.execute(
+            "UPDATE mining_worlds SET layer = ?, generation = ? WHERE id = ?",
+            (new_layer, new_gen, world_id),
+        )
+        _generate_blocks(db, world_id, new_gen, w["width"], w["height"])
+        db.execute(
+            "UPDATE mining_user_stats SET layers_cleared = layers_cleared + 1 WHERE user_id = ?",
+            (uid,),
+        )
+        layer_cleared = True
+
+    db.commit()
+    return jsonify({
+        "ok": True,
+        "layer_cleared": layer_cleared,
+        "state": _world_state(db, world_id),
+    })
+
+
+@app.route("/api/mining/leave", methods=["POST"])
+@login_required
+def mining_leave():
+    uid = current_user_id()
+    data = request.get_json() or {}
+    try:
+        world_id = int(data.get("world_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid world"}), 400
+    db = get_db()
+    w = db.execute("SELECT owner_id FROM mining_worlds WHERE id = ?", (world_id,)).fetchone()
+    if not w:
+        return jsonify({"error": "World not found"}), 404
+    if w["owner_id"] == uid:
+        return jsonify({"error": "Owners cannot leave their own world"}), 400
+    db.execute(
+        "DELETE FROM mining_world_members WHERE world_id = ? AND user_id = ?",
+        (world_id, uid),
+    )
+    db.commit()
+    return jsonify({"message": "Left the world"})
+
+
+init_db()
+
 if __name__ == "__main__":
-    init_db()
     app.run(host="0.0.0.0", port=5000, debug=True)

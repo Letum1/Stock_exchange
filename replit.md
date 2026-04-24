@@ -45,9 +45,13 @@ A standalone Python Flask app at `paper-trading/`.
 - `/trades` — active 1-on-1 negotiated trades hub
 - `/trade/<id>` — negotiated trade page (add cash/items/stocks/crypto, accept,
   30-second review window, confirm, cancel, embedded chat)
-- `/profile/<id>` — public profile (stats, badges, public inventory, Trade button)
-- `/account` — change username & password
-- `/admin` — admin panel (users, balance, trades, items catalog, grant items)
+- `/profile/<id>` — public profile (stats, badges, bio, public inventory, Trade button)
+- `/account` — change username, password, and bio
+- `/admin` — admin panel (users, balance, trades, items catalog, grant items,
+  grant/revoke admin, admin self-funding)
+- `/mine` — multiplayer 2D BON mining game (10×10 grid; cleared layer
+  regenerates with a deeper colour; everyone in a world mines the same grid in real time)
+- `/chat` — DM chat + Public Chat tab (admin can mute users and delete messages)
 - `/login` `/register` — auth (register requires anti-bot math captcha)
 
 ### Mobile/UX
@@ -57,11 +61,21 @@ A standalone Python Flask app at `paper-trading/`.
 ### Backend modules in `app.py`
 - Auth (with math captcha for register), portfolio + trading, market data, ticker search
 - Items: catalog, inventory, listings (cash and/or item-for-item swaps), trade history
-- Messages: 1-to-1 DMs with conversations summary + unread counts
-- Profile: public stats endpoint
-- Admin: user management, item create/delete/grant, trading activity feed
+- Messages: 1-to-1 DMs with conversations + unread counts; messages can be deleted by sender or any admin
+- Public chat: site-wide public room with admin mute + delete
+- Profile: public stats endpoint with bio
+- Admin: user management, item create/delete/grant, trading activity feed,
+  grant/revoke admin (with last-admin protection), admin self-funding allowed,
+  public-chat mute management
+- Mining: world grid mining (block click, layer regeneration, multi-user worlds)
 
 ### Data model (SQLite at `paper-trading/portfolio.db`)
-`users`, `portfolios`, `holdings`, `trades`, `items`, `user_items`,
+`users` (with `bio` column), `portfolios`, `holdings`, `trades`, `items`, `user_items`,
 `item_listings` (with optional cash price + JSON `accepts_items` for swaps),
-`item_trades`, `messages`. New tables auto-create on startup.
+`item_trades`, `messages`, `public_messages`, `public_mutes`,
+`mining_worlds`, `mining_blocks`, `mining_world_members`, `mining_user_stats`.
+New tables auto-create on startup; `users.bio` is added via best-effort `ALTER TABLE`.
+
+### Startup
+`init_db()` runs at module import time so the schema is created/migrated whether
+the app is launched via `python app.py` or via gunicorn.

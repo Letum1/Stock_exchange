@@ -69,6 +69,10 @@
     .btn-unban  { background: #2d3148; color: #94a3b8; }
     .btn-assets { background: #312e81; color: #a5b4fc; }
     .btn-delete { background: #3b0764; color: #e879f9; }
+    .btn-grant  { background: #78350f; color: #fcd34d; }
+    .btn-revoke { background: #2d3148; color: #94a3b8; }
+    .btn-mute   { background: #450a0a; color: #f87171; }
+    .btn-unmute { background: #2d3148; color: #94a3b8; }
 
     .modal-bg {
       display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
@@ -348,11 +352,30 @@
       return;
     }
 
-    tb.innerHTML = rows.map(u => `
+    tb.innerHTML = rows.map(u => {
+      const isAdmin = u.is_admin;
+      // Always allow self & balance actions, even on admins (per request: admins can fund themselves)
+      const balanceActions = `
+        <button class="btn-add"    onclick="openBalance(${u.id},'${u.username}',${u.cash},'add')">+ Add</button>
+        <button class="btn-remove" onclick="openBalance(${u.id},'${u.username}',${u.cash},'remove')">− Remove</button>
+        <button class="btn-set"    onclick="openBalance(${u.id},'${u.username}',${u.cash},'set')">Set</button>
+      `;
+      const grantBtn = isAdmin
+        ? `<button class="btn-revoke" onclick="confirmGrantAdmin(${u.id},'${u.username}',false)">Revoke Admin</button>`
+        : `<button class="btn-grant"  onclick="confirmGrantAdmin(${u.id},'${u.username}',true)">Make Admin</button>`;
+      // Sensitive destructive actions still hidden for admins to avoid foot-guns
+      const destructive = !isAdmin ? `
+        <button class="btn-assets" onclick="confirmClearAssets(${u.id},'${u.username}')">Clear Assets</button>
+        ${u.is_banned
+          ? `<button class="btn-unban" onclick="confirmBan(${u.id},'${u.username}',false)">Unban</button>`
+          : `<button class="btn-ban"   onclick="confirmBan(${u.id},'${u.username}',true)">Ban</button>`}
+        <button class="btn-delete" onclick="confirmDelete(${u.id},'${u.username}')">Delete</button>
+      ` : '';
+      return `
       <tr>
         <td style="color:#64748b">${u.id}</td>
         <td style="font-weight:700">${u.username}
-          ${u.is_admin ? '<span class="badge admin" style="margin-left:6px">ADMIN</span>' : ''}
+          ${isAdmin ? '<span class="badge admin" style="margin-left:6px">ADMIN</span>' : ''}
         </td>
         <td>
           ${u.is_banned
@@ -368,20 +391,13 @@
         <td style="color:#64748b;font-size:.78rem">${u.created ? u.created.slice(0,10) : '—'}</td>
         <td>
           <div class="actions">
-            ${!u.is_admin ? `
-              <button class="btn-add"    onclick="openBalance(${u.id},'${u.username}',${u.cash},'add')">+ Add</button>
-              <button class="btn-remove" onclick="openBalance(${u.id},'${u.username}',${u.cash},'remove')">− Remove</button>
-              <button class="btn-set"    onclick="openBalance(${u.id},'${u.username}',${u.cash},'set')">Set</button>
-              <button class="btn-assets" onclick="confirmClearAssets(${u.id},'${u.username}')">Clear Assets</button>
-              ${u.is_banned
-                ? `<button class="btn-unban" onclick="confirmBan(${u.id},'${u.username}',false)">Unban</button>`
-                : `<button class="btn-ban"   onclick="confirmBan(${u.id},'${u.username}',true)">Ban</button>`}
-              <button class="btn-delete" onclick="confirmDelete(${u.id},'${u.username}')">Delete</button>
-            ` : '<span style="color:#64748b;font-size:.78rem">Protected</span>'}
+            ${balanceActions}
+            ${grantBtn}
+            ${destructive}
           </div>
         </td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
   }
 
   // ── Balance modal ──────────────────────────────────────────────────────────
@@ -449,6 +465,24 @@
       'All stock holdings will be permanently removed. Cash is not affected.',
       async () => {
         const r = await fetch('/api/admin/clear-assets', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({user_id:userId}) });
+        const d = await r.json();
+        showToast(d.message || d.error, r.ok);
+        if (r.ok) loadUsers();
+      }
+    );
+  }
+
+  function confirmGrantAdmin(userId, username, makeAdmin) {
+    openConfirm(
+      makeAdmin ? `Grant admin to ${username}?` : `Revoke admin from ${username}?`,
+      makeAdmin
+        ? 'They will be able to use the entire admin panel including funding accounts and banning users.'
+        : 'They will lose access to the admin panel.',
+      async () => {
+        const r = await fetch('/api/admin/grant-admin', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({user_id: userId, admin: makeAdmin})
+        });
         const d = await r.json();
         showToast(d.message || d.error, r.ok);
         if (r.ok) loadUsers();

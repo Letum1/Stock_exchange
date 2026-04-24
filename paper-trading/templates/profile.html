@@ -128,6 +128,11 @@
     </div>
   </div>
 
+  <div class="section" id="bio-section" style="display:none">
+    <h2>About</h2>
+    <div id="bio-text" style="color:#cbd5e1;font-size:.95rem;line-height:1.55;white-space:pre-wrap;word-wrap:break-word"></div>
+  </div>
+
   <div class="stats" id="stats">
     <div class="stat-card"><div class="lbl">Stock Trades</div><div class="val amber" id="st-trades">…</div></div>
     <div class="stat-card"><div class="lbl">Holdings</div><div class="val blue" id="st-holdings">…</div></div>
@@ -170,6 +175,11 @@
     if (p.is_banned) out.push('<span class="badge banned">🚫 BANNED</span>');
     if (TARGET_ID === {{ current_user_id }}) out.push('<span class="badge you">This is you</span>');
     badges.innerHTML = out.join('');
+
+    if (p.bio && p.bio.trim()) {
+      document.getElementById('bio-text').textContent = p.bio;
+      document.getElementById('bio-section').style.display = '';
+    }
   }
 
   async function loadInventory() {
