@@ -72,7 +72,8 @@
       padding: 14px 20px; border-bottom: 1px solid #2d3148;
       display: flex; align-items: center; gap: 14px; min-width: 0; flex-wrap: wrap;
     }
-    .panel-header > div { min-width: 0; flex: 1; }
+    .panel-header > div:not(.avatar) { min-width: 0; flex: 1; }
+    .panel-header .avatar { flex-shrink: 0; }
     .panel-header a { color: #7c85ff; text-decoration: none; font-weight: 700; }
     .panel-header a:hover { text-decoration: underline; }
 
