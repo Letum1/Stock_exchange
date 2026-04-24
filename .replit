@@ -1,9 +1,9 @@
-modules = ["nodejs-24", "python-3.11"]
+modules = ["nodejs-20", "web", "python-3.11"]
 
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
-run = ["sh", "-c", "Start"]
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
@@ -21,6 +21,10 @@ author = "agent"
 task = "workflow.run"
 args = "Paper Trading"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
 [[workflows.workflow]]
 name = "Paper Trading"
 author = "agent"
@@ -33,8 +37,17 @@ waitForPort = 5000
 [workflows.workflow.metadata]
 outputType = "webview"
 
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"
+waitForPort = 5000
+
 [agent]
-stack = "PNPM_WORKSPACE"
+stack = "FLASK_VANILLA_JS"
 expertMode = true
 
 [postMerge]
@@ -67,3 +80,4 @@ externalPort = 3003
 
 [nix]
 channel = "stable-25_05"
+packages = ["openssl", "postgresql"]
