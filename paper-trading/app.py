@@ -1094,11 +1094,25 @@ def change_username():
     uid  = current_user_id()
     data = request.get_json()
     new_username = (data.get("username") or "").strip()
+    current_pw   = data.get("current_password") or ""
 
     if len(new_username) < 3:
         return jsonify({"error": "Username must be at least 3 characters"}), 400
 
-    db = get_db()
+    db   = get_db()
+    user = db.execute(
+        "SELECT username, password FROM users WHERE id = ?", (uid,)
+    ).fetchone()
+
+    # Allow saving the same name without re-typing the password (no-op).
+    if new_username == (user["username"] if user else ""):
+        return jsonify({"message": "Username unchanged", "username": new_username})
+
+    if not current_pw:
+        return jsonify({"error": "Enter your current password to change your username"}), 400
+    if not check_password_hash(user["password"], current_pw):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
     existing = db.execute(
         "SELECT id FROM users WHERE username = ? AND id != ?", (new_username, uid)
     ).fetchone()

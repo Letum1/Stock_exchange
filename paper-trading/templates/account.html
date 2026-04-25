@@ -124,6 +124,8 @@
     <div class="alert" id="un-alert"></div>
     <label>Username</label>
     <input type="text" id="new-username" value="{{ username }}" placeholder="New username (min 3 chars)" autocomplete="username"/>
+    <label>Current Password <span style="color:#64748b;font-weight:400">(required to change username)</span></label>
+    <input type="password" id="un-cur-password" placeholder="Enter current password to confirm" autocomplete="current-password"/>
     <button class="save-btn" onclick="changeUsername()">Save Username</button>
 
     <hr class="divider"/>
@@ -242,15 +244,19 @@
   loadBio();
 
   async function changeUsername() {
-    const username = document.getElementById('new-username').value.trim();
+    const username         = document.getElementById('new-username').value.trim();
+    const current_password = document.getElementById('un-cur-password').value;
     const r = await fetch('/api/account/username', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username }),
+      body: JSON.stringify({ username, current_password }),
     });
     const d = await r.json();
     showAlert('un-alert', d.message || d.error, r.ok);
-    if (r.ok) showToast('Username updated!', true);
+    if (r.ok) {
+      document.getElementById('un-cur-password').value = '';
+      showToast('Username updated!', true);
+    }
   }
 
   async function changePassword() {
