@@ -3,6 +3,7 @@ import mimetypes
 import os
 import random
 import sqlite3
+import time as _time
 import uuid
 from functools import wraps
 
@@ -368,6 +369,7 @@ def init_db():
             "ALTER TABLE users    ADD COLUMN avatar_url TEXT DEFAULT ''",
             "ALTER TABLE item_listings ADD COLUMN sponsored_until DATETIME",
             "ALTER TABLE item_listings ADD COLUMN sponsored_total_paid REAL NOT NULL DEFAULT 0",
+            "ALTER TABLE messages ADD COLUMN read_at DATETIME",
         ):
             try:
                 db.execute(ddl)
@@ -561,12 +563,66 @@ def _inject_ad_banner(resp):
     return resp
 
 
+# ── Typing indicator (in-memory, single-worker) ──────────────────────────────
+# Maps (sender_id, recipient_id) -> unix timestamp of last typing ping.
+# Considered "actively typing" if pinged within the last 6 seconds.
+_TYPING_STATUS = {}
+_TYPING_TTL = 6.0
+
+def _set_typing(sender_id, recipient_id):
+    _TYPING_STATUS[(int(sender_id), int(recipient_id))] = _time.time()
+
+def _is_typing(sender_id, recipient_id):
+    ts = _TYPING_STATUS.get((int(sender_id), int(recipient_id)))
+    return bool(ts and (_time.time() - ts) <= _TYPING_TTL)
+
+
+# ── Impersonation banner (owner viewing as another user) ─────────────────────
+_IMPERSONATION_BANNER = """
+<div id="impersonation-bar" style="position:fixed;left:0;right:0;top:0;z-index:99998;
+     background:linear-gradient(90deg,#7c2d12,#b91c1c);color:#fff;
+     padding:8px 14px;font-family:system-ui,sans-serif;font-size:.85rem;
+     display:flex;align-items:center;justify-content:center;gap:14px;
+     box-shadow:0 2px 6px rgba(0,0,0,.4)">
+  <span>👁 You are viewing the platform <b>as {USER}</b>. Anything you do is logged.</span>
+  <button onclick="(async()=>{var r=await fetch('/api/admin/return-to-self',{method:'POST'});if(r.ok)location.href='/';else alert('Failed to return');})()"
+          style="background:#fff;color:#7c2d12;border:none;padding:5px 12px;
+                 border-radius:5px;font-weight:700;cursor:pointer;font-size:.8rem">
+    ↩ Return to owner
+  </button>
+</div>
+<style>body{padding-top:38px !important}</style>
+"""
+
+@app.after_request
+def _inject_impersonation_banner(resp):
+    try:
+        if not session.get("impersonator_owner_id"):
+            return resp
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+        if not ctype.startswith("text/html"):
+            return resp
+        if resp.direct_passthrough:
+            return resp
+        body = resp.get_data(as_text=True)
+        if "</body>" not in body or "impersonation-bar" in body:
+            return resp
+        snippet = _IMPERSONATION_BANNER.replace("{USER}", str(session.get("username","?")))
+        body = body.replace("</body>", snippet + "\n</body>", 1)
+        resp.set_data(body)
+        resp.headers["Content-Length"] = str(len(resp.get_data()))
+    except Exception:
+        pass
+    return resp
+
+
 @app.context_processor
 def _inject_role_flags():
     """Make role flags available in every template."""
     return {
         "is_manager": session.get("is_manager", False),
         "is_owner":   session.get("is_owner", False),
+        "impersonating": bool(session.get("impersonator_owner_id")),
     }
 
 
@@ -749,6 +805,19 @@ def admin_page():
         username=session.get("username"),
         user_id=session.get("user_id"),
         is_owner=session.get("is_owner", False),
+    )
+
+
+@app.route("/admin/spy")
+def admin_spy_page():
+    """Owner-only: ghost-view all conversations on the platform."""
+    if not session.get("is_owner"):
+        return redirect(url_for("index"))
+    return render_template(
+        "admin_spy.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_owner=True,
     )
 
 
@@ -1959,15 +2028,20 @@ def messages_with(other_id):
     uid = current_user_id()
     db  = get_db()
     rows = db.execute(
-        """SELECT id, sender_id, recipient_id, content, timestamp, is_read, file_id
+        """SELECT id, sender_id, recipient_id, content, timestamp,
+                  is_read, read_at, file_id
            FROM messages
            WHERE (sender_id = ? AND recipient_id = ?)
               OR (sender_id = ? AND recipient_id = ?)
            ORDER BY id ASC LIMIT 500""",
         (uid, other_id, other_id, uid),
     ).fetchall()
+    # Mark messages from `other` as read by me, stamping read_at the first time.
     db.execute(
-        "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND recipient_id = ?",
+        """UPDATE messages
+              SET is_read = 1,
+                  read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+            WHERE sender_id = ? AND recipient_id = ? AND is_read = 0""",
         (other_id, uid),
     )
     db.commit()
@@ -2044,7 +2118,198 @@ def send_message():
         (uid, recipient_id, content, file_id),
     )
     db.commit()
+    # Sending a message also clears any "I am typing" hint to the recipient.
+    _TYPING_STATUS.pop((uid, recipient_id), None)
     return jsonify({"message": "Sent"})
+
+
+# ── Typing indicators (in-memory) ────────────────────────────────────────────
+
+@app.route("/api/messages/<int:other_id>/typing", methods=["POST"])
+@login_required
+def messages_typing_set(other_id):
+    """Caller is currently typing to <other_id>. Pings live for ~6s."""
+    uid = current_user_id()
+    if other_id == uid:
+        return jsonify({"ok": True})
+    _set_typing(uid, other_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/messages/<int:other_id>/typing", methods=["GET"])
+@login_required
+def messages_typing_get(other_id):
+    """Is <other_id> currently typing to me?"""
+    uid = current_user_id()
+    return jsonify({"typing": _is_typing(other_id, uid)})
+
+
+# ── Owner: impersonate / ghost-view ──────────────────────────────────────────
+
+@app.route("/api/admin/impersonate/<int:user_id>", methods=["POST"])
+@owner_required
+def owner_impersonate(user_id):
+    """Owner-only: become another user. Original owner identity is remembered
+    in `impersonator_owner_id` so we can return later."""
+    db = get_db()
+    target = db.execute(
+        """SELECT id, username, is_admin,
+                  COALESCE(is_manager,0) AS is_manager,
+                  COALESCE(is_owner,0)   AS is_owner,
+                  COALESCE(is_banned,0)  AS is_banned
+           FROM users WHERE id = ?""",
+        (user_id,),
+    ).fetchone()
+    if not target:
+        return jsonify({"error": "User not found"}), 404
+    if target["is_owner"]:
+        return jsonify({"error": "Cannot impersonate another owner"}), 400
+
+    # Remember the original owner identity so the user can return to themselves.
+    if not session.get("impersonator_owner_id"):
+        session["impersonator_owner_id"]   = session.get("user_id")
+        session["impersonator_username"]   = session.get("username")
+
+    session["user_id"]    = target["id"]
+    session["username"]   = target["username"]
+    session["is_admin"]   = bool(target["is_admin"])
+    session["is_manager"] = bool(target["is_manager"])
+    session["is_owner"]   = False  # never grant owner via impersonation
+    session["is_banned"]  = bool(target["is_banned"])
+    return jsonify({
+        "ok": True,
+        "viewing_as": target["username"],
+        "user_id": target["id"],
+    })
+
+
+@app.route("/api/admin/return-to-self", methods=["POST"])
+@login_required
+def owner_return_to_self():
+    """Restore the original owner identity stored when impersonation began."""
+    orig = session.get("impersonator_owner_id")
+    if not orig:
+        return jsonify({"error": "Not impersonating"}), 400
+    db = get_db()
+    user = db.execute(
+        """SELECT id, username, is_admin,
+                  COALESCE(is_manager,0) AS is_manager,
+                  COALESCE(is_owner,0)   AS is_owner
+           FROM users WHERE id = ?""",
+        (orig,),
+    ).fetchone()
+    if not user:
+        # Owner was deleted? Fall back to logout.
+        session.clear()
+        return jsonify({"error": "Original account missing — logged out"}), 410
+    session["user_id"]    = user["id"]
+    session["username"]   = user["username"]
+    session["is_admin"]   = bool(user["is_admin"])
+    session["is_manager"] = bool(user["is_manager"])
+    session["is_owner"]   = bool(user["is_owner"])
+    session["is_banned"]  = False
+    session.pop("impersonator_owner_id", None)
+    session.pop("impersonator_username", None)
+    return jsonify({"ok": True, "username": user["username"]})
+
+
+@app.route("/api/admin/all-conversations")
+@owner_required
+def owner_all_conversations():
+    """Owner ghost-view: every DM thread on the platform, newest first."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT
+              MIN(sender_id, recipient_id) AS u1,
+              MAX(sender_id, recipient_id) AS u2,
+              MAX(id) AS last_id,
+              COUNT(*) AS total
+           FROM messages
+           GROUP BY MIN(sender_id, recipient_id), MAX(sender_id, recipient_id)
+           ORDER BY last_id DESC
+           LIMIT 200"""
+    ).fetchall()
+    out = []
+    for r in rows:
+        last = db.execute(
+            """SELECT m.sender_id, m.content, m.timestamp, m.file_id,
+                      su.username AS sender_name
+                 FROM messages m
+                 JOIN users su ON su.id = m.sender_id
+                WHERE m.id = ?""",
+            (r["last_id"],),
+        ).fetchone()
+        u1 = db.execute(
+            "SELECT id, username, COALESCE(avatar_url,'') AS avatar_url FROM users WHERE id = ?",
+            (r["u1"],),
+        ).fetchone()
+        u2 = db.execute(
+            "SELECT id, username, COALESCE(avatar_url,'') AS avatar_url FROM users WHERE id = ?",
+            (r["u2"],),
+        ).fetchone()
+        if not (u1 and u2 and last):
+            continue
+        preview = (last["content"] or "")[:80]
+        if last["file_id"] and not preview:
+            preview = "📎 (attachment)"
+        out.append({
+            "u1": dict(u1), "u2": dict(u2),
+            "last_sender":   last["sender_name"],
+            "last_preview":  preview,
+            "last_time":     last["timestamp"],
+            "total":         r["total"],
+        })
+    return jsonify(out)
+
+
+@app.route("/api/admin/conversation/<int:user_a>/<int:user_b>")
+@owner_required
+def owner_conversation(user_a, user_b):
+    """Owner ghost-view: read a thread WITHOUT marking anything as read."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT id, sender_id, recipient_id, content, timestamp,
+                  is_read, read_at, file_id
+           FROM messages
+           WHERE (sender_id = ? AND recipient_id = ?)
+              OR (sender_id = ? AND recipient_id = ?)
+           ORDER BY id ASC LIMIT 1000""",
+        (user_a, user_b, user_b, user_a),
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        if d.get("file_id"):
+            f = db.execute(
+                "SELECT id, display_name, mime, kind, size_bytes FROM chat_files WHERE id = ?",
+                (d["file_id"],),
+            ).fetchone()
+            d["file"] = dict(f) if f else None
+        out.append(d)
+    # Also include both usernames for the header.
+    ua = db.execute("SELECT id, username FROM users WHERE id = ?", (user_a,)).fetchone()
+    ub = db.execute("SELECT id, username FROM users WHERE id = ?", (user_b,)).fetchone()
+    return jsonify({
+        "user_a": dict(ua) if ua else None,
+        "user_b": dict(ub) if ub else None,
+        "messages": out,
+        "ghost":   True,
+    })
+
+
+@app.route("/api/admin/public-messages-all")
+@owner_required
+def owner_public_messages_all():
+    """Owner ghost-view: every public chat message, newest first."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT pm.id, pm.sender_id, pm.content, pm.timestamp,
+                  u.username, COALESCE(u.is_admin,0) AS is_admin
+             FROM public_messages pm
+             JOIN users u ON u.id = pm.sender_id
+            ORDER BY pm.id DESC LIMIT 500"""
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
 
 
 # ── Profile API ───────────────────────────────────────────────────────────────

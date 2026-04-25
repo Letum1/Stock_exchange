@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <link rel="stylesheet" href="/static/responsive.css"/>
-  <title>Chat — Paper Trading</title>
+  <title>Socialize — Paper Trading</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; max-width: 100%; overflow-x: hidden; }
@@ -239,7 +239,7 @@
 <body>
 
 <header>
-  <h1>💬 Chat</h1>
+  <h1>💬 Socialize</h1>
   <div class="hdr-right">
     <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
     {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
@@ -303,6 +303,34 @@
   let publicLastId = 0;
   let publicMuted = false;
   let publicPollTimer = null;
+
+  // ── Typing indicator ────────────────────────────────────────────────────
+  let _lastTypingPing = 0;
+  function pingTyping() {
+    if (!activeUserId) return;
+    const now = Date.now();
+    if (now - _lastTypingPing < 2500) return; // throttle: at most one per 2.5s
+    _lastTypingPing = now;
+    fetch('/api/messages/' + activeUserId + '/typing', { method: 'POST' })
+      .catch(() => {});
+  }
+  async function pollTyping() {
+    if (!activeUserId) return;
+    try {
+      const r = await fetch('/api/messages/' + activeUserId + '/typing');
+      if (!r.ok) return;
+      const d = await r.json();
+      const row = document.getElementById('typing-row');
+      const txt = document.getElementById('typing-text');
+      if (!row || !txt) return;
+      if (d.typing) {
+        txt.textContent = ' ' + (activeUsername || 'they') + ' is typing…';
+        row.style.display = 'block';
+      } else {
+        row.style.display = 'none';
+      }
+    } catch (e) {}
+  }
 
   function switchTab(name) {
     currentTab = name;
@@ -372,12 +400,18 @@
         </div>
       </div>
       <div class="messages" id="messages"></div>
+      <div id="typing-row" style="height:20px;padding:2px 16px;font-size:.78rem;
+           color:#7c85ff;font-style:italic;display:none">
+        <span id="typing-dot" style="display:inline-block;animation:dot 1.2s infinite">●●●</span>
+        <span id="typing-text"></span>
+      </div>
       <div id="attach-row"></div>
       <div class="composer">
         <button class="icon-btn" onclick="document.getElementById('file-picker').click()" title="Attach a file">📎</button>
         <input type="file" id="file-picker" style="display:none" onchange="onFilePicked(event)"
                accept="image/*,video/*,audio/*,application/pdf,.zip,.txt,.csv,.json"/>
         <input id="composer" type="text" placeholder="Type a message…" maxlength="1000"
+               oninput="pingTyping()"
                onkeydown="if(event.key==='Enter')sendMsg()"/>
         <button onclick="sendMsg()" id="send-btn">Send</button>
       </div>
@@ -431,11 +465,18 @@
       const body = text || file
         ? `${text}${file}`
         : `<div class="msg ${me?'me':'them'}">(empty)</div>`;
+      // Seen receipt only for MY outgoing messages
+      let seen = '';
+      if (me) {
+        seen = m.is_read
+          ? `<span title="Seen ${m.read_at || ''}" style="color:#7c85ff;margin-left:6px">✓✓ Seen</span>`
+          : `<span title="Delivered, not yet read" style="color:#64748b;margin-left:6px">✓ Sent</span>`;
+      }
       return `<div class="msg-row ${me?'me':'them'}">
                 <div style="display:flex;flex-direction:column;gap:4px;align-items:${me?'flex-end':'flex-start'}">${body}</div>
                 ${actions}
               </div>
-              <div class="msg-time ${me?'me':'them'}">${shortTime(m.timestamp)}</div>`;
+              <div class="msg-time ${me?'me':'them'}">${shortTime(m.timestamp)}${seen}</div>`;
     }).join('');
     if (wasAtBottom) el.scrollTop = el.scrollHeight;
   }
@@ -759,6 +800,8 @@
     await loadConvos();
     if (activeUserId) await loadMessages();
   }, 4000);
+  // Faster, lightweight typing-indicator poll
+  setInterval(pollTyping, 2000);
 </script>
 </body>
 </html>
