@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="/static/responsive.css"/>
+  <title>Wallet · Paper Trading</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+    header {
+      background: #1a1d27; border-bottom: 1px solid #2d3148;
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 800; color: #7c85ff; }
+    .hdr-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .hdr-user  { font-size: 0.85rem; color: #64748b; }
+    .hdr-user span { color: #e2e8f0; font-weight: 600; }
+    .tag-admin { background: #78350f; color: #fcd34d; font-size: 0.72rem; font-weight: 700;
+                 padding: 3px 9px; border-radius: 20px; letter-spacing: .05em; }
+    .btn-sm { padding: 6px 14px; border: none; border-radius: 6px; font-size: 0.8rem;
+              font-weight: 600; cursor: pointer; background: #2d3148; color: #94a3b8; text-decoration:none; display:inline-block; }
+    .btn-sm:hover { opacity: .8; }
+    .btn-admin { background: #78350f; color: #fcd34d; }
+
+    .container { max-width: 1120px; margin: 0 auto; padding: 26px 20px; display: grid; gap: 22px; }
+
+    .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 20px 22px; }
+    .card h2 { font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+               letter-spacing: .08em; color: #64748b; margin-bottom: 16px; }
+    .card .sub { font-size: 0.78rem; color: #475569; margin-top: -10px; margin-bottom: 14px; }
+
+    .balances { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 14px; }
+    .bal { background: #13151f; border-radius: 10px; padding: 18px 20px; }
+    .bal .lbl { font-size: 0.74rem; color: #64748b; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .08em; }
+    .bal .val { font-size: 1.7rem; font-weight: 800; color: #f1f5f9; }
+    .bal.bon  { border-left: 3px solid #fbbf24; }
+    .bal.sat  { border-left: 3px solid #f97316; }
+    .bal.usd  { border-left: 3px solid #4ade80; }
+
+    .convert-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: 14px; }
+    .conv-card { background: #13151f; border: 1px solid #2d3148; border-radius: 10px; padding: 16px; }
+    .conv-card h3 { font-size: 0.85rem; color: #f1f5f9; margin-bottom: 4px; }
+    .conv-card .rate { font-size: 0.72rem; color: #64748b; margin-bottom: 12px; }
+    .conv-row { display: flex; gap: 8px; }
+    .conv-row input { flex: 1; background: #0f1117; border: 1px solid #2d3148; border-radius: 7px;
+                      color: #e2e8f0; padding: 9px 12px; font-size: 0.9rem; outline: none; }
+    .conv-row input:focus { border-color: #7c85ff; }
+    .conv-row button { background: #7c85ff; color: #fff; padding: 9px 14px; border: none; border-radius: 7px;
+                       font-weight: 700; font-size: 0.85rem; cursor: pointer; }
+    .conv-row button:hover { opacity: .85; }
+
+    label { font-size: 0.78rem; color: #94a3b8; display: block; margin-bottom: 5px; }
+    input, select, textarea {
+      width: 100%; background: #13151f; border: 1px solid #2d3148; border-radius: 7px;
+      color: #e2e8f0; padding: 9px 12px; font-size: 0.9rem; outline: none;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus { border-color: #7c85ff; }
+    textarea { min-height: 70px; resize: vertical; }
+
+    .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 12px; margin-bottom: 12px; }
+    .btn-primary { background: #7c85ff; color: #fff; padding: 10px 18px; border: none; border-radius: 7px;
+                   font-weight: 700; font-size: 0.9rem; cursor: pointer; }
+    .btn-primary:hover { opacity: .85; }
+    .btn-danger { background: #dc2626; color: #fff; padding: 10px 18px; border: none; border-radius: 7px;
+                  font-weight: 700; font-size: 0.9rem; cursor: pointer; }
+
+    .tabs { display: flex; border-bottom: 1px solid #2d3148; margin-bottom: 16px; }
+    .tab  { padding: 10px 16px; cursor: pointer; font-size: 0.85rem; color: #64748b; font-weight: 700;
+            border-bottom: 2px solid transparent; }
+    .tab.active { color: #7c85ff; border-bottom-color: #7c85ff; }
+    .pane { display: none; }
+    .pane.active { display: block; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th { text-align: left; padding: 7px 10px; font-size: 0.73rem; color: #64748b;
+         font-weight: 500; border-bottom: 1px solid #2d3148; }
+    td { padding: 9px 10px; border-bottom: 1px solid #1e2130; }
+    tr:last-child td { border-bottom: none; }
+    .empty { color: #475569; font-size: 0.83rem; padding: 14px 0; text-align: center; }
+    .pill  { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; }
+    .pill.in   { background: #14532d; color: #4ade80; }
+    .pill.out  { background: #450a0a; color: #f87171; }
+    .pill.pend { background: #1e1a0f; color: #fcd34d; }
+    .pill.done { background: #1e2a3a; color: #7dd3fc; }
+    .pill.rej  { background: #2d3148; color: #94a3b8; }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 9px;
+      padding: 12px 18px; max-width: 320px; font-size: 0.86rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      opacity: 0; transform: translateY(10px);
+      transition: opacity .22s, transform .22s;
+      pointer-events: none; z-index: 999;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.ok   { border-left: 3px solid #4ade80; }
+    .toast.err  { border-left: 3px solid #f87171; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>💰 Wallet</h1>
+  <div class="hdr-right">
+    {% if is_admin %}<span class="tag-admin">ADMIN</span>{% endif %}
+    <div class="hdr-user">Logged in as <span>{{ username }}</span></div>
+    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/mine" class="btn-sm">⛏️ Mine</a>
+    <a href="/items" class="btn-sm">🎒 Items</a>
+    <a href="/chat" class="btn-sm">💬 Chat</a>
+    <a href="/account" class="btn-sm">My Account</a>
+    <button class="btn-sm" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <h2>Balances</h2>
+    <div class="balances">
+      <div class="bal bon"><div class="lbl">BON</div><div class="val" id="bal-bon">—</div></div>
+      <div class="bal sat"><div class="lbl">Satoshi</div><div class="val" id="bal-sat">—</div></div>
+      <div class="bal usd"><div class="lbl">USD Cash</div><div class="val" id="bal-usd">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Exchange</h2>
+    <div class="sub">100 BON = 1 satoshi · 100 satoshi = $1.00 · all conversions are instant.</div>
+    <div class="convert-grid">
+      <div class="conv-card">
+        <h3>BON → Satoshi</h3>
+        <div class="rate">100 BON earns 1 satoshi (must be a multiple of 100)</div>
+        <div class="conv-row">
+          <input type="number" id="c-bon-sat" min="100" step="100" placeholder="BON to convert"/>
+          <button onclick="convert('bon_to_satoshi','c-bon-sat')">Convert</button>
+        </div>
+      </div>
+      <div class="conv-card">
+        <h3>Satoshi → BON</h3>
+        <div class="rate">1 satoshi earns 100 BON</div>
+        <div class="conv-row">
+          <input type="number" id="c-sat-bon" min="1" step="1" placeholder="Satoshi to convert"/>
+          <button onclick="convert('satoshi_to_bon','c-sat-bon')">Convert</button>
+        </div>
+      </div>
+      <div class="conv-card">
+        <h3>Satoshi → USD</h3>
+        <div class="rate">100 satoshi earns $1.00 (must be a multiple of 100)</div>
+        <div class="conv-row">
+          <input type="number" id="c-sat-usd" min="100" step="100" placeholder="Satoshi to convert"/>
+          <button onclick="convert('satoshi_to_usd','c-sat-usd')">Convert</button>
+        </div>
+      </div>
+      <div class="conv-card">
+        <h3>USD → Satoshi</h3>
+        <div class="rate">$1.00 earns 100 satoshi</div>
+        <div class="conv-row">
+          <input type="number" id="c-usd-sat" min="0.01" step="0.01" placeholder="USD to convert"/>
+          <button onclick="convert('usd_to_satoshi','c-usd-sat')">Convert</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" data-pane="market">BON Marketplace</div>
+      <div class="tab" data-pane="cashin">Cash In</div>
+      <div class="tab" data-pane="cashout">Cash Out (Withdraw)</div>
+      <div class="tab" data-pane="myreq">My Requests</div>
+    </div>
+
+    <!-- ── BON Marketplace ── -->
+    <div class="pane active" id="pane-market">
+      <div class="sub" style="margin-bottom:14px;">Sell BON for USD or buy from other players.</div>
+      <div class="form-row">
+        <div>
+          <label>Quantity (BON)</label>
+          <input type="number" id="mkt-qty" min="1" step="1" placeholder="e.g. 100"/>
+        </div>
+        <div>
+          <label>Price (USD total)</label>
+          <input type="number" id="mkt-price" min="0.01" step="0.01" placeholder="e.g. 1.50"/>
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button class="btn-primary" onclick="createListing()" style="width:100%;">Create Listing</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Seller</th><th>Quantity</th><th>Total Price</th><th>Per BON</th><th></th></tr></thead>
+        <tbody id="mkt-rows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- ── Cash In ── -->
+    <div class="pane" id="pane-cashin">
+      <div class="sub" style="margin-bottom:14px;">
+        Request to deposit funds. Submit your payment details — staff will process it and your balance will be credited.
+      </div>
+      <div class="form-row">
+        <div>
+          <label>Currency</label>
+          <select id="in-currency">
+            <option value="satoshi">Satoshi</option>
+            <option value="usd">USD</option>
+          </select>
+        </div>
+        <div>
+          <label>Amount</label>
+          <input type="number" id="in-amount" min="0.01" step="0.01" placeholder="e.g. 1000"/>
+        </div>
+      </div>
+      <label>Payment credentials <span style="color:#64748b">(bank account, wallet address, transaction ID, etc.)</span></label>
+      <textarea id="in-creds" placeholder="e.g. BTC: bc1qxy... or Bank: ACME 12345678 / John Doe"></textarea>
+      <label style="margin-top:10px;">Note (optional)</label>
+      <input type="text" id="in-note" placeholder="Anything staff should know"/>
+      <div style="margin-top:12px;">
+        <button class="btn-primary" onclick="submitCash('cash_in')">Submit Deposit Request</button>
+      </div>
+    </div>
+
+    <!-- ── Cash Out ── -->
+    <div class="pane" id="pane-cashout">
+      <div class="sub" style="margin-bottom:14px;">
+        Withdraw satoshi to an external wallet. Your satoshi will be held until staff complete the payout
+        (or refunded if rejected). <strong>Withdrawals are satoshi only.</strong>
+      </div>
+      <div class="form-row">
+        <div>
+          <label>Amount (satoshi)</label>
+          <input type="number" id="out-amount" min="1" step="1" placeholder="e.g. 5000"/>
+        </div>
+      </div>
+      <label>Payout credentials <span style="color:#64748b">(BTC wallet, Lightning address, etc.)</span></label>
+      <textarea id="out-creds" placeholder="e.g. bc1qabcd1234... or someone@walletofsatoshi.com"></textarea>
+      <label style="margin-top:10px;">Note (optional)</label>
+      <input type="text" id="out-note" placeholder="Anything staff should know"/>
+      <div style="margin-top:12px;">
+        <button class="btn-danger" onclick="submitCash('cash_out')">Submit Withdrawal</button>
+      </div>
+    </div>
+
+    <!-- ── My Requests ── -->
+    <div class="pane" id="pane-myreq">
+      <table>
+        <thead><tr><th>#</th><th>Type</th><th>Amount</th><th>Status</th><th>Submitted</th><th>Handled</th></tr></thead>
+        <tbody id="myreq-rows"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const fmt = n => Number(n||0).toLocaleString();
+const fmtUSD = n => '$' + Number(n||0).toFixed(2);
+
+function toast(msg, ok=true){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.className='toast '+(ok?'ok':'err')+' show';
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2400);
+}
+async function api(url, opts={}){
+  opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+  if (opts.body && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
+  const r = await fetch(url, opts);
+  let j={}; try { j = await r.json(); } catch{}
+  if (!r.ok) throw new Error(j.error || ('HTTP '+r.status));
+  return j;
+}
+async function logout(){ await fetch('/api/logout',{method:'POST'}); location.href='/login'; }
+
+// Tabs
+document.querySelectorAll('.tab').forEach(t=>{
+  t.onclick = ()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('pane-'+t.dataset.pane).classList.add('active');
+    if (t.dataset.pane === 'myreq') loadMyReq();
+    if (t.dataset.pane === 'market') loadMarket();
+  };
+});
+
+async function loadWallet(){
+  try {
+    const w = await api('/api/wallet');
+    document.getElementById('bal-bon').textContent = fmt(w.bon);
+    document.getElementById('bal-sat').textContent = fmt(w.satoshi);
+    document.getElementById('bal-usd').textContent = fmtUSD(w.cash);
+  } catch(e){ /* ignore */ }
+}
+
+async function convert(direction, inputId){
+  const v = parseFloat(document.getElementById(inputId).value);
+  if (!v || v <= 0) { toast('Enter an amount', false); return; }
+  try {
+    const j = await api('/api/wallet/convert', {method:'POST', body:{direction, amount:v}});
+    toast(j.message);
+    document.getElementById(inputId).value = '';
+    loadWallet();
+  } catch(e){ toast(e.message, false); }
+}
+
+async function loadMarket(){
+  try {
+    const list = await api('/api/bon/listings');
+    const tb = document.getElementById('mkt-rows');
+    if (!list.length) { tb.innerHTML = '<tr><td colspan="5" class="empty">No listings yet — be the first to sell some BON!</td></tr>'; return; }
+    tb.innerHTML = list.map(l => `
+      <tr>
+        <td>${l.is_mine ? '<strong style="color:#fbbf24">'+l.seller_username+' (you)</strong>' : l.seller_username}</td>
+        <td>${fmt(l.quantity)} BON</td>
+        <td>${fmtUSD(l.price)}</td>
+        <td style="color:#64748b">${l.price_per_bon.toFixed(4)} / BON</td>
+        <td style="text-align:right">
+          ${l.is_mine
+              ? `<button class="btn-sm" onclick="cancelListing(${l.id})">Cancel</button>`
+              : `<button class="btn-sm" style="background:#16a34a;color:#fff" onclick="buyListing(${l.id})">Buy</button>`}
+        </td>
+      </tr>`).join('');
+  } catch(e){ toast(e.message, false); }
+}
+
+async function createListing(){
+  const qty = parseInt(document.getElementById('mkt-qty').value);
+  const price = parseFloat(document.getElementById('mkt-price').value);
+  if (!qty || qty <= 0)   { toast('Enter a quantity', false); return; }
+  if (!price || price<=0) { toast('Enter a price',    false); return; }
+  try {
+    const j = await api('/api/bon/listings/create', {method:'POST', body:{quantity:qty, price}});
+    toast(j.message);
+    document.getElementById('mkt-qty').value=''; document.getElementById('mkt-price').value='';
+    loadWallet(); loadMarket();
+  } catch(e){ toast(e.message, false); }
+}
+async function buyListing(id){
+  if (!confirm('Buy this BON listing?')) return;
+  try {
+    const j = await api('/api/bon/listings/'+id+'/buy', {method:'POST'});
+    toast(j.message); loadWallet(); loadMarket();
+  } catch(e){ toast(e.message, false); }
+}
+async function cancelListing(id){
+  if (!confirm('Cancel this listing? Your BON will be refunded.')) return;
+  try {
+    const j = await api('/api/bon/listings/'+id+'/cancel', {method:'POST'});
+    toast(j.message); loadWallet(); loadMarket();
+  } catch(e){ toast(e.message, false); }
+}
+
+async function submitCash(kind){
+  const isIn = kind === 'cash_in';
+  const currency = isIn ? document.getElementById('in-currency').value : 'satoshi';
+  const amount   = parseFloat((isIn?document.getElementById('in-amount'):document.getElementById('out-amount')).value);
+  const credentials = (isIn?document.getElementById('in-creds'):document.getElementById('out-creds')).value.trim();
+  const note = (isIn?document.getElementById('in-note'):document.getElementById('out-note')).value.trim();
+  if (!amount || amount <= 0) { toast('Enter an amount', false); return; }
+  if (!credentials || credentials.length < 4) { toast('Please provide payout credentials', false); return; }
+  try {
+    const j = await api('/api/cash/request', {method:'POST', body:{kind, currency, amount, credentials, note}});
+    toast(j.message);
+    if (isIn) { document.getElementById('in-amount').value=''; document.getElementById('in-creds').value=''; document.getElementById('in-note').value=''; }
+    else      { document.getElementById('out-amount').value=''; document.getElementById('out-creds').value=''; document.getElementById('out-note').value=''; }
+    loadWallet();
+    loadMyReq();
+  } catch(e){ toast(e.message, false); }
+}
+
+async function loadMyReq(){
+  try {
+    const list = await api('/api/cash/my-requests');
+    const tb = document.getElementById('myreq-rows');
+    if (!list.length) { tb.innerHTML = '<tr><td colspan="6" class="empty">No requests yet.</td></tr>'; return; }
+    tb.innerHTML = list.map(r => {
+      const kindCls = r.kind === 'cash_in' ? 'in' : 'out';
+      const kindLbl = r.kind === 'cash_in' ? 'Cash In' : 'Withdraw';
+      const statusCls = r.status === 'pending' ? 'pend' : (r.status === 'done' ? 'done' : 'rej');
+      const amt = r.currency === 'usd' ? fmtUSD(r.amount) : fmt(r.amount) + ' sat';
+      return `<tr>
+        <td>#${r.id}</td>
+        <td><span class="pill ${kindCls}">${kindLbl}</span></td>
+        <td>${amt}</td>
+        <td><span class="pill ${statusCls}">${r.status}</span></td>
+        <td style="color:#64748b">${r.created_at || ''}</td>
+        <td style="color:#64748b">${r.handled_at || '—'}</td>
+      </tr>`;
+    }).join('');
+  } catch(e){ /* ignore */ }
+}
+
+loadWallet();
+loadMarket();
+setInterval(loadWallet, 5000);
+</script>
+</body>
+</html>

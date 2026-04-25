@@ -201,9 +201,11 @@
   <div class="hdr-right">
     <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
     {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
+    {% if is_admin or is_manager %}<a href="/cash-requests" class="btn-sm" style="background:#1e3a5c;color:#7dd3fc">🔒 Cash Requests</a>{% endif %}
     <a href="/" class="btn-sm">Portfolio</a>
     <a href="/market" class="btn-sm">Markets</a>
     <a href="/items" class="btn-sm">🎒 Items</a>
+    <a href="/wallet" class="btn-sm">💰 Wallet</a>
     <a href="/mine" class="btn-sm">⛏️ Mine</a>
     <a href="/account" class="btn-sm">Account</a>
     <button class="btn-sm" onclick="logout()">Logout</button>

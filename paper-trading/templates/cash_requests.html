@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="/static/responsive.css"/>
+  <title>Cash Requests · Staff Panel</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+    header {
+      background: #1a1d27; border-bottom: 1px solid #2d3148;
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 800; color: #7c85ff; }
+    .hdr-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .hdr-user  { font-size: 0.85rem; color: #64748b; }
+    .hdr-user span { color: #e2e8f0; font-weight: 600; }
+    .tag { font-size: 0.72rem; font-weight: 700; padding: 3px 9px; border-radius: 20px; letter-spacing: .05em; }
+    .tag.admin   { background: #78350f; color: #fcd34d; }
+    .tag.manager { background: #1e3a5c; color: #7dd3fc; }
+    .btn-sm { padding: 6px 14px; border: none; border-radius: 6px; font-size: 0.8rem;
+              font-weight: 600; cursor: pointer; background: #2d3148; color: #94a3b8; text-decoration:none; display:inline-block; }
+    .btn-sm:hover { opacity: .8; }
+
+    .container { max-width: 1180px; margin: 0 auto; padding: 26px 20px; display: grid; gap: 22px; }
+    .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 20px 22px; }
+    .card h2 { font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+               letter-spacing: .08em; color: #64748b; margin-bottom: 16px; }
+    .warn {
+      background: #1e1a0f; border: 1px solid #78350f; border-radius: 8px;
+      padding: 12px 16px; font-size: 0.85rem; color: #fcd34d; margin-bottom: 16px;
+    }
+
+    .req {
+      background: #13151f; border: 1px solid #2d3148; border-radius: 10px;
+      padding: 14px 16px; margin-bottom: 12px;
+    }
+    .req-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .req-head .who { font-weight: 700; color: #f1f5f9; }
+    .req-head .at  { color: #64748b; font-size: 0.78rem; margin-left: auto; }
+    .pill { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; }
+    .pill.in   { background: #14532d; color: #4ade80; }
+    .pill.out  { background: #450a0a; color: #f87171; }
+    .amt { font-size: 1.1rem; font-weight: 800; color: #f1f5f9; }
+    .creds {
+      background: #0f1117; border: 1px solid #2d3148; border-radius: 7px;
+      padding: 10px 12px; font-family: ui-monospace, monospace; font-size: 0.85rem;
+      color: #cbd5e1; white-space: pre-wrap; word-break: break-word; margin: 8px 0;
+    }
+    .note { font-size: 0.83rem; color: #94a3b8; margin: 6px 0; }
+    .req-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .btn-done   { background: #16a34a; color: #fff; padding: 8px 14px; border: none; border-radius: 6px; font-weight: 700; font-size: 0.83rem; cursor: pointer; }
+    .btn-reject { background: #dc2626; color: #fff; padding: 8px 14px; border: none; border-radius: 6px; font-weight: 700; font-size: 0.83rem; cursor: pointer; }
+    .btn-done:hover, .btn-reject:hover { opacity: .85; }
+    .empty { color: #475569; font-size: 0.9rem; padding: 30px 0; text-align: center; }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: #1e2130; border: 1px solid #2d3148; border-radius: 9px;
+      padding: 12px 18px; max-width: 320px; font-size: 0.86rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      opacity: 0; transform: translateY(10px);
+      transition: opacity .22s, transform .22s;
+      pointer-events: none; z-index: 999;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.ok   { border-left: 3px solid #4ade80; }
+    .toast.err  { border-left: 3px solid #f87171; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🔒 Cash Requests · Staff</h1>
+  <div class="hdr-right">
+    {% if is_admin %}<span class="tag admin">ADMIN</span>{% endif %}
+    {% if is_manager %}<span class="tag manager">MANAGER</span>{% endif %}
+    <div class="hdr-user">Logged in as <span>{{ username }}</span></div>
+    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/wallet" class="btn-sm">💰 Wallet</a>
+    {% if is_admin %}<a href="/admin" class="btn-sm">Admin</a>{% endif %}
+    <button class="btn-sm" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="card">
+    <h2>Pending Cash In / Cash Out</h2>
+    <div class="warn">
+      ⚠ This page contains user payment credentials. Only admins and managers can see it.
+      Mark a request <strong>Done</strong> after you've processed the payment externally; mark
+      <strong>Reject</strong> to refund (cash-out) or skip (cash-in).
+    </div>
+    <div id="reqs"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const fmt = n => Number(n||0).toLocaleString();
+const fmtUSD = n => '$' + Number(n||0).toFixed(2);
+
+function toast(msg, ok=true){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.className='toast '+(ok?'ok':'err')+' show';
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2400);
+}
+async function api(url, opts={}){
+  opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+  if (opts.body && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
+  const r = await fetch(url, opts);
+  let j={}; try { j = await r.json(); } catch{}
+  if (!r.ok) throw new Error(j.error || ('HTTP '+r.status));
+  return j;
+}
+async function logout(){ await fetch('/api/logout',{method:'POST'}); location.href='/login'; }
+
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function load(){
+  try {
+    const list = await api('/api/admin/cash/requests');
+    const root = document.getElementById('reqs');
+    if (!list.length) { root.innerHTML = '<div class="empty">No pending requests. 🎉</div>'; return; }
+    root.innerHTML = list.map(r => {
+      const isIn = r.kind === 'cash_in';
+      const amt = r.currency === 'usd' ? fmtUSD(r.amount) : fmt(r.amount) + ' satoshi';
+      return `
+        <div class="req">
+          <div class="req-head">
+            <span class="pill ${isIn?'in':'out'}">${isIn?'CASH IN':'CASH OUT'}</span>
+            <span class="who"><a href="/profile/${r.user_id}" style="color:#7c85ff;text-decoration:none">${escapeHtml(r.username)}</a></span>
+            <span class="amt">${amt}</span>
+            <span class="at">submitted ${r.created_at}</span>
+          </div>
+          <div style="font-size:0.78rem;color:#64748b;margin-bottom:4px;">Payment credentials</div>
+          <div class="creds">${escapeHtml(r.credentials)}</div>
+          ${r.note ? `<div class="note"><strong>Note:</strong> ${escapeHtml(r.note)}</div>` : ''}
+          <div class="req-actions">
+            <button class="btn-done" onclick="markDone(${r.id}, '${r.kind}')">Mark Done${isIn ? ' & Credit' : ''}</button>
+            <button class="btn-reject" onclick="reject(${r.id}, '${r.kind}')">Reject${isIn ? '' : ' & Refund'}</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e){ toast(e.message, false); }
+}
+
+async function markDone(id, kind){
+  const msg = kind === 'cash_in'
+    ? 'Mark as done? This will CREDIT the user with the requested amount.'
+    : 'Mark as done? The user has already been debited; this just clears the request.';
+  if (!confirm(msg)) return;
+  try {
+    const j = await api('/api/admin/cash/requests/'+id+'/done', {method:'POST'});
+    toast(j.message);
+    load();
+  } catch(e){ toast(e.message, false); }
+}
+async function reject(id, kind){
+  const msg = kind === 'cash_out'
+    ? 'Reject this withdrawal? The escrowed satoshi will be REFUNDED to the user.'
+    : 'Reject this deposit request?';
+  if (!confirm(msg)) return;
+  try {
+    const j = await api('/api/admin/cash/requests/'+id+'/reject', {method:'POST'});
+    toast(j.message);
+    load();
+  } catch(e){ toast(e.message, false); }
+}
+
+load();
+setInterval(load, 5000);
+</script>
+</body>
+</html>

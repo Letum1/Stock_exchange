@@ -191,18 +191,52 @@ def init_db():
                 layers_cleared INTEGER NOT NULL DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS bon_listings (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                seller_id   INTEGER NOT NULL REFERENCES users(id),
+                quantity    INTEGER NOT NULL,
+                price       REAL    NOT NULL,
+                status      TEXT    NOT NULL DEFAULT 'OPEN',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                buyer_id    INTEGER REFERENCES users(id),
+                sold_at     DATETIME
+            );
+
+            CREATE TABLE IF NOT EXISTS cash_requests (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id      INTEGER NOT NULL REFERENCES users(id),
+                kind         TEXT    NOT NULL,
+                currency     TEXT    NOT NULL,
+                amount       REAL    NOT NULL,
+                credentials  TEXT    NOT NULL,
+                note         TEXT    DEFAULT '',
+                status       TEXT    NOT NULL DEFAULT 'pending',
+                created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                handled_by   INTEGER REFERENCES users(id),
+                handled_at   DATETIME
+            );
+
             CREATE INDEX IF NOT EXISTS idx_msg_pair ON messages(sender_id, recipient_id, id);
             CREATE INDEX IF NOT EXISTS idx_listings_status ON item_listings(status);
             CREATE INDEX IF NOT EXISTS idx_trades_status ON trade_sessions(status);
             CREATE INDEX IF NOT EXISTS idx_offers_trade ON trade_offers(trade_id);
             CREATE INDEX IF NOT EXISTS idx_pubmsg_id ON public_messages(id);
             CREATE INDEX IF NOT EXISTS idx_blocks_world ON mining_blocks(world_id, generation);
+            CREATE INDEX IF NOT EXISTS idx_bonlist_status ON bon_listings(status);
+            CREATE INDEX IF NOT EXISTS idx_cashreq_status ON cash_requests(status);
         """)
         # Best-effort schema migrations on existing DBs
-        try:
-            db.execute("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
+        for ddl in (
+            "ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN bon INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN satoshi INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN is_manager INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE mining_user_stats ADD COLUMN bon_found INTEGER NOT NULL DEFAULT 0",
+        ):
+            try:
+                db.execute(ddl)
+            except sqlite3.OperationalError:
+                pass
         db.commit()
 
 
@@ -233,6 +267,33 @@ def admin_required(f):
             return jsonify({"error": "Admin only"}), 403
         return f(*args, **kwargs)
     return decorated
+
+
+def staff_required(f):
+    """Allow admins OR managers (used for cash request panel)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user_id" not in session:
+            return jsonify({"error": "Not logged in"}), 401
+        if not (session.get("is_admin") or session.get("is_manager")):
+            return jsonify({"error": "Staff only"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.context_processor
+def _inject_role_flags():
+    """Make is_manager available in every template (is_admin already passed
+       explicitly by most pages, but expose both as a fallback)."""
+    return {
+        "is_manager": session.get("is_manager", False),
+    }
+
+
+# Conversion rates (changeable in one place)
+BON_PER_SATOSHI = 100         # 100 BON = 1 satoshi
+SATOSHI_PER_USD = 100         # 100 satoshi = $1.00 (1 satoshi = $0.01)
+BON_DROP_RATE   = 100         # 1 in 100 mined blocks drops a BON
 
 
 def current_user_id():
@@ -346,6 +407,7 @@ def register():
     session["user_id"]  = user_id
     session["username"] = username
     session["is_admin"] = bool(is_admin)
+    session["is_manager"] = False
     session["is_banned"] = False
     return jsonify({"message": f"Welcome, {username}!", "is_admin": bool(is_admin)})
 
@@ -358,7 +420,7 @@ def login():
 
     db = get_db()
     user = db.execute(
-        "SELECT id, password, is_admin, is_banned FROM users WHERE username = ?",
+        "SELECT id, password, is_admin, COALESCE(is_manager,0) AS is_manager, is_banned FROM users WHERE username = ?",
         (username,),
     ).fetchone()
     if not user or not check_password_hash(user["password"], password):
@@ -369,6 +431,7 @@ def login():
     session["user_id"]  = user["id"]
     session["username"] = username
     session["is_admin"] = bool(user["is_admin"])
+    session["is_manager"] = bool(user["is_manager"])
     session["is_banned"] = False
     return jsonify({"message": f"Welcome back, {username}!", "is_admin": bool(user["is_admin"])})
 
@@ -1488,8 +1551,12 @@ def admin_trades():
 def admin_users():
     db   = get_db()
     rows = db.execute(
-        """SELECT u.id, u.username, u.is_admin, u.is_banned, u.created,
-                  COALESCE(p.cash, 0) as cash
+        """SELECT u.id, u.username, u.is_admin,
+                  COALESCE(u.is_manager, 0) AS is_manager,
+                  u.is_banned, u.created,
+                  COALESCE(p.cash, 0) as cash,
+                  COALESCE(u.bon, 0)     AS bon,
+                  COALESCE(u.satoshi, 0) AS satoshi
            FROM users u
            LEFT JOIN portfolios p ON p.user_id = u.id
            ORDER BY u.id""",
@@ -1504,9 +1571,12 @@ def admin_users():
             "id":       r["id"],
             "username": r["username"],
             "is_admin": bool(r["is_admin"]),
+            "is_manager": bool(r["is_manager"]),
             "is_banned": bool(r["is_banned"]),
             "created":  r["created"],
             "cash":     round(r["cash"], 2),
+            "bon":      int(r["bon"]),
+            "satoshi":  int(r["satoshi"]),
             "holdings": [{"ticker": h["ticker"], "shares": h["shares"]} for h in holdings],
         })
     return jsonify(result)
@@ -2318,11 +2388,20 @@ def mining_mine():
 
     # Track user stats
     db.execute(
-        """INSERT INTO mining_user_stats (user_id, blocks_mined, layers_cleared)
-           VALUES (?, 1, 0)
+        """INSERT INTO mining_user_stats (user_id, blocks_mined, layers_cleared, bon_found)
+           VALUES (?, 1, 0, 0)
            ON CONFLICT(user_id) DO UPDATE SET blocks_mined = blocks_mined + 1""",
         (uid,),
     )
+
+    # 1-in-BON_DROP_RATE chance to drop a BON token
+    bon_dropped = (random.randint(1, BON_DROP_RATE) == 1)
+    if bon_dropped:
+        db.execute("UPDATE users SET bon = COALESCE(bon,0) + 1 WHERE id = ?", (uid,))
+        db.execute(
+            "UPDATE mining_user_stats SET bon_found = bon_found + 1 WHERE user_id = ?",
+            (uid,),
+        )
 
     # Check if layer is fully mined
     remaining = db.execute(
@@ -2350,6 +2429,7 @@ def mining_mine():
     return jsonify({
         "ok": True,
         "layer_cleared": layer_cleared,
+        "bon_dropped": bon_dropped,
         "state": _world_state(db, world_id),
     })
 
@@ -2375,6 +2455,434 @@ def mining_leave():
     )
     db.commit()
     return jsonify({"message": "Left the world"})
+
+
+# ── Wallet / BON / Satoshi ────────────────────────────────────────────────────
+
+def _wallet_state(db, uid):
+    row = db.execute(
+        """SELECT u.username,
+                  COALESCE(u.bon, 0)     AS bon,
+                  COALESCE(u.satoshi, 0) AS satoshi,
+                  COALESCE(p.cash, 0)    AS cash
+           FROM users u
+           LEFT JOIN portfolios p ON p.user_id = u.id
+           WHERE u.id = ?""",
+        (uid,),
+    ).fetchone()
+    return {
+        "user_id": uid,
+        "username": row["username"],
+        "bon": int(row["bon"]),
+        "satoshi": int(row["satoshi"]),
+        "cash": float(row["cash"]),
+        "rates": {
+            "bon_per_satoshi": BON_PER_SATOSHI,
+            "satoshi_per_usd": SATOSHI_PER_USD,
+        },
+    }
+
+
+@app.route("/api/wallet")
+@login_required
+def wallet_get():
+    return jsonify(_wallet_state(get_db(), current_user_id()))
+
+
+@app.route("/api/wallet/convert", methods=["POST"])
+@login_required
+def wallet_convert():
+    """Instant conversions:
+       bon_to_satoshi: amount in BON  → satoshi (100 BON = 1 sat)
+       satoshi_to_bon: amount in sats → BON
+       satoshi_to_usd: amount in sats → cash  (100 sat = $1)
+       usd_to_satoshi: amount in USD  → satoshi
+    """
+    uid = current_user_id()
+    data = request.get_json() or {}
+    direction = (data.get("direction") or "").strip()
+    try:
+        amount = float(data.get("amount"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid amount"}), 400
+    if amount <= 0:
+        return jsonify({"error": "Amount must be positive"}), 400
+
+    db = get_db()
+    w = db.execute(
+        "SELECT COALESCE(bon,0) AS bon, COALESCE(satoshi,0) AS satoshi FROM users WHERE id = ?",
+        (uid,),
+    ).fetchone()
+    cash = db.execute(
+        "SELECT COALESCE(cash,0) AS cash FROM portfolios WHERE user_id = ?", (uid,)
+    ).fetchone()
+    bon = int(w["bon"])
+    sat = int(w["satoshi"])
+    usd = float(cash["cash"]) if cash else 0.0
+
+    if direction == "bon_to_satoshi":
+        bon_in = int(amount)
+        if bon_in <= 0 or bon_in % BON_PER_SATOSHI != 0:
+            return jsonify({"error": f"Must be a positive multiple of {BON_PER_SATOSHI} BON"}), 400
+        if bon_in > bon:
+            return jsonify({"error": "Not enough BON"}), 400
+        gained = bon_in // BON_PER_SATOSHI
+        db.execute("UPDATE users SET bon = bon - ?, satoshi = satoshi + ? WHERE id = ?",
+                   (bon_in, gained, uid))
+        msg = f"Converted {bon_in} BON → {gained} satoshi"
+
+    elif direction == "satoshi_to_bon":
+        sat_in = int(amount)
+        if sat_in <= 0:
+            return jsonify({"error": "Must be a positive number of satoshi"}), 400
+        if sat_in > sat:
+            return jsonify({"error": "Not enough satoshi"}), 400
+        gained = sat_in * BON_PER_SATOSHI
+        db.execute("UPDATE users SET satoshi = satoshi - ?, bon = bon + ? WHERE id = ?",
+                   (sat_in, gained, uid))
+        msg = f"Converted {sat_in} satoshi → {gained} BON"
+
+    elif direction == "satoshi_to_usd":
+        sat_in = int(amount)
+        if sat_in <= 0 or sat_in % SATOSHI_PER_USD != 0:
+            return jsonify({"error": f"Must be a positive multiple of {SATOSHI_PER_USD} satoshi"}), 400
+        if sat_in > sat:
+            return jsonify({"error": "Not enough satoshi"}), 400
+        gained_usd = sat_in / SATOSHI_PER_USD
+        db.execute("UPDATE users SET satoshi = satoshi - ? WHERE id = ?", (sat_in, uid))
+        # Make sure portfolio exists
+        if not cash:
+            db.execute("INSERT INTO portfolios (user_id, cash) VALUES (?, 0)", (uid,))
+        db.execute("UPDATE portfolios SET cash = cash + ? WHERE user_id = ?", (gained_usd, uid))
+        msg = f"Converted {sat_in} satoshi → ${gained_usd:.2f}"
+
+    elif direction == "usd_to_satoshi":
+        usd_in = round(float(amount), 2)
+        if usd_in <= 0:
+            return jsonify({"error": "Amount must be positive"}), 400
+        # only whole-cent amounts produce whole satoshi
+        sats_gained = int(round(usd_in * SATOSHI_PER_USD))
+        if sats_gained <= 0:
+            return jsonify({"error": f"Minimum is ${1/SATOSHI_PER_USD:.2f}"}), 400
+        if usd_in > usd + 1e-9:
+            return jsonify({"error": "Not enough cash"}), 400
+        db.execute("UPDATE portfolios SET cash = cash - ? WHERE user_id = ?", (usd_in, uid))
+        db.execute("UPDATE users SET satoshi = satoshi + ? WHERE id = ?", (sats_gained, uid))
+        msg = f"Converted ${usd_in:.2f} → {sats_gained} satoshi"
+
+    else:
+        return jsonify({"error": "Unknown direction"}), 400
+
+    db.commit()
+    return jsonify({"message": msg, "wallet": _wallet_state(db, uid)})
+
+
+# ── BON marketplace (sellers list BON for USD; anyone can buy) ────────────────
+
+@app.route("/api/bon/listings")
+@login_required
+def bon_listings_list():
+    db = get_db()
+    rows = db.execute(
+        """SELECT bl.id, bl.seller_id, u.username AS seller_username,
+                  bl.quantity, bl.price, bl.created_at
+           FROM bon_listings bl
+           JOIN users u ON u.id = bl.seller_id
+           WHERE bl.status = 'OPEN'
+           ORDER BY (bl.price / bl.quantity) ASC, bl.id DESC
+           LIMIT 100"""
+    ).fetchall()
+    return jsonify([{
+        "id": r["id"],
+        "seller_id": r["seller_id"],
+        "seller_username": r["seller_username"],
+        "quantity": int(r["quantity"]),
+        "price": float(r["price"]),
+        "price_per_bon": float(r["price"]) / int(r["quantity"]) if r["quantity"] else 0,
+        "is_mine": r["seller_id"] == current_user_id(),
+        "created_at": r["created_at"],
+    } for r in rows])
+
+
+@app.route("/api/bon/listings/create", methods=["POST"])
+@login_required
+def bon_listings_create():
+    uid = current_user_id()
+    data = request.get_json() or {}
+    try:
+        qty = int(data.get("quantity"))
+        price = round(float(data.get("price")), 2)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid quantity or price"}), 400
+    if qty <= 0:
+        return jsonify({"error": "Quantity must be positive"}), 400
+    if price <= 0:
+        return jsonify({"error": "Price must be positive"}), 400
+
+    db = get_db()
+    have = db.execute("SELECT COALESCE(bon,0) AS b FROM users WHERE id = ?", (uid,)).fetchone()
+    if int(have["b"]) < qty:
+        return jsonify({"error": "Not enough BON"}), 400
+
+    # Escrow: deduct BON now, return on cancel
+    db.execute("UPDATE users SET bon = bon - ? WHERE id = ?", (qty, uid))
+    db.execute(
+        "INSERT INTO bon_listings (seller_id, quantity, price) VALUES (?, ?, ?)",
+        (uid, qty, price),
+    )
+    db.commit()
+    return jsonify({"message": f"Listed {qty} BON for ${price:.2f}"})
+
+
+@app.route("/api/bon/listings/<int:lid>/cancel", methods=["POST"])
+@login_required
+def bon_listings_cancel(lid):
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute("SELECT * FROM bon_listings WHERE id = ?", (lid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Listing not found"}), 404
+    if row["status"] != "OPEN":
+        return jsonify({"error": "Listing is not open"}), 400
+    if row["seller_id"] != uid and not session.get("is_admin"):
+        return jsonify({"error": "Not your listing"}), 403
+    # Refund BON
+    db.execute("UPDATE users SET bon = bon + ? WHERE id = ?", (row["quantity"], row["seller_id"]))
+    db.execute("UPDATE bon_listings SET status = 'CANCELLED' WHERE id = ?", (lid,))
+    db.commit()
+    return jsonify({"message": "Listing cancelled and BON refunded"})
+
+
+@app.route("/api/bon/listings/<int:lid>/buy", methods=["POST"])
+@login_required
+def bon_listings_buy(lid):
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute("SELECT * FROM bon_listings WHERE id = ?", (lid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Listing not found"}), 404
+    if row["status"] != "OPEN":
+        return jsonify({"error": "Listing is no longer available"}), 400
+    if row["seller_id"] == uid:
+        return jsonify({"error": "Cannot buy your own listing"}), 400
+    price = float(row["price"])
+    qty = int(row["quantity"])
+    cash = db.execute(
+        "SELECT COALESCE(cash,0) AS c FROM portfolios WHERE user_id = ?", (uid,)
+    ).fetchone()
+    have = float(cash["c"]) if cash else 0.0
+    if have + 1e-9 < price:
+        return jsonify({"error": f"Need ${price:.2f}, you have ${have:.2f}"}), 400
+    if not cash:
+        db.execute("INSERT INTO portfolios (user_id, cash) VALUES (?, 0)", (uid,))
+    # Pay seller, credit buyer
+    db.execute("UPDATE portfolios SET cash = cash - ? WHERE user_id = ?", (price, uid))
+    db.execute("INSERT OR IGNORE INTO portfolios (user_id, cash) VALUES (?, 0)", (row["seller_id"],))
+    db.execute("UPDATE portfolios SET cash = cash + ? WHERE user_id = ?", (price, row["seller_id"]))
+    db.execute("UPDATE users SET bon = COALESCE(bon,0) + ? WHERE id = ?", (qty, uid))
+    db.execute(
+        "UPDATE bon_listings SET status='SOLD', buyer_id=?, sold_at=CURRENT_TIMESTAMP WHERE id=?",
+        (uid, lid),
+    )
+    db.commit()
+    return jsonify({"message": f"Bought {qty} BON for ${price:.2f}"})
+
+
+# ── Cash in / Cash out (private requests visible only to admin/manager) ───────
+
+ALLOWED_KINDS = {"cash_in", "cash_out"}
+ALLOWED_CURRENCIES = {"satoshi", "usd"}
+
+
+@app.route("/api/cash/request", methods=["POST"])
+@login_required
+def cash_request_create():
+    uid = current_user_id()
+    data = request.get_json() or {}
+    kind = (data.get("kind") or "").strip()
+    currency = (data.get("currency") or "").strip()
+    credentials = (data.get("credentials") or "").strip()
+    note = (data.get("note") or "").strip()[:500]
+    try:
+        amount = float(data.get("amount"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid amount"}), 400
+
+    if kind not in ALLOWED_KINDS:
+        return jsonify({"error": "kind must be cash_in or cash_out"}), 400
+    if currency not in ALLOWED_CURRENCIES:
+        return jsonify({"error": "currency must be satoshi or usd"}), 400
+    # Withdrawals must be in satoshi
+    if kind == "cash_out" and currency != "satoshi":
+        return jsonify({"error": "You can only withdraw satoshi"}), 400
+    if amount <= 0:
+        return jsonify({"error": "Amount must be positive"}), 400
+    if not credentials or len(credentials) < 4:
+        return jsonify({"error": "Please provide payout credentials (wallet/bank/etc.)"}), 400
+    if len(credentials) > 1000:
+        return jsonify({"error": "Credentials too long"}), 400
+
+    db = get_db()
+
+    # Cash-out: escrow user's funds immediately so they can't double-spend
+    if kind == "cash_out":
+        sat_amount = int(amount)
+        if sat_amount <= 0:
+            return jsonify({"error": "Withdraw must be a whole number of satoshi"}), 400
+        row = db.execute("SELECT COALESCE(satoshi,0) AS s FROM users WHERE id = ?", (uid,)).fetchone()
+        if int(row["s"]) < sat_amount:
+            return jsonify({"error": "Not enough satoshi"}), 400
+        db.execute("UPDATE users SET satoshi = satoshi - ? WHERE id = ?", (sat_amount, uid))
+        amount = sat_amount
+
+    db.execute(
+        """INSERT INTO cash_requests (user_id, kind, currency, amount, credentials, note)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (uid, kind, currency, amount, credentials, note),
+    )
+    db.commit()
+    return jsonify({"message": "Request submitted. Staff will process it shortly."})
+
+
+@app.route("/api/cash/my-requests")
+@login_required
+def cash_my_requests():
+    uid = current_user_id()
+    db = get_db()
+    rows = db.execute(
+        """SELECT id, kind, currency, amount, status, created_at, handled_at
+           FROM cash_requests
+           WHERE user_id = ?
+           ORDER BY id DESC LIMIT 50""",
+        (uid,),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/admin/cash/requests")
+@staff_required
+def admin_cash_requests_list():
+    db = get_db()
+    rows = db.execute(
+        """SELECT cr.id, cr.user_id, u.username, cr.kind, cr.currency, cr.amount,
+                  cr.credentials, cr.note, cr.status, cr.created_at,
+                  cr.handled_by, cr.handled_at,
+                  h.username AS handled_by_username
+           FROM cash_requests cr
+           JOIN users u ON u.id = cr.user_id
+           LEFT JOIN users h ON h.id = cr.handled_by
+           WHERE cr.status = 'pending'
+           ORDER BY cr.id ASC"""
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/admin/cash/requests/<int:rid>/done", methods=["POST"])
+@staff_required
+def admin_cash_request_done(rid):
+    """Mark a request as done. For cash_in requests, credits the user with
+       the amount they asked for (admin processed payment externally).
+       For cash_out, no balance change (already escrowed at request time)."""
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute("SELECT * FROM cash_requests WHERE id = ?", (rid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Request not found"}), 404
+    if row["status"] != "pending":
+        return jsonify({"error": "Request already handled"}), 400
+
+    if row["kind"] == "cash_in":
+        if row["currency"] == "satoshi":
+            db.execute("UPDATE users SET satoshi = COALESCE(satoshi,0) + ? WHERE id = ?",
+                       (int(row["amount"]), row["user_id"]))
+        else:
+            db.execute(
+                "INSERT OR IGNORE INTO portfolios (user_id, cash) VALUES (?, 0)",
+                (row["user_id"],),
+            )
+            db.execute("UPDATE portfolios SET cash = cash + ? WHERE user_id = ?",
+                       (float(row["amount"]), row["user_id"]))
+    db.execute(
+        "UPDATE cash_requests SET status='done', handled_by=?, handled_at=CURRENT_TIMESTAMP WHERE id=?",
+        (uid, rid),
+    )
+    db.commit()
+    return jsonify({"message": "Marked done"})
+
+
+@app.route("/api/admin/cash/requests/<int:rid>/reject", methods=["POST"])
+@staff_required
+def admin_cash_request_reject(rid):
+    """Reject a pending request. For cash_out, refunds escrowed satoshi.
+       For cash_in, no balance change."""
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute("SELECT * FROM cash_requests WHERE id = ?", (rid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Request not found"}), 404
+    if row["status"] != "pending":
+        return jsonify({"error": "Request already handled"}), 400
+    if row["kind"] == "cash_out":
+        db.execute("UPDATE users SET satoshi = COALESCE(satoshi,0) + ? WHERE id = ?",
+                   (int(row["amount"]), row["user_id"]))
+    db.execute(
+        "UPDATE cash_requests SET status='rejected', handled_by=?, handled_at=CURRENT_TIMESTAMP WHERE id=?",
+        (uid, rid),
+    )
+    db.commit()
+    return jsonify({"message": "Request rejected" + (" and refunded" if row["kind"] == "cash_out" else "")})
+
+
+# ── Manager role grant (admin only) ───────────────────────────────────────────
+
+@app.route("/api/admin/grant-manager", methods=["POST"])
+@admin_required
+def admin_grant_manager():
+    data = request.get_json() or {}
+    try:
+        user_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid user"}), 400
+    make = bool(data.get("manager"))
+    db = get_db()
+    row = db.execute(
+        "SELECT id, COALESCE(is_manager,0) AS is_manager FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "User not found"}), 404
+    db.execute("UPDATE users SET is_manager = ? WHERE id = ?", (1 if make else 0, user_id))
+    db.commit()
+    if user_id == current_user_id():
+        session["is_manager"] = bool(make)
+    return jsonify({"message": "Granted manager" if make else "Revoked manager"})
+
+
+# ── Wallet page ───────────────────────────────────────────────────────────────
+
+@app.route("/wallet")
+@login_required
+def wallet_page():
+    return render_template(
+        "wallet.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
+    )
+
+
+@app.route("/cash-requests")
+@login_required
+def cash_requests_page():
+    if not (session.get("is_admin") or session.get("is_manager")):
+        return redirect(url_for("index"))
+    return render_template(
+        "cash_requests.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
+        is_manager=session.get("is_manager", False),
+    )
 
 
 init_db()

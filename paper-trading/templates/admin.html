@@ -133,6 +133,9 @@
     <span class="tag">ADMIN</span>
     <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
     <a href="/"><button class="btn-sm btn-go">Trading App</button></a>
+    <a href="/wallet"><button class="btn-sm">💰 Wallet</button></a>
+    <a href="/mine"><button class="btn-sm">⛏️ Mine</button></a>
+    <a href="/cash-requests"><button class="btn-sm" style="background:#1e3a5c;color:#7dd3fc">🔒 Cash Requests</button></a>
     <a href="/items"><button class="btn-sm">🎒 Items</button></a>
     <a href="/chat"><button class="btn-sm">💬 Chat</button></a>
     <a href="/trades" class="btn-sm">🤝 Trades</a>
@@ -363,6 +366,9 @@
       const grantBtn = isAdmin
         ? `<button class="btn-revoke" onclick="confirmGrantAdmin(${u.id},'${u.username}',false)">Revoke Admin</button>`
         : `<button class="btn-grant"  onclick="confirmGrantAdmin(${u.id},'${u.username}',true)">Make Admin</button>`;
+      const mgrBtn = u.is_manager
+        ? `<button class="btn-revoke" onclick="confirmGrantManager(${u.id},'${u.username}',false)">Revoke Manager</button>`
+        : `<button class="btn-grant"  onclick="confirmGrantManager(${u.id},'${u.username}',true)">Make Manager</button>`;
       // Sensitive destructive actions still hidden for admins to avoid foot-guns
       const destructive = !isAdmin ? `
         <button class="btn-assets" onclick="confirmClearAssets(${u.id},'${u.username}')">Clear Assets</button>
@@ -376,6 +382,7 @@
         <td style="color:#64748b">${u.id}</td>
         <td style="font-weight:700">${u.username}
           ${isAdmin ? '<span class="badge admin" style="margin-left:6px">ADMIN</span>' : ''}
+          ${u.is_manager ? '<span class="badge" style="margin-left:6px;background:#1e3a5c;color:#7dd3fc">MANAGER</span>' : ''}
         </td>
         <td>
           ${u.is_banned
@@ -482,6 +489,24 @@
         const r = await fetch('/api/admin/grant-admin', {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({user_id: userId, admin: makeAdmin})
+        });
+        const d = await r.json();
+        showToast(d.message || d.error, r.ok);
+        if (r.ok) loadUsers();
+      }
+    );
+  }
+
+  function confirmGrantManager(userId, username, makeManager) {
+    openConfirm(
+      makeManager ? `Make ${username} a manager?` : `Revoke manager from ${username}?`,
+      makeManager
+        ? 'Managers can see the private Cash Requests panel (with user payment credentials) and approve or reject deposits/withdrawals. They cannot access other admin functions.'
+        : 'They will lose access to the Cash Requests panel.',
+      async () => {
+        const r = await fetch('/api/admin/grant-manager', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({user_id: userId, manager: makeManager})
         });
         const d = await r.json();
         showToast(d.message || d.error, r.ok);
