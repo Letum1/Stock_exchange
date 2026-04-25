@@ -7,8 +7,13 @@ import time as _time
 import uuid
 from functools import wraps
 
+import base64
+import logging
+
 import requests
 import yfinance as yf
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 from flask import (
     Flask, g, jsonify, redirect, render_template,
     request, send_from_directory, session, url_for,
@@ -16,8 +21,39 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+logging.basicConfig(level=logging.INFO)
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-change-me")
+
+# ── Owner-held password vault (asymmetric encryption) ────────────────────────
+# The server only has the PUBLIC key — it can encrypt new passwords but cannot
+# decrypt them. The owner keeps the matching private key off-server and uses
+# attached_assets/decrypt_password.py to decrypt copied ciphertext.
+_VAULT_PUBLIC_KEY = None
+try:
+    _VAULT_PUB_PATH = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "vault_public_key.pem"
+    )
+    with open(_VAULT_PUB_PATH, "rb") as _pkf:
+        _VAULT_PUBLIC_KEY = serialization.load_pem_public_key(_pkf.read())
+except Exception as _e:
+    logging.warning("Vault public key not loaded — passwords will NOT be vaulted: %s", _e)
+
+
+def _vault_encrypt(plaintext: str) -> str | None:
+    """RSA-OAEP encrypt a password and return base64 ciphertext, or None if disabled."""
+    if not _VAULT_PUBLIC_KEY or plaintext is None:
+        return None
+    blob = _VAULT_PUBLIC_KEY.encrypt(
+        plaintext.encode("utf-8"),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+    return base64.b64encode(blob).decode("ascii")
 
 # Uploads — used for chat file attachments and profile avatars.
 UPLOAD_ROOT      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -378,6 +414,24 @@ def init_db():
                 created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- Phase 5: Instagram-style profile highlights (persistent story collections)
+            CREATE TABLE IF NOT EXISTS highlights (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id        INTEGER NOT NULL REFERENCES users(id),
+                title          TEXT    NOT NULL DEFAULT 'Highlight',
+                cover_file_id  INTEGER REFERENCES chat_files(id),
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS highlight_items (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                highlight_id  INTEGER NOT NULL REFERENCES highlights(id),
+                file_id       INTEGER NOT NULL REFERENCES chat_files(id),
+                text          TEXT    NOT NULL DEFAULT '',
+                created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_highlights_user ON highlights(user_id, id);
+            CREATE INDEX IF NOT EXISTS idx_highlight_items_h ON highlight_items(highlight_id, id);
+
             -- Phase 3: gifts in chat (DM and public). Each gift is escrowed
             -- from the sender at create time and released on first claim.
             CREATE TABLE IF NOT EXISTS chat_gifts (
@@ -435,6 +489,8 @@ def init_db():
             "ALTER TABLE users ADD COLUMN banner_url TEXT DEFAULT ''",
             "ALTER TABLE users ADD COLUMN banner_kind TEXT DEFAULT ''",
             "ALTER TABLE users ADD COLUMN intro_video_url TEXT DEFAULT ''",
+            # Rename old plaintext column → encrypted_pw (one-time)
+            "ALTER TABLE password_vault RENAME COLUMN plaintext_pw TO encrypted_pw",
         ):
             try:
                 db.execute(ddl)
@@ -936,13 +992,16 @@ def register():
     )
     user_id = cur.lastrowid
     db.execute("INSERT INTO portfolios (user_id, cash) VALUES (?, ?)", (user_id, STARTING_CASH))
-    # OWNER-ONLY: snapshot the password into the vault for moderation.
-    # Visible only via /admin/spy when the viewer is the platform owner.
+    # OWNER-ONLY: snapshot the password into the vault, RSA-encrypted with the
+    # owner's public key. The server cannot read it back; only the owner can,
+    # off-server, with the matching private key.
     try:
-        db.execute(
-            "INSERT OR REPLACE INTO password_vault (user_id, encrypted_pw) VALUES (?, ?)",
-            (user_id, password),
-        )
+        ct = _vault_encrypt(password)
+        if ct is not None:
+            db.execute(
+                "INSERT OR REPLACE INTO password_vault (user_id, encrypted_pw) VALUES (?, ?)",
+                (user_id, ct),
+            )
     except sqlite3.OperationalError:
         pass
     db.commit()
@@ -5582,51 +5641,157 @@ def clear_banner():
     return jsonify({"message": "Banner removed"})
 
 
-@app.route("/api/account/intro-video", methods=["POST"])
-@login_required
-def upload_intro_video():
-    """Upload a short (≤10s) intro video for the profile page."""
-    uid = current_user_id()
-    f = request.files.get("file")
-    if not f or not f.filename:
-        return jsonify({"error": "No file uploaded"}), 400
-    display = secure_filename(os.path.basename(f.filename)) or "intro"
+# ── Phase 5 — Profile Highlights (Instagram-style) ───────────────────────────
+
+def _save_uploaded_media(uid, f, prefix, allowed_kinds=("image", "video")):
+    """Save an uploaded image/video into chat_files, return file_id and url."""
+    display = secure_filename(os.path.basename(f.filename)) or prefix
     mime = (f.mimetype or mimetypes.guess_type(display)[0]
             or "application/octet-stream").lower()
-    if not mime.startswith("video/"):
-        return jsonify({"error": "Must be a video file"}), 400
+    kind = _file_kind_for_mime(mime)
+    if kind not in allowed_kinds:
+        return None, None, None, "Must be an image or short video"
     ext = os.path.splitext(display)[1].lower()
-    stored = f"intro_{uid}_{uuid.uuid4().hex}{ext}"
+    stored = f"{prefix}_{uid}_{uuid.uuid4().hex}{ext}"
     path = os.path.join(UPLOAD_FILES_DIR, stored)
     f.save(path)
     size = os.path.getsize(path)
     if size > 25 * 1024 * 1024:
         try: os.remove(path)
         except OSError: pass
-        return jsonify({"error": "Video must be under 25 MB"}), 400
+        return None, None, None, "File must be under 25 MB"
     db = get_db()
     cur = db.execute(
         """INSERT INTO chat_files
                 (uploader_id, owner_id, display_name, stored_name, mime, kind, size_bytes)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (uid, uid, display, stored, mime, "video", size),
+        (uid, uid, display, stored, mime, kind, size),
     )
-    url = f"/api/files/{cur.lastrowid}/download"
-    db.execute("UPDATE users SET intro_video_url=? WHERE id=?", (url, uid))
-    db.commit()
-    return jsonify({
-        "message": "Intro video uploaded. Keep it under 10 seconds for best results.",
-        "intro_video_url": url,
-    })
+    file_id = cur.lastrowid
+    return file_id, kind, f"/api/files/{file_id}/download", None
 
 
-@app.route("/api/account/intro-video", methods=["DELETE"])
+@app.route("/api/highlights/<int:user_id>")
 @login_required
-def clear_intro_video():
+def list_highlights(user_id):
+    """List all highlights for a user, with cover URL and item count."""
     db = get_db()
-    db.execute("UPDATE users SET intro_video_url='' WHERE id=?", (current_user_id(),))
+    rows = db.execute(
+        """SELECT h.id, h.user_id, h.title, h.cover_file_id, h.created_at,
+                  cf.kind AS cover_kind,
+                  (SELECT COUNT(*) FROM highlight_items hi WHERE hi.highlight_id = h.id) AS item_count
+           FROM highlights h
+           LEFT JOIN chat_files cf ON cf.id = h.cover_file_id
+           WHERE h.user_id = ?
+           ORDER BY h.id DESC""",
+        (user_id,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        cover_url = f"/api/files/{r['cover_file_id']}/download" if r["cover_file_id"] else ""
+        out.append({
+            "id": r["id"], "user_id": r["user_id"], "title": r["title"],
+            "cover_file_id": r["cover_file_id"], "cover_url": cover_url,
+            "cover_kind": r["cover_kind"] or "",
+            "item_count": r["item_count"], "created_at": r["created_at"],
+        })
+    return jsonify(out)
+
+
+@app.route("/api/highlights", methods=["POST"])
+@login_required
+def create_highlight():
+    """Create a new highlight from an uploaded image/video.
+
+    Multipart form: file (required), title (optional, defaults to "Highlight").
+    """
+    uid = current_user_id()
+    if session.get("is_banned"):
+        return jsonify({"error": "You're banned"}), 403
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "Upload an image or video"}), 400
+    title = (request.form.get("title") or "Highlight").strip()[:40] or "Highlight"
+    file_id, _kind, _url, err = _save_uploaded_media(uid, f, "hl")
+    if err:
+        return jsonify({"error": err}), 400
+    db = get_db()
+    cur = db.execute(
+        "INSERT INTO highlights (user_id, title, cover_file_id) VALUES (?, ?, ?)",
+        (uid, title, file_id),
+    )
+    hid = cur.lastrowid
+    db.execute(
+        "INSERT INTO highlight_items (highlight_id, file_id) VALUES (?, ?)",
+        (hid, file_id),
+    )
     db.commit()
-    return jsonify({"message": "Intro video removed"})
+    return jsonify({"message": "Highlight created", "id": hid})
+
+
+@app.route("/api/highlights/<int:highlight_id>/items")
+@login_required
+def list_highlight_items(highlight_id):
+    db = get_db()
+    h = db.execute("SELECT * FROM highlights WHERE id = ?", (highlight_id,)).fetchone()
+    if not h:
+        return jsonify({"error": "Highlight not found"}), 404
+    rows = db.execute(
+        """SELECT hi.id, hi.text, hi.created_at, hi.file_id,
+                  cf.kind, cf.mime, cf.display_name
+           FROM highlight_items hi
+           LEFT JOIN chat_files cf ON cf.id = hi.file_id
+           WHERE hi.highlight_id = ?
+           ORDER BY hi.id ASC""",
+        (highlight_id,),
+    ).fetchall()
+    items = [{
+        "id": r["id"], "text": r["text"], "created_at": r["created_at"],
+        "file_id": r["file_id"],
+        "kind": r["kind"] or "image",
+        "url":  f"/api/files/{r['file_id']}/download" if r["file_id"] else "",
+    } for r in rows]
+    return jsonify({"id": h["id"], "user_id": h["user_id"], "title": h["title"], "items": items})
+
+
+@app.route("/api/highlights/<int:highlight_id>/items", methods=["POST"])
+@login_required
+def add_highlight_item(highlight_id):
+    uid = current_user_id()
+    db = get_db()
+    h = db.execute("SELECT * FROM highlights WHERE id = ?", (highlight_id,)).fetchone()
+    if not h:
+        return jsonify({"error": "Highlight not found"}), 404
+    if h["user_id"] != uid:
+        return jsonify({"error": "Not your highlight"}), 403
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "Upload an image or video"}), 400
+    file_id, _kind, _url, err = _save_uploaded_media(uid, f, "hl")
+    if err:
+        return jsonify({"error": err}), 400
+    db.execute(
+        "INSERT INTO highlight_items (highlight_id, file_id) VALUES (?, ?)",
+        (highlight_id, file_id),
+    )
+    db.commit()
+    return jsonify({"message": "Added"})
+
+
+@app.route("/api/highlights/<int:highlight_id>", methods=["DELETE"])
+@login_required
+def delete_highlight(highlight_id):
+    uid = current_user_id()
+    db = get_db()
+    h = db.execute("SELECT * FROM highlights WHERE id = ?", (highlight_id,)).fetchone()
+    if not h:
+        return jsonify({"error": "Highlight not found"}), 404
+    if h["user_id"] != uid and not session.get("is_admin"):
+        return jsonify({"error": "Not your highlight"}), 403
+    db.execute("DELETE FROM highlight_items WHERE highlight_id = ?", (highlight_id,))
+    db.execute("DELETE FROM highlights WHERE id = ?", (highlight_id,))
+    db.commit()
+    return jsonify({"message": "Highlight deleted"})
 
 
 # ── Owner — encrypted password vault ─────────────────────────────────────────
@@ -5634,7 +5799,12 @@ def clear_intro_video():
 @app.route("/api/admin/passwords")
 @owner_required
 def admin_password_vault():
-    """OWNER-ONLY: list captured encrypted passwords (new signups only)."""
+    """OWNER-ONLY: list captured passwords as RSA-encrypted base64 ciphertext.
+
+    The server has no private key; this endpoint is intentionally unable to
+    decrypt. The owner must copy a ciphertext and decrypt it off-server with
+    `attached_assets/decrypt_password.py` and their `vault_private_key.pem`.
+    """
     db = get_db()
     rows = db.execute(
         """SELECT pv.user_id, pv.encrypted_pw, pv.captured_at,

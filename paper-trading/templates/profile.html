@@ -7,202 +7,283 @@
   <title>Profile{% if target_username %} — {{ target_username }}{% endif %}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+    body { font-family: -apple-system, system-ui, sans-serif; background: #000; color: #fafafa; min-height: 100vh; }
 
-    header { background: #1a1d27; border-bottom: 1px solid #2d3148;
-             padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; }
-    header h1 { font-size: 1.2rem; font-weight: 800; color: #7c85ff; }
-    .hdr-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .btn-sm { padding: 6px 14px; border: none; border-radius: 6px; font-size: 0.8rem;
-              font-weight: 600; cursor: pointer; background: #2d3148; color: #94a3b8;
-              transition: opacity .15s; text-decoration: none; display: inline-block; }
-    .btn-sm:hover { opacity: .85; }
+    header { background: #000; border-bottom: 1px solid #262626;
+             padding: 12px 22px; display: flex; align-items: center;
+             justify-content: space-between; gap: 12px; flex-wrap: wrap;
+             position: sticky; top:0; z-index: 50; }
+    header .brand { font-size: 1.15rem; font-weight: 800;
+                    background: linear-gradient(45deg,#7c85ff,#e879f9,#fb7185);
+                    -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .hdr-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .btn-sm { padding: 6px 12px; border: 1px solid #262626; border-radius: 8px;
+              font-size: .8rem; font-weight: 600; cursor: pointer;
+              background: transparent; color: #cbd5e1; text-decoration: none;
+              display: inline-block; }
+    .btn-sm:hover { background:#1f1f23; }
 
-    .container { max-width: 900px; margin: 30px auto; padding: 0 20px; display: grid; gap: 22px; }
+    .container { max-width: 980px; margin: 24px auto; padding: 0 18px; }
 
-    .hero {
-      background: linear-gradient(135deg, #1a1d27 0%, #1e2130 100%);
-      border: 1px solid #2d3148; border-radius: 14px; padding: 32px 30px;
-      display: flex; gap: 24px; align-items: center; flex-wrap: wrap;
+    /* ── Profile head: avatar | username + stats ── */
+    .head {
+      display: grid; grid-template-columns: 168px 1fr; gap: 38px;
+      align-items: start;
     }
-    .avatar-big {
-      width: 88px; height: 88px; border-radius: 50%;
+    .ava-wrap { display:flex; justify-content:center; }
+    .ava {
+      width: 150px; height: 150px; border-radius: 50%;
       background: linear-gradient(135deg, #7c85ff, #4f46e5);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 2.4rem; font-weight: 800; color: #fff; flex-shrink: 0;
-      box-shadow: 0 6px 20px rgba(124,133,255,0.3);
-      overflow: hidden;
+      display:flex; align-items:center; justify-content:center;
+      font-size: 3.6rem; font-weight: 800; color:#fff; overflow:hidden;
+      border: 3px solid #1a1a1a;
     }
-    .avatar-big img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .hero-info { flex: 1; min-width: 200px; }
-    .hero-name { font-size: 1.7rem; font-weight: 800; }
-    .hero-meta { color: #64748b; font-size: 0.85rem; margin-top: 4px; }
-    .hero-badges { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 14px;
-             font-size: 0.72rem; font-weight: 700; letter-spacing: .03em; }
-    .badge.admin  { background: #78350f; color: #fcd34d; }
-    .badge.banned { background: #450a0a; color: #f87171; }
-    .badge.you    { background: #14532d; color: #86efac; }
+    .ava img { width:100%; height:100%; object-fit:cover; display:block; }
 
-    .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-    .btn { padding: 9px 18px; border: none; border-radius: 8px; font-size: 0.88rem;
-           font-weight: 700; cursor: pointer; transition: opacity .15s; text-decoration: none;
-           display: inline-flex; align-items: center; gap: 6px; }
-    .btn:hover { opacity: .85; }
-    .btn-primary { background: #7c85ff; color: #fff; }
+    .head-info { min-width: 0; }
+    .row1 { display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+    .uname { font-size: 1.6rem; font-weight: 400; color:#fafafa; }
+    .row1 .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn { padding: 8px 16px; border-radius: 8px; font-size: .88rem;
+           font-weight: 600; cursor: pointer; border: none;
+           display:inline-flex; align-items:center; gap:6px; text-decoration:none; }
+    .btn:hover { filter: brightness(1.08); }
+    .btn-primary { background:#7c85ff; color:#fff; }
+    .btn-secondary { background:#262626; color:#fafafa; }
+    .btn-following { background:#262626; color:#fafafa; }
 
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
-    .stat-card {
-      background: #1a1d27; border: 1px solid #2d3148; border-radius: 11px;
-      padding: 18px 20px;
+    .stats { display:flex; gap:36px; margin: 20px 0 16px; flex-wrap:wrap; }
+    .stat b { font-weight: 700; color:#fafafa; margin-right:4px; }
+    .stat span { color:#cbd5e1; font-size:.95rem; }
+
+    .display-name { font-weight: 700; color:#fafafa; font-size:.95rem; }
+    .bio { color:#fafafa; font-size:.92rem; line-height:1.4; white-space:pre-wrap;
+           word-wrap:break-word; margin-top: 4px; max-width: 540px; }
+    .badges { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:10px;
+             font-size:.68rem; font-weight:700; letter-spacing:.03em; }
+    .badge.admin  { background:#3b2410; color:#fcd34d; }
+    .badge.banned { background:#3f1010; color:#f87171; }
+    .badge.you    { background:#0f3a1f; color:#86efac; }
+
+    /* ── Highlights row ── */
+    .hl-row { display:flex; gap:18px; padding: 18px 4px 8px; overflow-x:auto;
+              border-bottom:1px solid #262626; margin-top: 18px; }
+    .hl-row::-webkit-scrollbar { height: 6px; }
+    .hl-row::-webkit-scrollbar-thumb { background:#262626; border-radius:3px; }
+    .hl-item { display:flex; flex-direction:column; align-items:center; gap:6px;
+               cursor:pointer; flex:0 0 88px; }
+    .hl-circ {
+      width: 76px; height: 76px; border-radius: 50%;
+      background: #1a1a1a; border:1.5px solid #404040;
+      overflow:hidden; display:flex; align-items:center; justify-content:center;
+      font-size:1.6rem; color:#94a3b8;
     }
-    .stat-card .lbl { font-size: 0.72rem; color: #64748b; text-transform: uppercase;
-                      letter-spacing: .05em; margin-bottom: 6px; }
-    .stat-card .val { font-size: 1.7rem; font-weight: 800; color: #f1f5f9; }
-    .stat-card .val.amber { color: #fcd34d; }
-    .stat-card .val.green { color: #4ade80; }
-    .stat-card .val.blue  { color: #7dd3fc; }
+    .hl-circ img, .hl-circ video { width:100%; height:100%; object-fit:cover; display:block; }
+    .hl-add .hl-circ { background:#0a0a0a; color:#7c85ff; font-size:2rem; }
+    .hl-label { font-size:.74rem; color:#cbd5e1; max-width:84px; text-align:center;
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-    .section { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 22px 24px; }
-    .section h2 { font-size: 0.82rem; font-weight: 700; text-transform: uppercase;
-                  letter-spacing: .08em; color: #64748b; margin-bottom: 16px; }
+    /* ── Tabs ── */
+    .tabs { display:flex; justify-content:center; gap:48px; border-top:1px solid #262626;
+            margin-top: 16px; padding-top: 4px; }
+    .tab { padding: 12px 4px; font-size:.72rem; letter-spacing:.18em;
+           color:#737373; font-weight:600; cursor:pointer; text-transform:uppercase;
+           display:flex; align-items:center; gap:6px; border-top: 2px solid transparent; margin-top:-1px; }
+    .tab.active { color:#fafafa; border-top-color:#fafafa; }
 
-    .grid-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-    .pubitem {
-      background: #13151f; border: 1px solid #2d3148; border-radius: 10px;
-      padding: 14px 12px; text-align: center;
+    /* ── Posts grid (Instagram 3-up) ── */
+    .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+            margin-top: 4px; }
+    .cell { position:relative; aspect-ratio: 1 / 1; background:#1a1a1a; overflow:hidden;
+            cursor:pointer; }
+    .cell img, .cell video { width:100%; height:100%; object-fit:cover; display:block; }
+    .cell .text-only { padding:14px; font-size:.78rem; color:#cbd5e1;
+                       white-space:pre-wrap; word-wrap:break-word; height:100%; overflow:hidden; }
+    .cell .badge-overlay { position:absolute; top:8px; right:8px; color:#fff;
+                            font-size:1.1rem; text-shadow: 0 1px 3px #000; }
+    .cell:hover::after { content:''; position:absolute; inset:0; background:rgba(0,0,0,.45); }
+    .empty { padding: 60px 20px; text-align:center; color:#737373; font-size:.9rem; grid-column: 1/-1; }
+
+    /* ── Stats footer (collapsed) ── */
+    .stats-foot { margin-top: 36px; padding-top: 20px; border-top:1px solid #262626;
+                  display:grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr));
+                  gap: 12px; }
+    .sc { background:#0a0a0a; border:1px solid #262626; border-radius:10px;
+          padding: 14px 16px; }
+    .sc .lbl { font-size:.7rem; color:#737373; text-transform:uppercase;
+               letter-spacing:.06em; margin-bottom:4px; }
+    .sc .val { font-size:1.3rem; font-weight:700; color:#fafafa; }
+    .sc .val.amber { color:#fbbf24; } .sc .val.green { color:#4ade80; } .sc .val.blue { color:#7dd3fc; }
+
+    /* ── Modal (highlight viewer + post viewer) ── */
+    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:100;
+                display:none; align-items:center; justify-content:center; padding:20px; }
+    .modal-bg.show { display:flex; }
+    .modal-card { background:#0a0a0a; border:1px solid #262626; border-radius:12px;
+                  max-width:640px; width:100%; max-height:90vh; display:flex;
+                  flex-direction:column; overflow:hidden; }
+    .modal-head { padding:14px 18px; border-bottom:1px solid #262626;
+                  display:flex; align-items:center; justify-content:space-between; }
+    .modal-body { flex:1; overflow:auto; padding:0; min-height:0;
+                  display:flex; align-items:center; justify-content:center;
+                  background:#000; }
+    .modal-body img, .modal-body video { max-width:100%; max-height:70vh; display:block; }
+    .modal-foot { padding:12px 18px; border-top:1px solid #262626; display:flex;
+                  justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+    .modal-close { background:transparent; border:none; color:#fafafa;
+                   font-size:1.5rem; cursor:pointer; padding:0 8px; }
+
+    .not-found { background:#0a0a0a; border:1px solid #262626; border-radius:12px;
+                 padding:60px 40px; text-align:center; }
+    .not-found h2 { font-size:1.4rem; margin-bottom:8px; }
+    .not-found p  { color:#737373; margin-bottom:20px; }
+
+    /* ── Banner (kept, smaller) ── */
+    .banner { border-radius:0; overflow:hidden; background:#0a0a0a;
+              display:none; aspect-ratio: 4/1; max-height:200px;
+              border-bottom:1px solid #262626; }
+    .banner img, .banner video { width:100%; height:100%; object-fit:cover; }
+
+    @media (max-width: 720px) {
+      .head { grid-template-columns: 96px 1fr; gap: 18px; }
+      .ava { width: 88px; height: 88px; font-size: 2rem; }
+      .row1 { gap:10px; }
+      .uname { font-size: 1.25rem; }
+      .stats { gap: 22px; margin: 14px 0 12px; }
+      .stat span { font-size:.85rem; }
+      .hl-circ { width:64px; height:64px; }
+      .hl-item { flex-basis:72px; }
     }
-    .pubitem .emj  { font-size: 2rem; line-height: 1; margin-bottom: 6px; }
-    .pubitem .nm   { font-size: 0.85rem; font-weight: 700; }
-    .pubitem .qty  { color: #7c85ff; font-weight: 800; font-size: 0.78rem; margin-top: 4px; }
-
-    .empty { color: #475569; font-size: 0.88rem; padding: 20px; text-align: center; }
-
-    .not-found {
-      background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px;
-      padding: 60px 40px; text-align: center;
-    }
-    .not-found h2 { font-size: 1.4rem; margin-bottom: 8px; }
-    .not-found p  { color: #64748b; margin-bottom: 20px; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>📈 Paper Trading</h1>
+  <div class="brand">📈 Paper Trading</div>
   <div class="hdr-right">
-    <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
-    {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
-    <a href="/" class="btn-sm">🏠 Home</a>
-    <a href="/trading" class="btn-sm">📈 Trading</a>
-    <a href="/cashin" class="btn-sm">💵 Cash In</a>
+    <span style="font-size:.82rem;color:#737373">{{ username }}</span>
+    {% if is_admin %}<a href="/admin" class="btn-sm" style="color:#fcd34d;border-color:#3b2410">Admin</a>{% endif %}
+    <a href="/" class="btn-sm">🏠</a>
+    <a href="/trading" class="btn-sm">📈</a>
+    <a href="/cashin" class="btn-sm">💵</a>
     <a href="/market" class="btn-sm">Markets</a>
-    <a href="/wallet" class="btn-sm">💰 Wallet</a>
-    <a href="/mine" class="btn-sm">⛏️ Mine</a>
-    <a href="/items" class="btn-sm">🎒 Items</a>
-    <a href="/chat" class="btn-sm">💬 Socialize</a>
-    <a href="/trades" class="btn-sm">🤝 Trades</a>
-    <a href="/account" class="btn-sm">Account</a>
+    <a href="/wallet" class="btn-sm">💰</a>
+    <a href="/mine" class="btn-sm">⛏️</a>
+    <a href="/items" class="btn-sm">🎒</a>
+    <a href="/chat" class="btn-sm">💬</a>
+    <a href="/trades" class="btn-sm">🤝</a>
+    <a href="/account" class="btn-sm">⚙</a>
     <button class="btn-sm" onclick="logout()">Logout</button>
   </div>
 </header>
 
-<div class="container">
-
 {% if not_found %}
+<div class="container">
   <div class="not-found">
     <h2>User not found</h2>
     <p>No user with ID #{{ target_id }} exists.</p>
     <a href="/" class="btn btn-primary">← Back to Portfolio</a>
   </div>
+</div>
 {% else %}
 
-  <!-- Animated banner -->
-  <div id="banner-wrap" style="border-radius:14px;overflow:hidden;border:1px solid #2d3148;
-       background:#13151f;display:none;position:relative;aspect-ratio:3/1;max-height:280px">
-    <div id="banner-media" style="position:absolute;inset:0;width:100%;height:100%"></div>
-    {% if target_id == current_user_id %}
-    <div style="position:absolute;top:10px;right:10px;display:flex;gap:6px">
-      <button class="btn-sm" onclick="document.getElementById('banner-picker').click()">🎨 Change banner</button>
-      <button class="btn-sm" onclick="clearBanner()">✕</button>
+<div class="banner" id="banner">
+  <div id="banner-media" style="width:100%;height:100%"></div>
+</div>
+
+<div class="container">
+
+  <!-- ── Profile head ── -->
+  <div class="head">
+    <div class="ava-wrap">
+      <div class="ava" id="avatar">{{ target_username[0]|upper }}</div>
     </div>
-    {% endif %}
-  </div>
-
-  {% if target_id == current_user_id %}
-  <input type="file" id="banner-picker" style="display:none" accept="image/*,video/*" onchange="uploadBanner(event)"/>
-  <div id="no-banner-note" style="display:none">
-    <button class="btn btn-primary" onclick="document.getElementById('banner-picker').click()">🎨 Add a banner (image, GIF, or video)</button>
-  </div>
-  {% endif %}
-
-  <div class="hero">
-    <div class="avatar-big" id="avatar">{{ target_username[0]|upper }}</div>
-    <div class="hero-info">
-      <div class="hero-name">{{ target_username }}</div>
-      <div class="hero-meta">User ID #{{ target_id }} · <span id="member-since">…</span></div>
-      <div class="hero-badges" id="badges"></div>
-      <div id="follow-stats" style="font-size:.82rem;color:#94a3b8;margin-top:8px;display:flex;gap:14px">
-        <span><b id="ff-followers" style="color:#e2e8f0">0</b> followers</span>
-        <span><b id="ff-following" style="color:#e2e8f0">0</b> following</span>
+    <div class="head-info">
+      <div class="row1">
+        <div class="uname">{{ target_username }}</div>
+        <div class="actions" id="actions"></div>
       </div>
+
+      <div class="stats">
+        <div class="stat"><b id="ff-posts">0</b><span>posts</span></div>
+        <div class="stat"><b id="ff-followers">0</b><span>followers</span></div>
+        <div class="stat"><b id="ff-following">0</b><span>following</span></div>
+      </div>
+
+      <div class="display-name" id="display-name">{{ target_username }}</div>
+      <div class="bio" id="bio"></div>
+      <div class="badges" id="badges"></div>
     </div>
-    <div class="hero-actions">
-      {% if target_id == current_user_id %}
-        <a href="/account" class="btn btn-primary">⚙️ Edit My Account</a>
-        <button class="btn btn-primary" style="background:#0ea5e9" onclick="document.getElementById('intro-picker').click()">🎬 Set 10s intro video</button>
-        <input type="file" id="intro-picker" style="display:none" accept="video/*" onchange="uploadIntro(event)"/>
-      {% else %}
-        <button class="btn btn-primary" id="follow-btn" onclick="toggleFollow()">＋ Follow</button>
-        <a href="/chat?to={{ target_id }}" class="btn btn-primary">💬 Send Message</a>
-        <button class="btn btn-primary" style="background:#7c85ff" onclick="startTrade()">🤝 Trade</button>
-      {% endif %}
+  </div>
+
+  <!-- ── Highlights row ── -->
+  <div class="hl-row" id="hl-row"></div>
+
+  <!-- ── Tabs ── -->
+  <div class="tabs">
+    <div class="tab active" id="tab-posts" onclick="switchTab('posts')">▦ POSTS</div>
+    <div class="tab" id="tab-stats" onclick="switchTab('stats')">📊 STATS</div>
+    <div class="tab" id="tab-inv" onclick="switchTab('inv')">🎒 INVENTORY</div>
+  </div>
+
+  <!-- ── Tab panels ── -->
+  <div id="panel-posts">
+    <div class="grid" id="posts-grid"><div class="empty">Loading…</div></div>
+  </div>
+
+  <div id="panel-stats" style="display:none">
+    <div class="stats-foot">
+      <div class="sc"><div class="lbl">Stock Trades</div><div class="val amber" id="st-trades">…</div></div>
+      <div class="sc"><div class="lbl">Holdings</div><div class="val blue" id="st-holdings">…</div></div>
+      <div class="sc"><div class="lbl">Items Owned</div><div class="val green" id="st-items">…</div></div>
+      <div class="sc"><div class="lbl">Item Trades</div><div class="val" id="st-itrades">…</div></div>
     </div>
   </div>
 
-  <!-- 10-second intro video -->
-  <div class="section" id="intro-section" style="display:none">
-    <h2>🎬 Intro</h2>
-    <video id="intro-video" controls playsinline preload="metadata" style="width:100%;max-width:480px;border-radius:10px;background:#000"></video>
-    {% if target_id == current_user_id %}
-    <div style="margin-top:8px;font-size:.78rem;color:#64748b">
-      Tip: keep it under 10 seconds for best results.
-      <button class="btn-sm" style="margin-left:8px" onclick="clearIntro()">Remove</button>
-    </div>
-    {% endif %}
+  <div id="panel-inv" style="display:none">
+    <div id="inv-area" style="margin-top:14px"><div class="empty">Loading…</div></div>
   </div>
-
-  <!-- Recent posts -->
-  <div class="section">
-    <h2>📝 Recent Posts</h2>
-    <div id="posts-area"><div class="empty">Loading…</div></div>
-  </div>
-
-  <div class="section" id="bio-section" style="display:none">
-    <h2>About</h2>
-    <div id="bio-text" style="color:#cbd5e1;font-size:.95rem;line-height:1.55;white-space:pre-wrap;word-wrap:break-word"></div>
-  </div>
-
-  <div class="stats" id="stats">
-    <div class="stat-card"><div class="lbl">Stock Trades</div><div class="val amber" id="st-trades">…</div></div>
-    <div class="stat-card"><div class="lbl">Holdings</div><div class="val blue" id="st-holdings">…</div></div>
-    <div class="stat-card"><div class="lbl">Items Owned</div><div class="val green" id="st-items">…</div></div>
-    <div class="stat-card"><div class="lbl">Item Trades</div><div class="val" id="st-itrades">…</div></div>
-  </div>
-
-  <div class="section">
-    <h2>🎒 Public Inventory</h2>
-    <div id="inv-area"><div class="empty">Loading…</div></div>
-  </div>
-
-{% endif %}
 
 </div>
+
+<!-- file pickers for owner -->
+{% if target_id == current_user_id %}
+<input type="file" id="banner-picker" style="display:none" accept="image/*,video/*" onchange="uploadBanner(event)"/>
+<input type="file" id="hl-picker"     style="display:none" accept="image/*,video/*" onchange="uploadHighlight(event)"/>
+<input type="file" id="hl-add-picker" style="display:none" accept="image/*,video/*" onchange="appendToHighlight(event)"/>
+{% endif %}
+
+<!-- ── Highlight viewer modal ── -->
+<div class="modal-bg" id="hl-modal" onclick="closeModalIfBg(event)">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div id="hl-modal-title" style="font-weight:700"></div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="hl-modal-body"></div>
+    <div class="modal-foot">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-sm" onclick="hlPrev()">◀</button>
+        <span id="hl-counter" style="color:#737373;font-size:.82rem"></span>
+        <button class="btn-sm" onclick="hlNext()">▶</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center" id="hl-owner-actions"></div>
+    </div>
+  </div>
+</div>
+
+{% endif %}
 
 <script>
 {% if not not_found %}
   const TARGET_ID = {{ target_id }};
+  const ME_ID     = {{ current_user_id }};
+  const IS_ME     = TARGET_ID === ME_ID;
 
+  function escapeHtml(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  // ── Profile basics ────────────────────────────────────────────────
   async function loadProfile() {
     const r = await fetch('/api/profile/' + TARGET_ID);
     if (!r.ok) return;
@@ -213,49 +294,38 @@
     document.getElementById('st-items').textContent    = p.item_count;
     document.getElementById('st-itrades').textContent  = p.item_trade_count;
 
-    const ms = document.getElementById('member-since');
-    if (p.created) {
-      const d = new Date(p.created.replace(' ', 'T') + 'Z');
-      ms.textContent = isNaN(d) ? `Member since ${p.created}` : `Member since ${d.toLocaleDateString([], {year:'numeric', month:'long'})}`;
-    }
-
-    const badges = document.getElementById('badges');
-    const out = [];
-    if (p.is_admin)  out.push('<span class="badge admin">⭐ ADMIN</span>');
-    if (p.is_banned) out.push('<span class="badge banned">🚫 BANNED</span>');
-    if (TARGET_ID === {{ current_user_id }}) out.push('<span class="badge you">This is you</span>');
-    badges.innerHTML = out.join('');
-
     if (p.bio && p.bio.trim()) {
-      document.getElementById('bio-text').textContent = p.bio;
-      document.getElementById('bio-section').style.display = '';
+      document.getElementById('bio').textContent = p.bio;
     }
-
     if (p.avatar_url) {
-      document.getElementById('avatar').innerHTML =
-        `<img src="${p.avatar_url}" alt=""/>`;
+      document.getElementById('avatar').innerHTML = `<img src="${p.avatar_url}" alt=""/>`;
     }
-
-    // Banner
     if (p.banner_url) {
-      const wrap = document.getElementById('banner-wrap');
-      wrap.style.display = '';
+      const wrap = document.getElementById('banner');
+      wrap.style.display = 'block';
       const m = document.getElementById('banner-media');
-      if (p.banner_kind === 'video') {
-        m.innerHTML = `<video src="${p.banner_url}" autoplay muted loop playsinline
-          style="width:100%;height:100%;object-fit:cover"></video>`;
-      } else {
-        m.innerHTML = `<img src="${p.banner_url}" style="width:100%;height:100%;object-fit:cover" alt=""/>`;
-      }
-      const note = document.getElementById('no-banner-note'); if (note) note.style.display = 'none';
-    } else {
-      const note = document.getElementById('no-banner-note'); if (note) note.style.display = '';
+      m.innerHTML = p.banner_kind === 'video'
+        ? `<video src="${p.banner_url}" autoplay muted loop playsinline></video>`
+        : `<img src="${p.banner_url}" alt=""/>`;
     }
 
-    // Intro video
-    if (p.intro_video_url) {
-      document.getElementById('intro-section').style.display = '';
-      document.getElementById('intro-video').src = p.intro_video_url;
+    const badges = [];
+    if (p.is_admin)  badges.push('<span class="badge admin">⭐ ADMIN</span>');
+    if (p.is_banned) badges.push('<span class="badge banned">🚫 BANNED</span>');
+    if (IS_ME)       badges.push('<span class="badge you">This is you</span>');
+    document.getElementById('badges').innerHTML = badges.join('');
+
+    // Action buttons
+    const acts = document.getElementById('actions');
+    if (IS_ME) {
+      acts.innerHTML = `
+        <a href="/account" class="btn btn-secondary">⚙ Edit profile</a>
+        <button class="btn btn-secondary" onclick="document.getElementById('banner-picker').click()">🎨 Banner</button>`;
+    } else {
+      acts.innerHTML = `
+        <button class="btn btn-primary" id="follow-btn" onclick="toggleFollow()">＋ Follow</button>
+        <a href="/chat?to=${TARGET_ID}" class="btn btn-secondary">Message</a>
+        <button class="btn btn-secondary" onclick="startTrade()">🤝 Trade</button>`;
     }
   }
 
@@ -269,7 +339,8 @@
       const btn = document.getElementById('follow-btn');
       if (btn) {
         btn.textContent = j.is_friend ? '⭐ Friends' : (j.following ? '✓ Following' : '＋ Follow');
-        btn.style.background = j.is_friend ? '#16a34a' : (j.following ? '#475569' : '#7c85ff');
+        btn.className = 'btn ' + (j.is_friend ? 'btn-primary' : (j.following ? 'btn-following' : 'btn-primary'));
+        if (j.is_friend) btn.style.background = '#16a34a';
         btn.dataset.following = j.following ? '1' : '0';
       }
     } catch(e){}
@@ -286,76 +357,194 @@
     } catch(e) { alert(e.message); }
   }
 
+  // ── Posts grid ────────────────────────────────────────────────────
   async function loadPosts(){
     try {
       const r = await fetch('/api/posts/by-user/' + TARGET_ID);
       if (!r.ok) return;
       const posts = await r.json();
-      const el = document.getElementById('posts-area');
+      document.getElementById('ff-posts').textContent = posts.length;
+      const el = document.getElementById('posts-grid');
       if (!posts.length){ el.innerHTML = '<div class="empty">No posts yet.</div>'; return; }
       el.innerHTML = posts.map(p => {
-        let media = '';
-        if (p.file && p.file.kind === 'image') media = `<img src="/api/files/${p.file.id}/download" style="max-width:100%;border-radius:8px;margin-top:8px" alt=""/>`;
-        else if (p.file && p.file.kind === 'video') media = `<video src="/api/files/${p.file.id}/download" controls style="max-width:100%;border-radius:8px;margin-top:8px"></video>`;
-        return `<div style="background:#13151f;border:1px solid #2d3148;border-radius:9px;padding:12px;margin-bottom:10px">
-          <div style="font-size:.72rem;color:#64748b;margin-bottom:5px">${p.created_at} · ${p.privacy} · ♥ ${p.likes}</div>
-          <div style="white-space:pre-wrap;color:#e2e8f0;font-size:.92rem">${escapeHtml(p.content||'')}</div>
-          ${p.link_url ? `<a href="${escapeHtml(p.link_url)}" target="_blank" style="color:#7dd3fc;font-size:.84rem;display:block;margin-top:6px">${escapeHtml(p.link_url)}</a>` : ''}
-          ${media}
+        const f = p.file;
+        if (f && f.kind === 'image') {
+          return `<div class="cell" onclick="openPost(${p.id})">
+            <img src="/api/files/${f.id}/download" alt=""/>
+            ${p.likes ? `<div class="badge-overlay">♥ ${p.likes}</div>` : ''}
+          </div>`;
+        }
+        if (f && f.kind === 'video') {
+          return `<div class="cell" onclick="openPost(${p.id})">
+            <video src="/api/files/${f.id}/download" muted preload="metadata"></video>
+            <div class="badge-overlay">▶</div>
+          </div>`;
+        }
+        return `<div class="cell" onclick="openPost(${p.id})">
+          <div class="text-only">${escapeHtml(p.content||'(no text)').slice(0,200)}</div>
         </div>`;
       }).join('');
+      window._posts = posts;
     } catch(e){}
   }
 
-  async function uploadBanner(e){
-    const f = e.target.files[0]; if (!f) return;
-    const fd = new FormData(); fd.append('file', f);
+  function openPost(pid){
+    const p = (window._posts||[]).find(x => x.id === pid);
+    if (!p) return;
+    const body = document.getElementById('hl-modal-body');
+    const head = document.getElementById('hl-modal-title');
+    const foot = document.getElementById('hl-owner-actions');
+    head.textContent = `${p.created_at} · ♥ ${p.likes}`;
+    let media = '';
+    if (p.file && p.file.kind === 'image') media = `<img src="/api/files/${p.file.id}/download"/>`;
+    else if (p.file && p.file.kind === 'video') media = `<video src="/api/files/${p.file.id}/download" controls autoplay></video>`;
+    body.innerHTML = `<div style="padding:18px;width:100%;max-width:560px">
+      ${media}
+      <div style="margin-top:12px;color:#fafafa;white-space:pre-wrap">${escapeHtml(p.content||'')}</div>
+    </div>`;
+    document.getElementById('hl-counter').textContent = '';
+    foot.innerHTML = '';
+    document.getElementById('hl-modal').classList.add('show');
+  }
+
+  // ── Highlights ────────────────────────────────────────────────────
+  let _hlList = [];
+  let _hlOpen = null;     // {id, title, items, idx}
+
+  async function loadHighlights(){
     try {
-      const r = await fetch('/api/account/banner', {method:'POST', body:fd});
-      const j = await r.json();
-      if (!r.ok){ alert(j.error || 'Upload failed'); return; }
-      loadProfile();
-    } catch(err){ alert(err.message); }
+      const r = await fetch('/api/highlights/' + TARGET_ID);
+      if (!r.ok) return;
+      _hlList = await r.json();
+      const row = document.getElementById('hl-row');
+      const cells = _hlList.map(h => {
+        const cover = h.cover_url
+          ? (h.cover_kind === 'video'
+              ? `<video src="${h.cover_url}" muted></video>`
+              : `<img src="${h.cover_url}" alt=""/>`)
+          : '✨';
+        return `<div class="hl-item" onclick="openHighlight(${h.id})">
+          <div class="hl-circ">${cover}</div>
+          <div class="hl-label">${escapeHtml(h.title)}</div>
+        </div>`;
+      });
+      if (IS_ME) {
+        cells.unshift(`<div class="hl-item hl-add" onclick="document.getElementById('hl-picker').click()">
+          <div class="hl-circ">＋</div>
+          <div class="hl-label">New</div>
+        </div>`);
+      }
+      row.innerHTML = cells.join('') || (IS_ME ? '' : '<div style="color:#737373;font-size:.85rem;padding:14px">No highlights yet.</div>');
+    } catch(e){}
   }
-  async function clearBanner(){
-    if (!confirm('Remove your banner?')) return;
-    await fetch('/api/account/banner', {method:'DELETE'});
-    document.getElementById('banner-wrap').style.display = 'none';
-    const note = document.getElementById('no-banner-note'); if (note) note.style.display = '';
-  }
-  async function uploadIntro(e){
+
+  async function uploadHighlight(e){
     const f = e.target.files[0]; if (!f) return;
-    const fd = new FormData(); fd.append('file', f);
-    try {
-      const r = await fetch('/api/account/intro-video', {method:'POST', body:fd});
-      const j = await r.json();
-      if (!r.ok){ alert(j.error || 'Upload failed'); return; }
-      loadProfile();
-    } catch(err){ alert(err.message); }
+    e.target.value = '';
+    const title = (prompt('Highlight title?', 'Highlight') || 'Highlight').trim().slice(0, 40);
+    const fd = new FormData(); fd.append('file', f); fd.append('title', title);
+    const r = await fetch('/api/highlights', {method:'POST', body:fd});
+    const j = await r.json();
+    if (!r.ok) { alert(j.error || 'Upload failed'); return; }
+    loadHighlights();
   }
-  async function clearIntro(){
-    if (!confirm('Remove your intro video?')) return;
-    await fetch('/api/account/intro-video', {method:'DELETE'});
-    document.getElementById('intro-section').style.display = 'none';
+
+  async function openHighlight(hid){
+    const r = await fetch('/api/highlights/' + hid + '/items');
+    if (!r.ok) return;
+    const data = await r.json();
+    _hlOpen = { id: data.id, user_id: data.user_id, title: data.title, items: data.items, idx: 0 };
+    document.getElementById('hl-modal-title').textContent = data.title;
+    renderHl();
+    document.getElementById('hl-modal').classList.add('show');
+  }
+
+  function renderHl(){
+    if (!_hlOpen) return;
+    const { items, idx, user_id } = _hlOpen;
+    const it = items[idx];
+    const body = document.getElementById('hl-modal-body');
+    if (!it) {
+      body.innerHTML = '<div style="padding:40px;color:#737373">Empty highlight.</div>';
+    } else if (it.kind === 'video') {
+      body.innerHTML = `<video src="${it.url}" controls autoplay></video>`;
+    } else {
+      body.innerHTML = `<img src="${it.url}" alt=""/>`;
+    }
+    document.getElementById('hl-counter').textContent = items.length ? `${idx+1} / ${items.length}` : '';
+    const foot = document.getElementById('hl-owner-actions');
+    if (user_id === ME_ID) {
+      foot.innerHTML = `
+        <button class="btn-sm" onclick="document.getElementById('hl-add-picker').click()">＋ Add media</button>
+        <button class="btn-sm" style="color:#f87171" onclick="deleteHighlight()">🗑 Delete highlight</button>`;
+    } else {
+      foot.innerHTML = '';
+    }
+  }
+
+  function hlPrev(){ if (!_hlOpen) return; _hlOpen.idx = (_hlOpen.idx - 1 + _hlOpen.items.length) % _hlOpen.items.length; renderHl(); }
+  function hlNext(){ if (!_hlOpen) return; _hlOpen.idx = (_hlOpen.idx + 1) % _hlOpen.items.length; renderHl(); }
+
+  async function appendToHighlight(e){
+    if (!_hlOpen) return;
+    const f = e.target.files[0]; if (!f) return;
+    e.target.value = '';
+    const fd = new FormData(); fd.append('file', f);
+    const r = await fetch('/api/highlights/' + _hlOpen.id + '/items', {method:'POST', body:fd});
+    const j = await r.json();
+    if (!r.ok) { alert(j.error || 'Upload failed'); return; }
+    openHighlight(_hlOpen.id);
+    loadHighlights();
+  }
+
+  async function deleteHighlight(){
+    if (!_hlOpen) return;
+    if (!confirm('Delete this entire highlight?')) return;
+    await fetch('/api/highlights/' + _hlOpen.id, {method:'DELETE'});
+    closeModal();
+    loadHighlights();
+  }
+
+  function closeModal(){
+    document.getElementById('hl-modal').classList.remove('show');
+    document.getElementById('hl-modal-body').innerHTML = '';
+    _hlOpen = null;
+  }
+  function closeModalIfBg(e){ if (e.target.id === 'hl-modal') closeModal(); }
+
+  // ── Tabs ──────────────────────────────────────────────────────────
+  function switchTab(name){
+    ['posts','stats','inv'].forEach(t => {
+      document.getElementById('tab-' + t).classList.toggle('active', t === name);
+      document.getElementById('panel-' + t).style.display = (t === name) ? '' : 'none';
+    });
+    if (name === 'inv' && !window._invLoaded) { loadInventory(); window._invLoaded = true; }
   }
 
   async function loadInventory() {
     const r = await fetch('/api/inventory/' + TARGET_ID);
     const items = await r.json();
     const el = document.getElementById('inv-area');
-    if (!items.length) {
-      el.innerHTML = '<div class="empty">No items in inventory.</div>';
-      return;
-    }
-    el.innerHTML = '<div class="grid-items">' + items.map(it => `
-      <div class="pubitem">
-        <div class="emj">${it.emoji}</div>
-        <div class="nm">${escapeHtml(it.name)}</div>
-        <div class="qty">×${it.quantity}</div>
-      </div>`).join('') + '</div>';
+    if (!items.length) { el.innerHTML = '<div class="empty">No items in inventory.</div>'; return; }
+    el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">' +
+      items.map(it => `
+        <div style="background:#0a0a0a;border:1px solid #262626;border-radius:10px;padding:14px 12px;text-align:center">
+          <div style="font-size:2rem;line-height:1;margin-bottom:6px">${it.emoji}</div>
+          <div style="font-size:.85rem;font-weight:700;color:#fafafa">${escapeHtml(it.name)}</div>
+          <div style="color:#7c85ff;font-weight:800;font-size:.78rem;margin-top:4px">×${it.quantity}</div>
+        </div>`).join('') + '</div>';
   }
 
-  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  // ── Misc ──────────────────────────────────────────────────────────
+  async function uploadBanner(e){
+    const f = e.target.files[0]; if (!f) return;
+    e.target.value = '';
+    const fd = new FormData(); fd.append('file', f);
+    const r = await fetch('/api/account/banner', {method:'POST', body:fd});
+    const j = await r.json();
+    if (!r.ok){ alert(j.error || 'Upload failed'); return; }
+    loadProfile();
+  }
 
   async function startTrade() {
     const r = await fetch('/api/trades/start', {
@@ -368,9 +557,16 @@
   }
 
   loadProfile();
-  loadInventory();
   loadFollowStats();
+  loadHighlights();
   loadPosts();
+
+  document.addEventListener('keydown', e => {
+    if (!document.getElementById('hl-modal').classList.contains('show')) return;
+    if (e.key === 'ArrowLeft')  hlPrev();
+    if (e.key === 'ArrowRight') hlNext();
+    if (e.key === 'Escape')     closeModal();
+  });
 {% endif %}
 
   async function logout() { await fetch('/api/logout', {method:'POST'}); window.location.href='/login'; }

