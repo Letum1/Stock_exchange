@@ -251,14 +251,61 @@
         BON drop rate (1-in-N per mined block, deeper than the threshold layer)
       </label>
       <input type="number" id="set-bon-rate" min="1" step="1" placeholder="100" style="width:120px"/>
+    </div>
+    <p style="font-size:.78rem;color:#64748b;margin-bottom:14px">
+      Lower = more frequent drops. e.g. <b>100</b> means roughly 1 in 100 blocks
+      mined (past the deep-layer threshold) will yield a BON.
+    </p>
+    <div class="filter-bar" style="margin-bottom:8px">
+      <label style="font-size:.88rem;color:#94a3b8;flex:1">
+        Sponsored listing price ($ per hour)
+      </label>
+      <input type="number" id="set-sponsor-rate" min="0" step="0.01" placeholder="0.50" style="width:120px"/>
       <button class="btn-sm btn-add" onclick="saveSettings()">Save</button>
     </div>
     <p style="font-size:.78rem;color:#64748b">
-      Lower = more frequent drops. e.g. <b>100</b> means roughly 1 in 100 blocks
-      mined (past the deep-layer threshold) will yield a BON.
-      A value of <b>1</b> would drop a BON on every eligible block.
+      How much sellers pay to promote a marketplace listing for one hour.
+      Sponsored listings sort to the top with a yellow tag.
     </p>
     <div id="settings-msg" style="font-size:.82rem;color:#86efac;margin-top:8px"></div>
+  </div>
+
+  <!-- Ad Banners -->
+  <div class="card">
+    <h2>📢 Ad Banners (cycled at the bottom of every page)</h2>
+    <p style="font-size:.82rem;color:#94a3b8;margin-bottom:14px">
+      Upload an image / GIF / video, or paste a URL. Set a click-through link
+      for each one. Active ads cycle every 8 seconds in the same banner slot
+      across all pages.
+    </p>
+    <div style="background:#13151f;border:1px solid #2d3148;border-radius:8px;padding:14px;margin-bottom:14px">
+      <div class="filter-bar">
+        <input type="file" id="ad-file" accept="image/*,video/mp4,video/webm" style="flex:1"/>
+        <input type="text" id="ad-link" placeholder="Click-through URL (https://…)" style="flex:2"/>
+      </div>
+      <div class="filter-bar" style="margin-top:8px">
+        <input type="text" id="ad-caption" placeholder="Caption (optional, max 140 chars)" style="flex:1"/>
+        <button class="btn-sm btn-add" onclick="uploadAd()">+ Upload Ad</button>
+      </div>
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer;font-size:.82rem;color:#7c85ff">
+          …or paste an external image URL instead
+        </summary>
+        <div class="filter-bar" style="margin-top:8px">
+          <input type="text" id="ad-extern-url"  placeholder="https://example.com/ad.png" style="flex:2"/>
+          <input type="text" id="ad-extern-link" placeholder="Click-through URL" style="flex:2"/>
+          <button class="btn-sm btn-add" onclick="createExternAd()">+ Add by URL</button>
+        </div>
+      </details>
+    </div>
+    <table>
+      <thead><tr>
+        <th>ID</th><th>Preview</th><th>Caption</th><th>Link</th>
+        <th>Order</th><th>Impr</th><th>Clicks</th><th>Active</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="ads-body"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+    </table>
+    <div id="ads-msg" style="font-size:.82rem;color:#86efac;margin-top:8px"></div>
   </div>
 
   <!-- Items Management -->
@@ -727,25 +774,148 @@
       const r = await fetch('/api/admin/settings');
       if (!r.ok) return;
       const d = await r.json();
-      document.getElementById('set-bon-rate').value = d.bon_drop_rate || '';
+      document.getElementById('set-bon-rate').value     = d.bon_drop_rate || '';
+      document.getElementById('set-sponsor-rate').value = d.sponsor_price_per_hour || '';
     } catch (_) {}
   }
 
   async function saveSettings() {
-    const bon = document.getElementById('set-bon-rate').value;
-    const msg = document.getElementById('settings-msg');
+    const bon     = document.getElementById('set-bon-rate').value;
+    const sponsor = document.getElementById('set-sponsor-rate').value;
+    const msg     = document.getElementById('settings-msg');
+    const body    = {};
+    if (bon !== '')     body.bon_drop_rate         = bon;
+    if (sponsor !== '') body.sponsor_price_per_hour = sponsor;
     const r = await fetch('/api/admin/settings', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ bon_drop_rate: bon }),
+      body: JSON.stringify(body),
     });
     const d = await r.json();
     if (r.ok) {
       msg.style.color = '#86efac';
-      msg.textContent = '✓ Saved (1-in-' + d.saved.bon_drop_rate + ' chance per eligible block)';
+      msg.textContent = '✓ Saved';
     } else {
       msg.style.color = '#f87171';
       msg.textContent = d.error || 'Failed to save';
     }
+  }
+
+  // ── Ad banners management ────────────────────────────────────────────────
+  function adsMsg(text, ok) {
+    const m = document.getElementById('ads-msg');
+    m.style.color = ok ? '#86efac' : '#f87171';
+    m.textContent = text || '';
+    if (ok) setTimeout(()=>{ m.textContent=''; }, 3000);
+  }
+
+  function adPreviewHtml(ad) {
+    const url = ad.media_url || '';
+    if (ad.kind === 'video') {
+      return `<video src="${url}" muted style="height:36px;border-radius:4px"></video>`;
+    }
+    return `<img src="${url}" style="height:36px;border-radius:4px;background:#13151f;object-fit:contain" alt=""/>`;
+  }
+
+  async function loadAds() {
+    const r = await fetch('/api/admin/ads');
+    if (!r.ok) return;
+    const ads = await r.json();
+    const tb  = document.getElementById('ads-body');
+    if (!ads.length) {
+      tb.innerHTML = '<tr><td colspan="9" class="empty">No ads yet — upload one above.</td></tr>';
+      return;
+    }
+    tb.innerHTML = ads.map(a => `
+      <tr>
+        <td>${a.id}</td>
+        <td>${adPreviewHtml(a)}</td>
+        <td><input type="text" value="${(a.caption||'').replace(/"/g,'&quot;')}"
+                   data-ad-id="${a.id}" data-field="caption"
+                   onchange="updateAdField(this)" style="width:160px"/></td>
+        <td><input type="text" value="${(a.link_url||'').replace(/"/g,'&quot;')}"
+                   data-ad-id="${a.id}" data-field="link_url"
+                   onchange="updateAdField(this)" style="width:200px"/></td>
+        <td><input type="number" value="${a.sort_order || 0}" step="1"
+                   data-ad-id="${a.id}" data-field="sort_order"
+                   onchange="updateAdField(this)" style="width:70px"/></td>
+        <td>${a.impressions || 0}</td>
+        <td>${a.clicks || 0}</td>
+        <td>
+          <button class="btn-sm" onclick="toggleAd(${a.id})"
+                  style="background:${a.active?'#065f46':'#475569'};color:#fff">
+            ${a.active ? 'Active' : 'Off'}
+          </button>
+        </td>
+        <td>
+          <button class="btn-sm" onclick="deleteAd(${a.id})"
+                  style="background:#7f1d1d;color:#fee2e2">Delete</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  async function uploadAd() {
+    const f       = document.getElementById('ad-file').files[0];
+    const link    = document.getElementById('ad-link').value.trim();
+    const caption = document.getElementById('ad-caption').value.trim();
+    if (!f) { adsMsg('Pick a file to upload, or use the URL form below.', false); return; }
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('link_url', link);
+    fd.append('caption', caption);
+    const r = await fetch('/api/admin/ads', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (r.ok) {
+      document.getElementById('ad-file').value = '';
+      document.getElementById('ad-link').value = '';
+      document.getElementById('ad-caption').value = '';
+      adsMsg('✓ Ad uploaded', true);
+      loadAds();
+    } else {
+      adsMsg(d.error || 'Failed to upload', false);
+    }
+  }
+
+  async function createExternAd() {
+    const url  = document.getElementById('ad-extern-url').value.trim();
+    const link = document.getElementById('ad-extern-link').value.trim();
+    if (!url) { adsMsg('Paste an image URL', false); return; }
+    const r = await fetch('/api/admin/ads', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ media_url: url, link_url: link, kind: 'image' }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      document.getElementById('ad-extern-url').value  = '';
+      document.getElementById('ad-extern-link').value = '';
+      adsMsg('✓ Ad added', true);
+      loadAds();
+    } else {
+      adsMsg(d.error || 'Failed to add', false);
+    }
+  }
+
+  async function toggleAd(id) {
+    const r = await fetch('/api/admin/ads/'+id+'/toggle', { method: 'POST' });
+    if (r.ok) loadAds(); else adsMsg('Failed', false);
+  }
+
+  async function deleteAd(id) {
+    if (!confirm('Delete this ad? Uploaded media will also be removed.')) return;
+    const r = await fetch('/api/admin/ads/'+id, { method: 'DELETE' });
+    if (r.ok) loadAds(); else adsMsg('Failed', false);
+  }
+
+  async function updateAdField(input) {
+    const id    = input.dataset.adId;
+    const field = input.dataset.field;
+    const body  = {};
+    body[field] = input.value;
+    const r = await fetch('/api/admin/ads/'+id+'/update', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (r.ok) adsMsg('✓ Saved', true);
+    else      adsMsg('Failed to save', false);
   }
 
   loadUsers();
@@ -754,6 +924,7 @@
   loadRevenue();
   loadTax();
   loadSettings();
+  loadAds();
   setInterval(() => { loadRevenue(); loadTax(); }, 15000);
 </script>
 

