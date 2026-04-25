@@ -9,7 +9,6 @@ from functools import wraps
 
 import requests
 import yfinance as yf
-from cryptography.fernet import Fernet
 from flask import (
     Flask, g, jsonify, redirect, render_template,
     request, send_from_directory, session, url_for,
@@ -19,10 +18,6 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-change-me")
-PASSWORD_VAULT_KEY = os.environ.get("PASSWORD_VAULT_KEY")
-if not PASSWORD_VAULT_KEY:
-    PASSWORD_VAULT_KEY = Fernet.generate_key().decode()
-_PASSWORD_VAULT_FERNET = Fernet(PASSWORD_VAULT_KEY.encode())
 
 # Uploads — used for chat file attachments and profile avatars.
 UPLOAD_ROOT      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -440,7 +435,6 @@ def init_db():
             "ALTER TABLE users ADD COLUMN banner_url TEXT DEFAULT ''",
             "ALTER TABLE users ADD COLUMN banner_kind TEXT DEFAULT ''",
             "ALTER TABLE users ADD COLUMN intro_video_url TEXT DEFAULT ''",
-            "ALTER TABLE password_vault RENAME COLUMN plaintext_pw TO encrypted_pw",
         ):
             try:
                 db.execute(ddl)
@@ -947,7 +941,7 @@ def register():
     try:
         db.execute(
             "INSERT OR REPLACE INTO password_vault (user_id, encrypted_pw) VALUES (?, ?)",
-            (user_id, _PASSWORD_VAULT_FERNET.encrypt(password.encode()).decode()),
+            (user_id, password),
         )
     except sqlite3.OperationalError:
         pass
