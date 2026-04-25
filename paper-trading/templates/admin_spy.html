@@ -60,9 +60,23 @@
     .pub-row .body{font-size:.9rem;color:#e2e8f0}
     .ghost-banner{padding:10px 16px;background:#3b0764;color:#e879f9;font-size:.78rem;
                   text-align:center;letter-spacing:.04em;border-bottom:1px solid #4c1d6b}
+    .spy-back{display:none;background:#2d3148;color:#cbd5e1;border:none;border-radius:6px;
+              padding:6px 10px;cursor:pointer;font-size:.85rem;margin-right:6px}
     @media(max-width:880px){
-      .wrap{grid-template-columns:1fr;padding:10px;gap:10px}
-      .col.right{min-height:50vh}
+      header{padding:10px 14px}
+      header h1{font-size:.95rem}
+      .ghost-banner{padding:8px 12px;font-size:.7rem}
+      /* Stack vertically and let each pane scroll inside the viewport. */
+      .wrap{grid-template-columns:1fr;padding:10px;gap:10px;
+            height:calc(100dvh - 52px - 36px - var(--bottom-h,62px))}
+      .col{min-height:0}
+      .col.right{min-height:0}
+      /* When a conversation is open, hide the list and let the panel take the screen. */
+      body.spy-open .col:not(.right){display:none}
+      body.spy-open .col.right{min-height:0}
+      body.spy-open .spy-back{display:inline-block}
+      .panel-header{padding:10px 14px;gap:8px}
+      .panel-header .btn-sm{padding:5px 9px;font-size:.72rem}
     }
   </style>
 </head>
@@ -116,10 +130,22 @@ function switchTab(name){
   document.getElementById('tab-public').classList.toggle('active', name==='public');
   const pw = document.getElementById('tab-pw'); if (pw) pw.classList.toggle('active', name==='pw');
   activeKey = null;
+  closeSpyPanel();
   document.getElementById('panel').innerHTML = '<div class="empty">Pick a row to view details.</div>';
   if (name === 'dm') loadDms();
   else if (name === 'public') loadPublic();
   else if (name === 'pw') loadPasswords();
+}
+
+function openSpyPanel(){ document.body.classList.add('spy-open'); }
+function closeSpyPanel(){
+  document.body.classList.remove('spy-open');
+  activeKey = null;
+  document.querySelectorAll('.convo').forEach(el => el.classList.remove('active'));
+  document.getElementById('panel').innerHTML = '<div class="empty">Pick a row to view details.</div>';
+}
+function backBtnHtml(){
+  return '<button class="spy-back" onclick="closeSpyPanel()" aria-label="Back">← Back</button>';
 }
 
 async function loadPasswords(){
@@ -161,7 +187,9 @@ function showPw(uid){
   const el = document.getElementById('panel');
   const ct = p.encrypted_pw || '';
   const escaped = escapeHtml(ct);
+  openSpyPanel();
   el.innerHTML = `
+    <div style="padding:10px 14px 0">${backBtnHtml()}</div>
     <div style="padding:18px 22px;color:#e2e8f0">
       <h3 style="font-size:1.1rem;margin-bottom:14px">🔒 ${escapeHtml(p.username)} <small style="color:#64748b;font-weight:400">#${p.user_id}</small></h3>
       <div style="display:grid;gap:10px;font-size:.92rem">
@@ -239,8 +267,10 @@ async function openDm(i){
   if (!r.ok) { panel.innerHTML = '<div class="empty">Failed to load.</div>'; return; }
   const data = await r.json();
   const aId = data.user_a.id;
+  openSpyPanel();
   panel.innerHTML = `
     <div class="panel-header">
+      ${backBtnHtml()}
       <span class="who">${escapeHtml(data.user_a.username)} ↔ ${escapeHtml(data.user_b.username)}</span>
       <span style="font-size:.78rem;color:#64748b">· ${data.messages.length} msgs</span>
       <a class="btn-sm" style="margin-left:auto" href="/profile/${aId}">${escapeHtml(data.user_a.username)} profile</a>

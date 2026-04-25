@@ -205,26 +205,30 @@
       color: #475569; font-size: 0.95rem; text-align: center; padding: 40px;
     }
 
-    @media (max-width: 720px) {
+    @media (max-width: 880px) {
       header { padding: 10px 14px; }
       header h1 { font-size: 1rem; }
+
+      /* The bottom nav already provides Home / Markets / Wallet / Mine etc.
+         Hide the duplicate header buttons so the header doesn't wrap to 4 rows. */
+      header .hdr-right .btn-sm:not(.keep-mobile) { display: none; }
+      header .hdr-right > span { display: none; }
 
       .chat-wrap {
         grid-template-columns: 1fr;
         grid-template-rows: auto minmax(0, 1fr);
         padding: 10px; gap: 10px;
-        height: calc(100dvh - 56px);
+        /* Subtract local header (~52px) AND the fixed bottom nav (62px). */
+        height: calc(100dvh - 52px - var(--bottom-h, 62px));
         min-height: 0;
       }
 
       /* Sidebar collapses when a chat is open so the chat box dominates the screen */
       .sidebar { max-height: 38vh; }
-      body.chat-open .sidebar { max-height: 110px; overflow: hidden; }
-      body.chat-open .sidebar h2 { display: none; }
-      body.chat-open .convo-list { display: none; }
+      body.chat-open .sidebar { display: none; }
 
       /* Bigger, more prominent chat panel + composer */
-      .panel { min-height: 60vh; }
+      .panel { min-height: 0; }
       .messages { padding: 14px 14px; }
       .panel-header { padding: 10px 14px; gap: 10px; }
       .composer { padding: 10px 12px; gap: 8px; }
@@ -246,8 +250,8 @@
   <h1>💬 Socialize</h1>
   <div class="hdr-right">
     <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
-    {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
-    {% if is_admin or is_manager %}<a href="/cash-requests" class="btn-sm" style="background:#1e3a5c;color:#7dd3fc">🔒 Cash Requests</a>{% endif %}
+    {% if is_admin %}<a href="/admin" class="btn-sm keep-mobile" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
+    {% if is_admin or is_manager %}<a href="/cash-requests" class="btn-sm keep-mobile" style="background:#1e3a5c;color:#7dd3fc">🔒 Cash Requests</a>{% endif %}
     <a href="/" class="btn-sm">🏠 Home</a>
     <a href="/trading" class="btn-sm">📈 Trading</a>
     <a href="/cashin" class="btn-sm">💵 Cash In</a>
@@ -256,7 +260,7 @@
     <a href="/wallet" class="btn-sm">💰 Wallet</a>
     <a href="/mine" class="btn-sm">⛏️ Mine</a>
     <a href="/account" class="btn-sm">Account</a>
-    <button class="btn-sm" onclick="logout()">Logout</button>
+    <button class="btn-sm keep-mobile" onclick="logout()">Logout</button>
   </div>
 </header>
 
@@ -466,7 +470,7 @@
         <button onclick="sendMsg()" id="send-btn">Send</button>
       </div>
     `;
-    if (window.matchMedia('(max-width: 720px)').matches) {
+    if (window.matchMedia('(max-width: 880px)').matches) {
       document.querySelector('.back-btn').style.display = 'inline-block';
     }
     await loadMessages();
@@ -599,7 +603,7 @@
         <button onclick="sendPublic()" id="pub-send-btn">Send</button>
       </div>
     `;
-    if (window.matchMedia('(max-width: 720px)').matches) {
+    if (window.matchMedia('(max-width: 880px)').matches) {
       document.querySelector('.back-btn').style.display = 'inline-block';
     }
     publicLastId = 0;
