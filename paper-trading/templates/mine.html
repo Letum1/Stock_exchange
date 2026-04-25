@@ -222,7 +222,7 @@
   <h1>⛏️ BON Mine</h1>
   <div class="hdr-right">
     <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
-    <span id="hdr-bon" title="BON tokens — 1/100 chance per mined block" style="font-size:.85rem;color:#fbbf24;font-weight:700">BON 0</span>
+    <span id="hdr-bon" title="BON tokens — only drop on blocks past the deep layer (1/100 chance)" style="font-size:.85rem;color:#fbbf24;font-weight:700">BON 0</span>
     {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
     <a href="/" class="btn-sm">Portfolio</a>
     <a href="/wallet" class="btn-sm">💰 Wallet</a>
@@ -377,10 +377,10 @@
       banner.innerHTML = `🛡️ <b>Deep zone</b> — past layer ${verifyGate}. Each session needs a quick human check before you can mine.`;
     } else if (s.layer >= bonGate) {
       banner.style.display = 'block';
-      banner.innerHTML = `💎 <b>BON-required zone</b> — past layer ${bonGate}. You need at least 1 BON to mine here.`;
+      banner.innerHTML = `💎 <b>BON zone</b> — past layer ${bonGate}. You need at least 1 BON to mine here, and BON drops can only be earned this deep.`;
     } else if (s.layer + 5 >= bonGate) {
       banner.style.display = 'block';
-      banner.innerHTML = `⚠️ Heads up: at layer ${bonGate + 1} you'll need 1 BON, and at layer ${verifyGate + 1} a human check.`;
+      banner.innerHTML = `⚠️ Heads up: at layer ${bonGate + 1} you'll need 1 BON to keep mining, BON drops start there, and at layer ${verifyGate + 1} a human check kicks in.`;
     } else {
       banner.style.display = 'none';
     }

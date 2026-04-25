@@ -2984,14 +2984,18 @@ def mining_mine():
         (uid,),
     )
 
-    # 1-in-BON_DROP_RATE chance to drop a BON token
-    bon_dropped = (random.randint(1, BON_DROP_RATE) == 1)
-    if bon_dropped:
-        db.execute("UPDATE users SET bon = COALESCE(bon,0) + 1 WHERE id = ?", (uid,))
-        db.execute(
-            "UPDATE mining_user_stats SET bon_found = bon_found + 1 WHERE user_id = ?",
-            (uid,),
-        )
+    # 1-in-BON_DROP_RATE chance to drop a BON token — only past the deep layer.
+    # BON can only be earned by miners who are already deep enough (layer >=
+    # DEEP_LAYER_BON_REQUIRED). Shallower layers never drop BON.
+    bon_dropped = False
+    if w["layer"] >= DEEP_LAYER_BON_REQUIRED:
+        bon_dropped = (random.randint(1, BON_DROP_RATE) == 1)
+        if bon_dropped:
+            db.execute("UPDATE users SET bon = COALESCE(bon,0) + 1 WHERE id = ?", (uid,))
+            db.execute(
+                "UPDATE mining_user_stats SET bon_found = bon_found + 1 WHERE user_id = ?",
+                (uid,),
+            )
 
     # Check if layer is fully mined
     remaining = db.execute(
