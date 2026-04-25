@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Home · Paper Trading</title>
+  <link rel="stylesheet" href="/static/responsive.css"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}
+    header{background:#1a1d27;border-bottom:1px solid #2d3148;padding:14px 28px;
+           display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+    header h1{font-size:1.2rem;font-weight:800;color:#7c85ff}
+    .hdr-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .hdr-user{font-size:.85rem;color:#64748b}
+    .hdr-user span{color:#e2e8f0;font-weight:600}
+    .tag-admin{background:#78350f;color:#fcd34d;font-size:.72rem;font-weight:700;
+               padding:3px 9px;border-radius:20px;letter-spacing:.05em}
+    .btn-sm{padding:6px 14px;border:none;border-radius:6px;font-size:.8rem;
+            font-weight:600;cursor:pointer;background:#2d3148;color:#94a3b8;
+            text-decoration:none;display:inline-block}
+    .btn-sm:hover{opacity:.85}
+    .btn-admin{background:#78350f;color:#fcd34d}
+
+    .container{max-width:760px;margin:0 auto;padding:18px 14px;display:flex;flex-direction:column;gap:18px}
+    .card{background:#1a1d27;border:1px solid #2d3148;border-radius:12px;padding:16px}
+
+    /* ── Stories strip ── */
+    .stories-strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
+    .story-tile{flex:0 0 auto;width:88px;cursor:pointer;text-align:center}
+    .story-avatar{width:78px;height:78px;border-radius:50%;background:#13151f;
+                  border:3px solid #7c85ff;display:flex;align-items:center;justify-content:center;
+                  overflow:hidden;font-size:1.6rem;color:#cbd5e1;margin:0 auto 6px;position:relative}
+    .story-tile.mine .story-avatar{border-color:#475569}
+    .story-tile.mine .story-avatar::after{content:'+';position:absolute;bottom:-2px;right:-2px;
+                                          width:24px;height:24px;background:#7c85ff;color:#fff;
+                                          border-radius:50%;display:flex;align-items:center;justify-content:center;
+                                          font-weight:700;border:2px solid #1a1d27}
+    .story-avatar img,.story-avatar video{width:100%;height:100%;object-fit:cover;border-radius:50%}
+    .story-name{font-size:.72rem;color:#cbd5e1;text-align:center;
+                white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    /* ── Composer ── */
+    .composer textarea{width:100%;background:#13151f;border:1px solid #2d3148;border-radius:8px;
+                       color:#e2e8f0;padding:10px 12px;font-family:inherit;font-size:.95rem;
+                       min-height:62px;resize:vertical;outline:none}
+    .composer textarea:focus{border-color:#7c85ff}
+    .composer .row{display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap}
+    .composer input[type=text]{flex:1;min-width:160px;background:#13151f;border:1px solid #2d3148;
+                               border-radius:7px;color:#e2e8f0;padding:8px 11px;font-size:.85rem;outline:none}
+    .composer select{background:#13151f;border:1px solid #2d3148;border-radius:7px;
+                     color:#e2e8f0;padding:8px 11px;font-size:.85rem;outline:none}
+    .composer .icon-btn{background:#2d3148;color:#cbd5e1;border:none;border-radius:7px;
+                        padding:8px 11px;cursor:pointer;font-size:.95rem}
+    .btn-primary{background:#7c85ff;color:#fff;padding:9px 18px;border:none;border-radius:7px;
+                 font-weight:700;font-size:.88rem;cursor:pointer}
+    .btn-primary:hover{opacity:.85}
+    .attach-preview{margin-top:8px;padding:8px 12px;background:#13151f;border:1px solid #2d3148;
+                    border-radius:7px;font-size:.82rem;color:#94a3b8;display:flex;justify-content:space-between;align-items:center}
+    .attach-preview .x{cursor:pointer;color:#f87171;font-weight:700}
+
+    /* ── Post card ── */
+    .post{background:#1a1d27;border:1px solid #2d3148;border-radius:12px;overflow:hidden}
+    .post-head{display:flex;gap:11px;align-items:center;padding:12px 16px}
+    .avatar{width:40px;height:40px;border-radius:50%;background:#2d3148;
+            display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-weight:700;overflow:hidden}
+    .avatar img{width:100%;height:100%;object-fit:cover}
+    .post-meta{flex:1;min-width:0}
+    .post-meta .who a{color:#e2e8f0;font-weight:700;text-decoration:none;font-size:.95rem}
+    .post-meta .when{font-size:.72rem;color:#64748b;display:flex;gap:6px;align-items:center}
+    .privacy-pill{font-size:.62rem;background:#13151f;color:#94a3b8;padding:1px 6px;border-radius:4px;
+                  border:1px solid #2d3148;text-transform:capitalize}
+    .post-actions-top{display:flex;gap:6px}
+    .post-body{padding:0 16px 12px;font-size:.95rem;color:#e2e8f0;white-space:pre-wrap;word-break:break-word}
+    .post-link{display:block;margin:0 16px 12px;padding:10px 12px;background:#13151f;border:1px solid #2d3148;
+               border-radius:7px;color:#7dd3fc;font-size:.85rem;text-decoration:none;word-break:break-all}
+    .post-link:hover{background:#1e2130}
+    .post-media{width:100%;max-height:520px;background:#000;display:block}
+    .post-media-file{margin:0 16px 12px;padding:10px 12px;background:#13151f;border:1px solid #2d3148;
+                     border-radius:7px;color:#cbd5e1;font-size:.85rem}
+    .post-media-file a{color:#7dd3fc;text-decoration:none;font-weight:600}
+    .post-foot{padding:8px 12px;border-top:1px solid #2d3148;display:flex;gap:6px;align-items:center}
+    .post-foot button{flex:1;background:transparent;border:none;color:#94a3b8;font-size:.85rem;
+                      font-weight:600;cursor:pointer;padding:8px;border-radius:6px}
+    .post-foot button:hover{background:#13151f;color:#e2e8f0}
+    .post-foot .liked{color:#f472b6}
+
+    .empty{color:#475569;text-align:center;padding:30px 14px;font-size:.92rem}
+
+    .toast{position:fixed;bottom:24px;right:24px;background:#1e2130;border:1px solid #2d3148;
+           border-radius:9px;padding:12px 18px;max-width:320px;font-size:.86rem;
+           box-shadow:0 8px 32px rgba(0,0,0,.45);opacity:0;transform:translateY(10px);
+           transition:opacity .22s,transform .22s;pointer-events:none;z-index:999}
+    .toast.show{opacity:1;transform:translateY(0)}
+    .toast.ok{border-left:3px solid #4ade80}
+    .toast.err{border-left:3px solid #f87171}
+
+    /* ── Story viewer modal ── */
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;
+           align-items:center;justify-content:center;z-index:1000;padding:20px}
+    .modal.show{display:flex}
+    .modal-card{background:#0f1117;border:1px solid #2d3148;border-radius:12px;
+                max-width:420px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+    .story-view-head{padding:12px 16px;border-bottom:1px solid #2d3148;display:flex;
+                     gap:10px;align-items:center}
+    .story-view-head .who{flex:1;font-weight:700}
+    .story-view-head .x{background:#2d3148;color:#fff;border:none;border-radius:6px;
+                        padding:5px 10px;cursor:pointer}
+    .story-view-body{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+    .story-bubble img,.story-bubble video{max-width:100%;border-radius:8px;display:block}
+    .story-bubble p{font-size:.95rem;margin-top:6px;color:#e2e8f0;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🏠 Home</h1>
+  <div class="hdr-right">
+    {% if is_admin %}<span class="tag-admin">ADMIN</span>{% endif %}
+    <div class="hdr-user">Logged in as <span>{{ username }}</span></div>
+    <a href="/trading" class="btn-sm">📈 Trading</a>
+    <a href="/wallet" class="btn-sm">💰 Wallet</a>
+    <a href="/cashin" class="btn-sm">💵 Cash In</a>
+    <a href="/mine" class="btn-sm">⛏️ Mine</a>
+    <a href="/items" class="btn-sm">🎒 Items</a>
+    <a href="/chat" class="btn-sm">💬 Socialize</a>
+    <a href="/profile/{{ user_id }}" class="btn-sm">👤 Profile</a>
+    <a href="/account" class="btn-sm">My Account</a>
+    {% if is_admin %}<a href="/admin" class="btn-sm btn-admin">Admin</a>{% endif %}
+    <button class="btn-sm" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Stories strip -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:.78rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.08em">
+        Stories · last 24h
+      </div>
+      <button class="btn-sm" onclick="openStoryUpload()">+ Add story</button>
+    </div>
+    <div class="stories-strip" id="stories"></div>
+  </div>
+
+  <!-- Composer -->
+  <div class="card composer">
+    <textarea id="post-content" placeholder="What's on your mind, {{ username }}?" maxlength="5000"></textarea>
+    <div class="row">
+      <input type="text" id="post-link" placeholder="🔗 Optional link (https://…)" maxlength="500"/>
+      <select id="post-privacy" title="Who can see this post?">
+        <option value="public">🌐 Public</option>
+        <option value="followers">👥 Followers</option>
+        <option value="friends">⭐ Friends only</option>
+      </select>
+      <button class="icon-btn" onclick="document.getElementById('post-file').click()" title="Attach an image, video, or file">📎</button>
+      <input type="file" id="post-file" style="display:none" onchange="onFilePicked(event)"
+             accept="image/*,video/*,audio/*,application/pdf,.zip,.txt,.csv,.json"/>
+      <button class="btn-primary" onclick="submitPost()" id="post-btn">Post</button>
+    </div>
+    <div id="attach-info" style="display:none" class="attach-preview"></div>
+  </div>
+
+  <!-- Feed -->
+  <div id="feed"><div class="empty">Loading feed…</div></div>
+</div>
+
+<!-- Story viewer modal -->
+<div class="modal" id="story-modal" onclick="if(event.target.id==='story-modal')closeStoryModal()">
+  <div class="modal-card">
+    <div class="story-view-head">
+      <div class="avatar" id="sv-ava">?</div>
+      <div class="who" id="sv-who">…</div>
+      <button class="x" onclick="closeStoryModal()">✕</button>
+    </div>
+    <div class="story-view-body" id="sv-body"></div>
+  </div>
+</div>
+
+<!-- Story upload modal -->
+<div class="modal" id="story-upload" onclick="if(event.target.id==='story-upload')closeStoryUpload()">
+  <div class="modal-card" style="max-width:380px">
+    <div class="story-view-head">
+      <div class="who">+ New story</div>
+      <button class="x" onclick="closeStoryUpload()">✕</button>
+    </div>
+    <div class="story-view-body">
+      <textarea id="su-text" placeholder="What's happening? (optional)" maxlength="280"
+                style="width:100%;background:#13151f;border:1px solid #2d3148;border-radius:7px;
+                       color:#e2e8f0;padding:9px 12px;font-family:inherit;font-size:.9rem;min-height:60px"></textarea>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-sm" onclick="document.getElementById('su-file').click()">📎 Pick image/video</button>
+        <span id="su-fname" style="font-size:.78rem;color:#94a3b8"></span>
+      </div>
+      <input type="file" id="su-file" style="display:none" accept="image/*,video/*"
+             onchange="document.getElementById('su-fname').textContent=this.files[0]?this.files[0].name:''"/>
+      <button class="btn-primary" onclick="submitStory()" style="margin-top:6px">Post 24h story</button>
+      <p style="font-size:.74rem;color:#64748b">Stories disappear automatically after 24 hours.</p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let currentFileId = null;
+
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
+function shortTime(ts){if(!ts)return'';try{const d=new Date(ts.replace(' ','T')+'Z');const diff=(Date.now()-d.getTime())/1000;
+  if(diff<60)return 'just now';if(diff<3600)return Math.floor(diff/60)+'m ago';if(diff<86400)return Math.floor(diff/3600)+'h ago';
+  return d.toLocaleDateString();}catch(e){return ts;}}
+function toast(msg, ok){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+(ok?'ok':'err');setTimeout(()=>t.classList.remove('show'),2400);}
+async function api(url, opts={}){const o={headers:{'Content-Type':'application/json'},credentials:'same-origin',...opts};
+  if(o.body&&typeof o.body==='object'&&!(o.body instanceof FormData))o.body=JSON.stringify(o.body);
+  if(o.body instanceof FormData)delete o.headers['Content-Type'];
+  const r=await fetch(url,o);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;}
+async function logout(){await fetch('/api/logout',{method:'POST'});location='/login';}
+
+// ── Stories ──
+async function loadStories(){
+  try{
+    const groups = await api('/api/stories/active');
+    const el = document.getElementById('stories');
+    const me = {{ user_id }};
+    const haveMine = groups.some(g => g.user_id === me);
+    const tiles = [];
+    if (!haveMine) {
+      tiles.push(`<div class="story-tile mine" onclick="openStoryUpload()">
+        <div class="story-avatar">+</div>
+        <div class="story-name">Your story</div></div>`);
+    }
+    for (const g of groups) {
+      const ava = g.avatar_url
+        ? `<img src="${escapeHtml(g.avatar_url)}" alt=""/>`
+        : escapeHtml((g.username||'?')[0].toUpperCase());
+      tiles.push(`<div class="story-tile ${g.is_me?'mine':''}" onclick="viewStories(${g.user_id})">
+        <div class="story-avatar">${ava}</div>
+        <div class="story-name">${g.is_me?'You':escapeHtml(g.username)}</div></div>`);
+    }
+    el.innerHTML = tiles.join('') || '<div style="color:#64748b;font-size:.85rem;padding:6px">No stories yet — be the first!</div>';
+    window._storyGroups = groups;
+  } catch(e) { console.error(e); }
+}
+
+function viewStories(userId){
+  const g = (window._storyGroups||[]).find(x=>x.user_id===userId);
+  if(!g) return;
+  document.getElementById('sv-who').textContent = g.is_me ? 'You' : g.username;
+  document.getElementById('sv-ava').innerHTML = g.avatar_url
+    ? `<img src="${escapeHtml(g.avatar_url)}" alt=""/>` : escapeHtml((g.username||'?')[0].toUpperCase());
+  const body = document.getElementById('sv-body');
+  body.innerHTML = g.stories.map(s => {
+    let media = '';
+    if (s.file && s.file.kind === 'image') media = `<img src="/api/files/${s.file.id}/download" alt=""/>`;
+    else if (s.file && s.file.kind === 'video') media = `<video src="/api/files/${s.file.id}/download" controls></video>`;
+    else if (s.file) media = `<a href="/api/files/${s.file.id}/download" style="color:#7dd3fc">📎 ${escapeHtml(s.file.display_name)}</a>`;
+    return `<div class="story-bubble">${media}${s.text?`<p>${escapeHtml(s.text)}</p>`:''}
+      <div style="font-size:.7rem;color:#64748b;margin-top:4px">${shortTime(s.created_at)}</div></div>`;
+  }).join('');
+  document.getElementById('story-modal').classList.add('show');
+}
+function closeStoryModal(){document.getElementById('story-modal').classList.remove('show');}
+function openStoryUpload(){document.getElementById('story-upload').classList.add('show');}
+function closeStoryUpload(){document.getElementById('story-upload').classList.remove('show');
+  document.getElementById('su-text').value='';document.getElementById('su-file').value='';document.getElementById('su-fname').textContent='';}
+
+async function submitStory(){
+  const text = document.getElementById('su-text').value.trim();
+  const f = document.getElementById('su-file').files[0];
+  if (!text && !f){toast('Write something or pick a file', false); return;}
+  let file_id = null;
+  try {
+    if (f) {
+      const fd = new FormData(); fd.append('file', f);
+      const up = await api('/api/files/upload', {method:'POST', body:fd});
+      file_id = up.file.id;
+    }
+    await api('/api/stories', {method:'POST', body:{text, file_id}});
+    toast('Story posted!', true);
+    closeStoryUpload();
+    loadStories();
+  } catch(e){ toast(e.message, false); }
+}
+
+// ── Posts ──
+function onFilePicked(e){
+  const f = e.target.files[0]; if(!f) return;
+  const info = document.getElementById('attach-info');
+  info.style.display = 'flex';
+  info.innerHTML = `<span>📎 ${escapeHtml(f.name)} (${(f.size/1024).toFixed(0)} KB)</span>
+                    <span class="x" onclick="clearAttach()">✕</span>`;
+  // Upload immediately
+  const fd = new FormData(); fd.append('file', f);
+  api('/api/files/upload', {method:'POST', body:fd})
+    .then(j => { currentFileId = j.file.id; info.innerHTML = `<span>📎 ${escapeHtml(j.file.display_name)} ✓ uploaded</span><span class="x" onclick="clearAttach()">✕</span>`; })
+    .catch(e => { toast(e.message, false); clearAttach(); });
+}
+function clearAttach(){
+  currentFileId = null;
+  document.getElementById('post-file').value = '';
+  document.getElementById('attach-info').style.display = 'none';
+}
+
+async function submitPost(){
+  const content = document.getElementById('post-content').value.trim();
+  const link_url = document.getElementById('post-link').value.trim();
+  const privacy = document.getElementById('post-privacy').value;
+  if (!content && !link_url && !currentFileId){toast('Write something, attach a file, or add a link', false); return;}
+  const btn = document.getElementById('post-btn'); btn.disabled = true;
+  try {
+    await api('/api/posts', {method:'POST', body:{content, link_url, privacy, file_id:currentFileId}});
+    document.getElementById('post-content').value = '';
+    document.getElementById('post-link').value = '';
+    clearAttach();
+    toast('Posted!', true);
+    loadFeed();
+  } catch(e){ toast(e.message, false); }
+  btn.disabled = false;
+}
+
+async function loadFeed(){
+  try {
+    const posts = await api('/api/feed');
+    const el = document.getElementById('feed');
+    if (!posts.length){el.innerHTML='<div class="empty">No posts yet — be the first!</div>'; return;}
+    el.innerHTML = posts.map(renderPost).join('');
+  } catch(e){
+    document.getElementById('feed').innerHTML = '<div class="empty">'+escapeHtml(e.message)+'</div>';
+  }
+}
+
+function renderPost(p){
+  let media = '';
+  if (p.file) {
+    if (p.file.kind === 'image') media = `<img class="post-media" src="/api/files/${p.file.id}/download" alt=""/>`;
+    else if (p.file.kind === 'video') media = `<video class="post-media" src="/api/files/${p.file.id}/download" controls></video>`;
+    else if (p.file.kind === 'audio') media = `<div class="post-media-file"><audio controls src="/api/files/${p.file.id}/download" style="width:100%"></audio></div>`;
+    else media = `<div class="post-media-file">📎 <a href="/api/files/${p.file.id}/download" target="_blank">${escapeHtml(p.file.display_name)}</a> (${p.file.kind})</div>`;
+  }
+  const ava = p.avatar_url ? `<img src="${escapeHtml(p.avatar_url)}" alt=""/>` : escapeHtml((p.username||'?')[0].toUpperCase());
+  const link = p.link_url ? `<a class="post-link" href="${escapeHtml(p.link_url)}" target="_blank" rel="noreferrer">🔗 ${escapeHtml(p.link_url)}</a>` : '';
+  const delBtn = p.mine ? `<button class="btn-sm" onclick="deletePost(${p.id})" title="Delete post">🗑</button>` : '';
+  return `<div class="post" id="post-${p.id}">
+    <div class="post-head">
+      <div class="avatar">${ava}</div>
+      <div class="post-meta">
+        <div class="who"><a href="/profile/${p.user_id}">${escapeHtml(p.username)}</a></div>
+        <div class="when">${shortTime(p.created_at)} · <span class="privacy-pill">${escapeHtml(p.privacy)}</span></div>
+      </div>
+      <div class="post-actions-top">${delBtn}</div>
+    </div>
+    ${p.content ? `<div class="post-body">${escapeHtml(p.content)}</div>` : ''}
+    ${link}
+    ${media}
+    <div class="post-foot">
+      <button class="${p.liked?'liked':''}" onclick="toggleLike(${p.id}, this)">${p.liked?'♥':'♡'} <span data-likes>${p.likes}</span></button>
+      <button onclick="location='/profile/${p.user_id}'">👤 ${escapeHtml(p.username)}</button>
+    </div>
+  </div>`;
+}
+
+async function toggleLike(pid, btn){
+  const liked = btn.classList.contains('liked');
+  try{
+    const j = liked
+      ? await api(`/api/posts/${pid}/like`, {method:'DELETE'})
+      : await api(`/api/posts/${pid}/like`, {method:'POST'});
+    btn.classList.toggle('liked', j.liked);
+    btn.innerHTML = (j.liked?'♥':'♡')+' <span data-likes>'+j.likes+'</span>';
+  } catch(e){ toast(e.message, false); }
+}
+
+async function deletePost(pid){
+  if(!confirm('Delete this post?')) return;
+  try{ await api(`/api/posts/${pid}`, {method:'DELETE'}); document.getElementById('post-'+pid).remove(); }
+  catch(e){ toast(e.message, false); }
+}
+
+loadStories();
+loadFeed();
+setInterval(loadStories, 60000);
+setInterval(loadFeed, 30000);
+</script>
+</body>
+</html>

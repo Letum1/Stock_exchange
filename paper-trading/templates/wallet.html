@@ -109,7 +109,9 @@
   <div class="hdr-right">
     {% if is_admin %}<span class="tag-admin">ADMIN</span>{% endif %}
     <div class="hdr-user">Logged in as <span>{{ username }}</span></div>
-    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/" class="btn-sm">🏠 Home</a>
+    <a href="/trading" class="btn-sm">📈 Trading</a>
+    <a href="/cashin" class="btn-sm">💵 Cash In</a>
     <a href="/mine" class="btn-sm">⛏️ Mine</a>
     <a href="/items" class="btn-sm">🎒 Items</a>
     <a href="/chat" class="btn-sm">💬 Socialize</a>
@@ -210,8 +212,20 @@
 
     <!-- ── Cash In ── -->
     <div class="pane" id="pane-cashin">
+      <div style="background:linear-gradient(135deg,#1e3a5c,#0c4a6e);border:1px solid #1e3a5c;
+                  border-radius:10px;padding:16px 18px;margin-bottom:16px;display:flex;
+                  gap:12px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:1.6rem">⚡</span>
+        <div style="flex:1;min-width:200px">
+          <div style="font-weight:700;color:#7dd3fc">Faster: pay with crypto</div>
+          <div style="font-size:.82rem;color:#cbd5e1;margin-top:2px">
+            Send any cryptocurrency via cwallet and chat with the team to confirm.
+          </div>
+        </div>
+        <a href="/cashin" class="btn-primary" style="text-decoration:none">💵 Open Cash In →</a>
+      </div>
       <div class="sub" style="margin-bottom:14px;">
-        Request to deposit funds. Submit your payment details — staff will process it and your balance will be credited.
+        Or, request a deposit the classic way. Submit your payment details — staff will process it and your balance will be credited.
       </div>
       <div class="form-row">
         <div>

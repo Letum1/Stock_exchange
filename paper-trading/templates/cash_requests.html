@@ -78,7 +78,9 @@
     {% if is_admin %}<span class="tag admin">ADMIN</span>{% endif %}
     {% if is_manager %}<span class="tag manager">MANAGER</span>{% endif %}
     <div class="hdr-user">Logged in as <span>{{ username }}</span></div>
-    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/" class="btn-sm">🏠 Home</a>
+    <a href="/trading" class="btn-sm">📈 Trading</a>
+    <a href="/cashin" class="btn-sm">💵 Cash In</a>
     <a href="/wallet" class="btn-sm">💰 Wallet</a>
     {% if is_admin %}<a href="/admin" class="btn-sm">Admin</a>{% endif %}
     <button class="btn-sm" onclick="logout()">Logout</button>

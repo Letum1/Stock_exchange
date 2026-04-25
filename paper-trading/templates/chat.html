@@ -244,7 +244,9 @@
     <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
     {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
     {% if is_admin or is_manager %}<a href="/cash-requests" class="btn-sm" style="background:#1e3a5c;color:#7dd3fc">🔒 Cash Requests</a>{% endif %}
-    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/" class="btn-sm">🏠 Home</a>
+    <a href="/trading" class="btn-sm">📈 Trading</a>
+    <a href="/cashin" class="btn-sm">💵 Cash In</a>
     <a href="/market" class="btn-sm">Markets</a>
     <a href="/items" class="btn-sm">🎒 Items</a>
     <a href="/wallet" class="btn-sm">💰 Wallet</a>
@@ -253,6 +255,50 @@
     <button class="btn-sm" onclick="logout()">Logout</button>
   </div>
 </header>
+
+<!-- Gift modal (Phase 3) -->
+<div id="gift-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.78);
+     display:none;align-items:center;justify-content:center;z-index:1000;padding:20px"
+     onclick="if(event.target.id==='gift-modal')closeGiftModal()">
+  <style>#gift-modal.show{display:flex !important}</style>
+  <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:14px;
+       max-width:380px;width:100%;padding:22px;color:#e2e8f0">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="font-size:2rem">🎁</span>
+      <div>
+        <div style="font-weight:800;font-size:1.05rem">Send a gift</div>
+        <div id="gift-target-label" style="font-size:.78rem;color:#94a3b8">…</div>
+      </div>
+      <button onclick="closeGiftModal()"
+              style="margin-left:auto;background:#2d3148;color:#fff;border:none;
+                     border-radius:6px;padding:5px 10px;cursor:pointer">✕</button>
+    </div>
+    <label style="font-size:.74rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Type</label>
+    <select id="gift-kind" style="width:100%;background:#13151f;border:1px solid #2d3148;
+            border-radius:7px;color:#e2e8f0;padding:9px 11px;font-size:.9rem;margin:5px 0 12px">
+      <option value="bon">⛏️ BON ore</option>
+      <option value="satoshi">₿ Satoshi</option>
+      <option value="cash">💵 Cash (USD)</option>
+    </select>
+    <label style="font-size:.74rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Amount</label>
+    <input id="gift-amount" type="number" min="0" step="any"
+           placeholder="How much do you want to gift?"
+           style="width:100%;background:#13151f;border:1px solid #2d3148;border-radius:7px;
+                  color:#e2e8f0;padding:9px 11px;font-size:.95rem;margin:5px 0 12px"/>
+    <label style="font-size:.74rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Note (optional)</label>
+    <input id="gift-note" type="text" maxlength="120" placeholder="Add a short note…"
+           style="width:100%;background:#13151f;border:1px solid #2d3148;border-radius:7px;
+                  color:#e2e8f0;padding:9px 11px;font-size:.9rem;margin:5px 0 14px"/>
+    <button onclick="sendGift()"
+            style="width:100%;background:linear-gradient(135deg,#7c2d12,#b45309);color:#fff;
+                   border:none;border-radius:8px;padding:11px;font-weight:800;font-size:.95rem;
+                   cursor:pointer">🎁 Send gift</button>
+    <p style="font-size:.7rem;color:#64748b;margin-top:8px">
+      The amount is debited from your balance immediately. If a public gift goes unclaimed,
+      it stays available until someone claims it.
+    </p>
+  </div>
+</div>
 
 <div class="chat-wrap">
   <!-- Sidebar -->
@@ -408,6 +454,7 @@
       <div id="attach-row"></div>
       <div class="composer">
         <button class="icon-btn" onclick="document.getElementById('file-picker').click()" title="Attach a file">📎</button>
+        <button class="icon-btn" onclick="openGiftModal('dm')" title="Send a gift" style="background:#7c2d12;color:#fed7aa">🎁</button>
         <input type="file" id="file-picker" style="display:none" onchange="onFilePicked(event)"
                accept="image/*,video/*,audio/*,application/pdf,.zip,.txt,.csv,.json"/>
         <input id="composer" type="text" placeholder="Type a message…" maxlength="1000"
@@ -462,8 +509,9 @@
         ? `<div class="msg-actions"><button onclick="deleteDm(${m.id})" title="Delete">🗑</button></div>` : '';
       const text = m.content ? `<div class="msg ${me?'me':'them'}">${escapeHtml(m.content)}</div>` : '';
       const file = m.file ? `<div class="msg ${me?'me':'them'} msg-file">${renderFileAttachment(m.file)}</div>` : '';
-      const body = text || file
-        ? `${text}${file}`
+      const gift = m.gift ? `<div class="msg ${me?'me':'them'}" style="padding:0;background:transparent;border:none">${renderGiftCard(m.gift)}</div>` : '';
+      const body = text || file || gift
+        ? `${text}${file}${gift}`
         : `<div class="msg ${me?'me':'them'}">(empty)</div>`;
       // Seen receipt only for MY outgoing messages
       let seen = '';
@@ -542,6 +590,7 @@
       <div class="messages" id="pub-messages"></div>
       <div id="pub-mute-banner"></div>
       <div class="composer" id="pub-composer-wrap">
+        <button class="icon-btn" onclick="openGiftModal('public')" title="Drop a public gift (first-to-claim wins)" style="background:#7c2d12;color:#fed7aa">🎁</button>
         <input id="pub-composer" type="text" placeholder="Message everyone…" maxlength="500"
                onkeydown="if(event.key==='Enter')sendPublic()"/>
         <button onclick="sendPublic()" id="pub-send-btn">Send</button>
@@ -623,6 +672,7 @@
             <span class="ts">${shortTime(m.timestamp)}</span>
           </div>
           <div class="text">${escapeHtml(m.content)}</div>
+          ${m.gift ? `<div style="margin-top:8px">${renderGiftCard(m.gift)}</div>` : ''}
           ${actions.length ? `<div class="row-actions">${actions.join('')}</div>` : ''}
         </div>
       </div>`;
@@ -783,6 +833,96 @@
   }
 
   async function logout() { await fetch('/api/logout', {method:'POST'}); window.location.href='/login'; }
+
+  // ── Gifts (Phase 3) ─────────────────────────────────────────────────────
+  let _giftMode = 'dm';
+
+  function openGiftModal(mode) {
+    _giftMode = mode;
+    if (mode === 'dm' && !activeUserId) {
+      alert('Open a conversation first.');
+      return;
+    }
+    document.getElementById('gift-target-label').textContent =
+      mode === 'public'
+        ? '🌐 Public chat — first user to claim wins!'
+        : `📩 Direct gift to ${activeUsername || 'this user'}`;
+    document.getElementById('gift-modal').classList.add('show');
+    document.getElementById('gift-amount').focus();
+  }
+  function closeGiftModal(){ document.getElementById('gift-modal').classList.remove('show'); }
+
+  async function sendGift() {
+    const kind = document.getElementById('gift-kind').value;
+    const amount = parseFloat(document.getElementById('gift-amount').value || '0');
+    const note = (document.getElementById('gift-note').value || '').trim();
+    if (!amount || amount <= 0) { alert('Enter a positive amount.'); return; }
+    const url = (_giftMode === 'public') ? '/api/public/gift' : '/api/messages/gift';
+    const body = (_giftMode === 'public')
+      ? { kind, amount, note }
+      : { kind, amount, note, recipient_id: activeUserId };
+    try {
+      const r = await fetch(url, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!r.ok){ alert(j.error || 'Could not send gift'); return; }
+      closeGiftModal();
+      document.getElementById('gift-amount').value = '';
+      document.getElementById('gift-note').value = '';
+      // Refresh whichever feed is active
+      if (_giftMode === 'public') { publicLastId = 0; loadPublic(); }
+      else { lastMsgId = 0; loadMessages(); }
+    } catch(e){ alert(e.message); }
+  }
+
+  function giftEmoji(k){ return k==='bon'?'⛏️':(k==='satoshi'?'₿':'💵'); }
+  function giftLabel(k, a){
+    if (k==='bon') return `${Number(a).toLocaleString()} BON ore`;
+    if (k==='satoshi') return `${Number(a).toLocaleString()} satoshi`;
+    return `$${Number(a).toFixed(2)} cash`;
+  }
+  function renderGiftCard(g){
+    const claimed = !!g.claimed_by;
+    const bg = claimed ? '#1f2937' : 'linear-gradient(135deg,#7c2d12,#b45309)';
+    const border = claimed ? '#374151' : '#fbbf24';
+    let action = '';
+    if (claimed) {
+      action = `<div style="font-size:.78rem;color:#9ca3af;margin-top:6px">
+        ✓ Claimed by <b>${escapeHtml(g.claimed_by.username)}</b></div>`;
+    } else if (g.can_claim) {
+      action = `<button onclick="claimGift(${g.id})"
+        style="margin-top:8px;background:#fff;color:#7c2d12;border:none;border-radius:6px;
+        padding:8px 16px;font-weight:800;cursor:pointer;width:100%">
+        ${g.scope==='public'?'🏃 Claim it first!':'🎉 Open gift'}</button>`;
+    } else {
+      action = `<div style="font-size:.74rem;color:#fde68a;margin-top:6px;opacity:.85">
+        ${g.scope==='public'?'Up for grabs…':'Waiting for recipient'}</div>`;
+    }
+    return `<div style="background:${bg};border:1px solid ${border};border-radius:10px;
+      padding:12px 14px;color:#fff;min-width:200px;max-width:300px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:1.6rem">🎁</span>
+        <div>
+          <div style="font-weight:800;font-size:.95rem">${giftEmoji(g.kind)} ${giftLabel(g.kind, g.amount)}</div>
+          <div style="font-size:.72rem;opacity:.85">from ${escapeHtml(g.sender_username)}${g.scope==='public'?' · public drop':''}</div>
+        </div>
+      </div>
+      ${action}
+    </div>`;
+  }
+
+  async function claimGift(gid){
+    try {
+      const r = await fetch('/api/gifts/' + gid + '/claim', {method:'POST'});
+      const j = await r.json();
+      if (!r.ok){ alert(j.error || 'Could not claim'); return; }
+      alert(j.message || '🎉 Claimed!');
+      publicLastId = 0; lastMsgId = 0;
+      if (currentTab === 'public') loadPublic(); else loadMessages();
+    } catch(e){ alert(e.message); }
+  }
 
   // ── Auto-open from query ?to=USER_ID ────────────────────────────────────
   (async () => {

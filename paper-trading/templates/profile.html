@@ -93,7 +93,9 @@
   <div class="hdr-right">
     <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
     {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
-    <a href="/" class="btn-sm">Portfolio</a>
+    <a href="/" class="btn-sm">🏠 Home</a>
+    <a href="/trading" class="btn-sm">📈 Trading</a>
+    <a href="/cashin" class="btn-sm">💵 Cash In</a>
     <a href="/market" class="btn-sm">Markets</a>
     <a href="/wallet" class="btn-sm">💰 Wallet</a>
     <a href="/mine" class="btn-sm">⛏️ Mine</a>
@@ -115,21 +117,65 @@
   </div>
 {% else %}
 
+  <!-- Animated banner -->
+  <div id="banner-wrap" style="border-radius:14px;overflow:hidden;border:1px solid #2d3148;
+       background:#13151f;display:none;position:relative;aspect-ratio:3/1;max-height:280px">
+    <div id="banner-media" style="position:absolute;inset:0;width:100%;height:100%"></div>
+    {% if target_id == current_user_id %}
+    <div style="position:absolute;top:10px;right:10px;display:flex;gap:6px">
+      <button class="btn-sm" onclick="document.getElementById('banner-picker').click()">🎨 Change banner</button>
+      <button class="btn-sm" onclick="clearBanner()">✕</button>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if target_id == current_user_id %}
+  <input type="file" id="banner-picker" style="display:none" accept="image/*,video/*" onchange="uploadBanner(event)"/>
+  <div id="no-banner-note" style="display:none">
+    <button class="btn btn-primary" onclick="document.getElementById('banner-picker').click()">🎨 Add a banner (image, GIF, or video)</button>
+  </div>
+  {% endif %}
+
   <div class="hero">
     <div class="avatar-big" id="avatar">{{ target_username[0]|upper }}</div>
     <div class="hero-info">
       <div class="hero-name">{{ target_username }}</div>
       <div class="hero-meta">User ID #{{ target_id }} · <span id="member-since">…</span></div>
       <div class="hero-badges" id="badges"></div>
+      <div id="follow-stats" style="font-size:.82rem;color:#94a3b8;margin-top:8px;display:flex;gap:14px">
+        <span><b id="ff-followers" style="color:#e2e8f0">0</b> followers</span>
+        <span><b id="ff-following" style="color:#e2e8f0">0</b> following</span>
+      </div>
     </div>
     <div class="hero-actions">
       {% if target_id == current_user_id %}
         <a href="/account" class="btn btn-primary">⚙️ Edit My Account</a>
+        <button class="btn btn-primary" style="background:#0ea5e9" onclick="document.getElementById('intro-picker').click()">🎬 Set 10s intro video</button>
+        <input type="file" id="intro-picker" style="display:none" accept="video/*" onchange="uploadIntro(event)"/>
       {% else %}
+        <button class="btn btn-primary" id="follow-btn" onclick="toggleFollow()">＋ Follow</button>
         <a href="/chat?to={{ target_id }}" class="btn btn-primary">💬 Send Message</a>
         <button class="btn btn-primary" style="background:#7c85ff" onclick="startTrade()">🤝 Trade</button>
       {% endif %}
     </div>
+  </div>
+
+  <!-- 10-second intro video -->
+  <div class="section" id="intro-section" style="display:none">
+    <h2>🎬 Intro</h2>
+    <video id="intro-video" controls playsinline preload="metadata" style="width:100%;max-width:480px;border-radius:10px;background:#000"></video>
+    {% if target_id == current_user_id %}
+    <div style="margin-top:8px;font-size:.78rem;color:#64748b">
+      Tip: keep it under 10 seconds for best results.
+      <button class="btn-sm" style="margin-left:8px" onclick="clearIntro()">Remove</button>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Recent posts -->
+  <div class="section">
+    <h2>📝 Recent Posts</h2>
+    <div id="posts-area"><div class="empty">Loading…</div></div>
   </div>
 
   <div class="section" id="bio-section" style="display:none">
@@ -189,6 +235,108 @@
       document.getElementById('avatar').innerHTML =
         `<img src="${p.avatar_url}" alt=""/>`;
     }
+
+    // Banner
+    if (p.banner_url) {
+      const wrap = document.getElementById('banner-wrap');
+      wrap.style.display = '';
+      const m = document.getElementById('banner-media');
+      if (p.banner_kind === 'video') {
+        m.innerHTML = `<video src="${p.banner_url}" autoplay muted loop playsinline
+          style="width:100%;height:100%;object-fit:cover"></video>`;
+      } else {
+        m.innerHTML = `<img src="${p.banner_url}" style="width:100%;height:100%;object-fit:cover" alt=""/>`;
+      }
+      const note = document.getElementById('no-banner-note'); if (note) note.style.display = 'none';
+    } else {
+      const note = document.getElementById('no-banner-note'); if (note) note.style.display = '';
+    }
+
+    // Intro video
+    if (p.intro_video_url) {
+      document.getElementById('intro-section').style.display = '';
+      document.getElementById('intro-video').src = p.intro_video_url;
+    }
+  }
+
+  async function loadFollowStats() {
+    try {
+      const r = await fetch('/api/follow/' + TARGET_ID + '/status');
+      if (!r.ok) return;
+      const j = await r.json();
+      document.getElementById('ff-followers').textContent = j.followers;
+      document.getElementById('ff-following').textContent = j.following_count;
+      const btn = document.getElementById('follow-btn');
+      if (btn) {
+        btn.textContent = j.is_friend ? '⭐ Friends' : (j.following ? '✓ Following' : '＋ Follow');
+        btn.style.background = j.is_friend ? '#16a34a' : (j.following ? '#475569' : '#7c85ff');
+        btn.dataset.following = j.following ? '1' : '0';
+      }
+    } catch(e){}
+  }
+
+  async function toggleFollow(){
+    const btn = document.getElementById('follow-btn');
+    const wasFollowing = btn.dataset.following === '1';
+    try {
+      const r = await fetch('/api/follow/' + TARGET_ID, {method: wasFollowing ? 'DELETE' : 'POST'});
+      const j = await r.json();
+      if (!r.ok) { alert(j.error || 'Could not update'); return; }
+      loadFollowStats();
+    } catch(e) { alert(e.message); }
+  }
+
+  async function loadPosts(){
+    try {
+      const r = await fetch('/api/posts/by-user/' + TARGET_ID);
+      if (!r.ok) return;
+      const posts = await r.json();
+      const el = document.getElementById('posts-area');
+      if (!posts.length){ el.innerHTML = '<div class="empty">No posts yet.</div>'; return; }
+      el.innerHTML = posts.map(p => {
+        let media = '';
+        if (p.file && p.file.kind === 'image') media = `<img src="/api/files/${p.file.id}/download" style="max-width:100%;border-radius:8px;margin-top:8px" alt=""/>`;
+        else if (p.file && p.file.kind === 'video') media = `<video src="/api/files/${p.file.id}/download" controls style="max-width:100%;border-radius:8px;margin-top:8px"></video>`;
+        return `<div style="background:#13151f;border:1px solid #2d3148;border-radius:9px;padding:12px;margin-bottom:10px">
+          <div style="font-size:.72rem;color:#64748b;margin-bottom:5px">${p.created_at} · ${p.privacy} · ♥ ${p.likes}</div>
+          <div style="white-space:pre-wrap;color:#e2e8f0;font-size:.92rem">${escapeHtml(p.content||'')}</div>
+          ${p.link_url ? `<a href="${escapeHtml(p.link_url)}" target="_blank" style="color:#7dd3fc;font-size:.84rem;display:block;margin-top:6px">${escapeHtml(p.link_url)}</a>` : ''}
+          ${media}
+        </div>`;
+      }).join('');
+    } catch(e){}
+  }
+
+  async function uploadBanner(e){
+    const f = e.target.files[0]; if (!f) return;
+    const fd = new FormData(); fd.append('file', f);
+    try {
+      const r = await fetch('/api/account/banner', {method:'POST', body:fd});
+      const j = await r.json();
+      if (!r.ok){ alert(j.error || 'Upload failed'); return; }
+      loadProfile();
+    } catch(err){ alert(err.message); }
+  }
+  async function clearBanner(){
+    if (!confirm('Remove your banner?')) return;
+    await fetch('/api/account/banner', {method:'DELETE'});
+    document.getElementById('banner-wrap').style.display = 'none';
+    const note = document.getElementById('no-banner-note'); if (note) note.style.display = '';
+  }
+  async function uploadIntro(e){
+    const f = e.target.files[0]; if (!f) return;
+    const fd = new FormData(); fd.append('file', f);
+    try {
+      const r = await fetch('/api/account/intro-video', {method:'POST', body:fd});
+      const j = await r.json();
+      if (!r.ok){ alert(j.error || 'Upload failed'); return; }
+      loadProfile();
+    } catch(err){ alert(err.message); }
+  }
+  async function clearIntro(){
+    if (!confirm('Remove your intro video?')) return;
+    await fetch('/api/account/intro-video', {method:'DELETE'});
+    document.getElementById('intro-section').style.display = 'none';
   }
 
   async function loadInventory() {
@@ -221,6 +369,8 @@
 
   loadProfile();
   loadInventory();
+  loadFollowStats();
+  loadPosts();
 {% endif %}
 
   async function logout() { await fetch('/api/logout', {method:'POST'}); window.location.href='/login'; }
