@@ -299,7 +299,7 @@
       <div class="cm-field"><div class="cm-lbl">Subtotal</div><div class="cm-val" id="cm-subtotal">—</div></div>
     </div>
     <div class="fee-breakdown" id="fee-breakdown">
-      <div class="fee-row"><span>Gotrade commission (0.25%)</span><span id="fee-gotrade">—</span></div>
+      <div class="fee-row"><span>Trade fee (0.25%)</span><span id="fee-gotrade">—</span></div>
       <div class="fee-row"><span>Regulatory fee</span><span id="fee-reg">—</span></div>
       <div class="fee-row"><span>Platform fee (0.10%)</span><span id="fee-plat">—</span></div>
       <div class="fee-row fee-total"><span id="fee-total-label">You pay</span><span id="cm-total">—</span></div>
@@ -360,7 +360,7 @@
       const r = await fetch(`/api/fees/preview?side=${action}&gross=${subtotal}`);
       const f = await r.json();
       if (r.ok) {
-        document.getElementById('fee-gotrade').textContent = '−' + fmt(f.gotrade_fee);
+        document.getElementById('fee-gotrade').textContent = '−' + fmt(f.trade_fee);
         document.getElementById('fee-reg').textContent     = '−' + fmt(f.regulatory_fee);
         document.getElementById('fee-plat').textContent    = '−' + fmt(f.platform_fee);
         document.getElementById('cm-total').textContent    = fmt(f.total);

@@ -161,7 +161,7 @@
   <div class="card">
     <h2>💸 Fee Revenue (Middleman Channel)</h2>
     <div class="stats-bar" id="revenue-bar">
-      <div class="stat"><div class="lbl">Gotrade Revenue (passed through)</div><div class="val amber" id="rv-gotrade">—</div></div>
+      <div class="stat"><div class="lbl">Stock Exchange Fees (passed through)</div><div class="val amber" id="rv-gotrade">—</div></div>
       <div class="stat"><div class="lbl">Regulatory Fees</div><div class="val" id="rv-reg">—</div></div>
       <div class="stat"><div class="lbl">Platform Revenue (your share)</div><div class="val green" id="rv-platform">—</div></div>
       <div class="stat"><div class="lbl">Total Fees Collected</div><div class="val" id="rv-total">—</div></div>
@@ -173,8 +173,8 @@
       {% endif %}
     </div>
     <div style="font-size:.78rem;color:#64748b;margin-top:10px">
-      Every trade flows <strong style="color:#94a3b8">user → platform → Gotrade</strong>.
-      The platform takes a 0.10% markup on top of Gotrade's 0.25% commission.
+      Every trade flows <strong style="color:#94a3b8">user → platform → stock exchange</strong>.
+      The platform takes a 0.10% markup on top of the exchange's 0.25% trade fee.
       A small share of the platform markup is set aside as a tax fund visible only to the owner.
     </div>
   </div>
@@ -674,7 +674,7 @@
       const r = await fetch('/api/admin/revenue');
       if (!r.ok) return;
       const d = await r.json();
-      document.getElementById('rv-gotrade').textContent  = fmt(d.gotrade_revenue);
+      document.getElementById('rv-gotrade').textContent  = fmt(d.exchange_revenue);
       document.getElementById('rv-reg').textContent      = fmt(d.regulatory_fees);
       document.getElementById('rv-platform').textContent = fmt(d.platform_revenue);
       document.getElementById('rv-total').textContent    = fmt(d.total_visible);

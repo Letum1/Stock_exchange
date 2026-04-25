@@ -34,19 +34,19 @@ def compute_fees(side, gross):
     """Return a fee breakdown for a trade of gross notional `gross` ($).
 
     side: 'buy' or 'sell'.
-    Returns: dict with subtotal, gotrade_fee, regulatory_fee, platform_fee,
+    Returns: dict with subtotal, trade_fee, regulatory_fee, platform_fee,
              tax (portion of platform_fee earmarked as hidden tax), total
              (what user pays on buy / receives on sell), and a 'platform_net'
              (platform_fee minus tax)."""
     side = (side or "").lower()
     gross = max(0.0, float(gross))
-    gotrade_fee = round(gross * GOTRADE_COMMISSION_RATE, 4)
+    trade_fee = round(gross * GOTRADE_COMMISSION_RATE, 4)
     reg_min = REGULATORY_FEE_MIN_SELL if side == "sell" else REGULATORY_FEE_MIN_BUY
     regulatory_fee = round(max(reg_min, gross * REGULATORY_FEE_RATE), 4)
     platform_fee = round(gross * PLATFORM_COMMISSION_RATE, 4)
     tax = round(platform_fee * PLATFORM_TAX_SHARE, 4)
     platform_net = round(platform_fee - tax, 4)
-    fees_total = round(gotrade_fee + regulatory_fee + platform_fee, 2)
+    fees_total = round(trade_fee + regulatory_fee + platform_fee, 2)
     if side == "sell":
         total = round(gross - fees_total, 2)
     else:
@@ -54,7 +54,7 @@ def compute_fees(side, gross):
     return {
         "side":           side,
         "subtotal":       round(gross, 2),
-        "gotrade_fee":    round(gotrade_fee, 2),
+        "trade_fee":      round(trade_fee, 2),
         "regulatory_fee": round(regulatory_fee, 2),
         "platform_fee":   round(platform_fee, 2),
         "tax":            round(tax, 2),
@@ -787,7 +787,7 @@ def _record_fee_ledger(db, trade_id, uid, ticker, side, fees):
     """Append every fee component for a trade into the platform_ledger.
     Tax is split out of platform_fee so platform-net and tax are separate."""
     rows = [
-        ("gotrade_commission", fees["gotrade_fee"]),
+        ("gotrade_commission", fees["trade_fee"]),
         ("regulatory_fee",     fees["regulatory_fee"]),
         ("platform_commission", fees["platform_net"]),
         ("tax",                fees["tax"]),
@@ -808,7 +808,7 @@ def fees_config():
     """Public fee configuration so the client can preview costs.
     The hidden tax share is intentionally NOT included here."""
     return jsonify({
-        "gotrade_commission_rate":  GOTRADE_COMMISSION_RATE,
+        "trade_commission_rate":    GOTRADE_COMMISSION_RATE,
         "regulatory_fee_rate":      REGULATORY_FEE_RATE,
         "regulatory_fee_min_buy":   REGULATORY_FEE_MIN_BUY,
         "regulatory_fee_min_sell":  REGULATORY_FEE_MIN_SELL,
@@ -884,7 +884,7 @@ def buy():
                    subtotal, gotrade_fee, regulatory_fee, platform_fee, tax)
            VALUES (?, ?, 'BUY', ?, ?, ?, ?, ?, ?, ?, ?)""",
         (uid, ticker, shares, price, total,
-         fees["subtotal"], fees["gotrade_fee"], fees["regulatory_fee"],
+         fees["subtotal"], fees["trade_fee"], fees["regulatory_fee"],
          fees["platform_fee"], fees["tax"]),
     )
     _record_fee_ledger(db, cur.lastrowid, uid, ticker, "buy", fees)
@@ -948,7 +948,7 @@ def sell():
                    subtotal, gotrade_fee, regulatory_fee, platform_fee, tax)
            VALUES (?, ?, 'SELL', ?, ?, ?, ?, ?, ?, ?, ?)""",
         (uid, ticker, shares, price, proceeds,
-         fees["subtotal"], fees["gotrade_fee"], fees["regulatory_fee"],
+         fees["subtotal"], fees["trade_fee"], fees["regulatory_fee"],
          fees["platform_fee"], fees["tax"]),
     )
     _record_fee_ledger(db, cur.lastrowid, uid, ticker, "sell", fees)
@@ -1909,7 +1909,7 @@ def admin_revenue():
     visible_kinds = ("gotrade_commission", "regulatory_fee", "platform_commission")
     breakdown = {k: totals.get(k, {"total": 0.0, "count": 0}) for k in visible_kinds}
     return jsonify({
-        "gotrade_revenue":   breakdown["gotrade_commission"]["total"],
+        "exchange_revenue":  breakdown["gotrade_commission"]["total"],
         "regulatory_fees":   breakdown["regulatory_fee"]["total"],
         "platform_revenue":  breakdown["platform_commission"]["total"],
         "total_visible":     round(
