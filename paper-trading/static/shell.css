@@ -1,0 +1,223 @@
+/* ============================================================
+   Paper Trading — App Shell
+   Unified left sidebar nav + design tokens shared across pages.
+   ============================================================ */
+
+:root {
+  --bg-0: #0a0b10;
+  --bg-1: #11131c;
+  --bg-2: #181b27;
+  --bg-3: #232735;
+  --line: #2a2e40;
+  --text: #e7eaf3;
+  --text-dim: #94a3b8;
+  --text-mute: #64748b;
+  --brand: #7c85ff;
+  --brand-2: #a855f7;
+  --brand-3: #ec4899;
+  --green: #4ade80;
+  --red: #f87171;
+  --yellow: #fcd34d;
+  --nav-w: 232px;
+  --nav-w-collapsed: 76px;
+  --bottom-h: 62px;
+}
+
+/* ── Layout: fixed left sidebar; body padded to fit ────────── */
+body {
+  padding-left: var(--nav-w);
+  transition: padding-left .18s ease;
+}
+
+.app-nav {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: var(--nav-w);
+  background: linear-gradient(180deg, #0d0f17 0%, #0a0b10 100%);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 12px 12px;
+  gap: 4px;
+  z-index: 50;
+  overflow-y: auto;
+}
+
+.app-nav .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 16px;
+  text-decoration: none;
+}
+.app-nav .brand-mark {
+  width: 34px; height: 34px; border-radius: 9px;
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 60%, var(--brand-3) 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; font-weight: 800; color: #fff;
+  box-shadow: 0 6px 18px rgba(124,133,255,.35);
+}
+.app-nav .brand-name {
+  font-weight: 800; font-size: 1.05rem; color: #fff;
+  background: linear-gradient(45deg, var(--brand), var(--brand-3));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  letter-spacing: -0.01em;
+}
+
+.nav-section {
+  font-size: .65rem; color: var(--text-mute); text-transform: uppercase;
+  letter-spacing: .12em; padding: 14px 12px 6px; font-weight: 700;
+}
+.nav-link {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 10px;
+  color: var(--text-dim); text-decoration: none;
+  font-size: .92rem; font-weight: 600;
+  transition: background .15s, color .15s;
+  cursor: pointer; border: none; background: transparent; width: 100%; text-align: left;
+}
+.nav-link:hover { background: var(--bg-2); color: var(--text); }
+.nav-link.active { background: var(--bg-2); color: var(--text); }
+.nav-link.active .nav-icon { color: var(--brand); }
+.nav-icon {
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  font-size: 1.15rem; color: var(--text-dim); flex-shrink: 0;
+}
+.nav-link .nav-badge {
+  margin-left: auto; background: var(--red); color: #fff;
+  font-size: .68rem; font-weight: 800;
+  padding: 1px 7px; border-radius: 10px; min-width: 18px; text-align: center;
+}
+.nav-spacer { flex: 1; }
+
+.nav-user {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 10px;
+  text-decoration: none; color: var(--text);
+  background: var(--bg-1); border: 1px solid var(--line);
+  margin-top: 8px;
+}
+.nav-user:hover { background: var(--bg-2); }
+.nav-user .nu-ava {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; color: #fff; font-size: .9rem; overflow: hidden; flex-shrink: 0;
+}
+.nav-user .nu-ava img { width: 100%; height: 100%; object-fit: cover; }
+.nav-user .nu-meta { min-width: 0; flex: 1; }
+.nav-user .nu-name {
+  font-weight: 700; font-size: .85rem; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.nav-user .nu-sub { font-size: .68rem; color: var(--text-mute); }
+
+/* ── Floating mobile menu trigger ── */
+.app-nav-trigger {
+  display: none;
+  position: fixed; top: 12px; left: 12px; z-index: 60;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: var(--bg-2); border: 1px solid var(--line);
+  color: var(--text); font-size: 1.2rem; cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0,0,0,.45);
+}
+
+/* ── Mobile: bottom nav bar ──────────────────────────────── */
+@media (max-width: 880px) {
+  body {
+    padding-left: 0;
+    padding-bottom: var(--bottom-h);
+  }
+  .app-nav {
+    top: auto; bottom: 0; right: 0; left: 0; width: 100%;
+    height: var(--bottom-h);
+    flex-direction: row; padding: 0;
+    border-top: 1px solid var(--line);
+    border-right: none;
+    overflow-x: auto; overflow-y: hidden;
+    background: rgba(13,15,23,.96);
+    backdrop-filter: blur(8px);
+  }
+  .app-nav .brand,
+  .nav-section,
+  .nav-user,
+  .nav-spacer { display: none; }
+  .app-nav .nav-link {
+    flex-direction: column; gap: 2px;
+    padding: 8px 6px; border-radius: 0;
+    font-size: .62rem; min-width: 64px; flex: 1 0 64px;
+    justify-content: center; text-align: center;
+  }
+  .app-nav .nav-link .nav-badge { position: absolute; top: 4px; right: 18%; margin-left: 0; }
+  .app-nav .nav-link { position: relative; }
+  .app-nav .nav-icon { font-size: 1.3rem; }
+  .nav-link.active { background: transparent; }
+  .nav-link.active .nav-icon { color: var(--brand); }
+  .nav-link.active { color: var(--brand); }
+}
+
+/* ── Shared Modal styles ─────────────────────────────────── */
+.app-modal-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,.78);
+  display: none; align-items: center; justify-content: center;
+  z-index: 1000; padding: 18px; backdrop-filter: blur(6px);
+}
+.app-modal-bg.open { display: flex; }
+.app-modal {
+  background: var(--bg-1); border: 1px solid var(--line);
+  border-radius: 14px; max-width: 480px; width: 100%;
+  max-height: 88vh; display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
+}
+.app-modal-head {
+  padding: 14px 18px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 12px;
+  font-weight: 700; font-size: 1rem;
+}
+.app-modal-head .close {
+  margin-left: auto; background: var(--bg-3); border: none;
+  color: var(--text); width: 30px; height: 30px; border-radius: 50%;
+  cursor: pointer; font-size: .95rem;
+}
+.app-modal-body { padding: 16px 18px; overflow-y: auto; }
+
+/* ── Shared toast ─────────────────────────────────────────── */
+.app-toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px 18px; max-width: 320px;
+  font-size: .88rem; color: var(--text);
+  box-shadow: 0 12px 36px rgba(0,0,0,.55);
+  opacity: 0; transform: translateY(8px);
+  transition: opacity .2s, transform .2s; pointer-events: none;
+}
+.app-toast.show { opacity: 1; transform: translateY(0); }
+.app-toast.ok { border-left: 3px solid var(--green); }
+.app-toast.err { border-left: 3px solid var(--red); }
+@media (max-width: 880px) {
+  .app-toast { bottom: calc(var(--bottom-h) + 14px); right: 14px; left: 14px; max-width: none; }
+}
+
+/* ── User search list (used in share modal etc.) ────────── */
+.user-pick-list { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
+.user-pick {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: 8px; cursor: pointer;
+  transition: background .12s;
+}
+.user-pick:hover { background: var(--bg-2); }
+.user-pick .avatar-mini {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; overflow: hidden; flex-shrink: 0;
+}
+.user-pick .avatar-mini img { width: 100%; height: 100%; object-fit: cover; }
+.user-pick .upn { flex: 1; font-weight: 600; font-size: .9rem; }
+.user-pick .send-btn {
+  background: var(--brand); color: #fff; border: none;
+  padding: 6px 14px; border-radius: 8px; font-weight: 700;
+  font-size: .8rem; cursor: pointer;
+}
+.user-pick .send-btn:hover { opacity: .9; }
+.user-pick .send-btn:disabled { opacity: .5; cursor: default; }

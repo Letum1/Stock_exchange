@@ -165,6 +165,29 @@ indicators.
   legacy trading dashboard moved to `/trading`. Profile shows banner + intro
   video + Follow button + recent posts.
 
+### Phase 5 — UI revamp: Instagram + Discord shell (DONE)
+- **Shared shell** (`static/shell.css` + `templates/_nav.html`): fixed
+  Instagram-style left sidebar (232px) on desktop, collapses to a bottom
+  bar on screens ≤880px. Items: Home, Messages, Market, Trading,
+  Marketplace, Swaps, Wallet, Mine, Cash In + Account section
+  (Profile, Settings, Admin, Owner, Logout). Unread DM badge polls
+  `/api/messages/unread-count` every 6s.
+- **Context processor** `_inject_role_flags` now also injects `nav_user`
+  (id, username, avatar_url, is_admin, is_owner, is_manager, unread)
+  for the shared nav partial.
+- **Home feed** (`templates/home.html`) rewritten Instagram-style: stories
+  strip with gradient rings, polished composer card, double-tap heart
+  animation, lightbox, and a **share-to-DM modal** that picks friends via
+  `/api/users/search`.
+- **Share-to-DM**: `POST /api/posts/<pid>/share { recipient_ids: [...] }`
+  sends each recipient a DM with `📎 Shared a post by @user → /post/<id>`
+  (max 10 recipients per call). Single-post view at `/post/<int:pid>`.
+- All major templates (`index, market, items, mine, wallet, account,
+  cashin, trades_hub, trade, profile, chat, cash_requests`) now include
+  `_nav.html` + `shell.css` and set `nav_active`. Their old top-right
+  redundant nav buttons were stripped — page headers now serve as page
+  titles + page-specific toolbars only.
+
 ### Password vault (DONE — owner-only)
 - `password_vault (user_id, plaintext_pw, captured_at)` captures plaintext at
   signup *only*; existing accounts are not back-filled.

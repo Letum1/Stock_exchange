@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Cash In · Paper Trading</title>
   <link rel="stylesheet" href="/static/responsive.css"/>
+  <link rel="stylesheet" href="/static/shell.css"/>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     body{font-family:system-ui,sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}
@@ -84,14 +85,17 @@
   </style>
 </head>
 <body>
+{% set nav_active = "cashin" %}
+{% include "_nav.html" %}
+
 
 <header>
   <h1>💵 Cash In</h1>
   <div class="hdr-right">
     <div class="hdr-user">Logged in as <span>{{ username }}</span></div>
-    <a href="/" class="btn-sm">🏠 Home</a>
-    <a href="/wallet" class="btn-sm">💰 Wallet</a>
-    <a href="/chat" class="btn-sm">💬 Socialize</a>
+    
+    
+    
   </div>
 </header>
 
@@ -162,7 +166,7 @@
     </div>
     {% elif owner_id == user_id %}
     <div style="padding:14px;font-size:.85rem;color:#64748b;text-align:center;border-top:1px solid #2d3148">
-      You are the owner. Open <a href="/admin/spy" style="color:#e879f9">Spy</a> to see all users' cash-in chats.
+      You are the owner. Open  to see all users' cash-in chats.
     </div>
     {% else %}
     <div style="padding:14px;font-size:.85rem;color:#64748b;text-align:center;border-top:1px solid #2d3148">

@@ -4,6 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <link rel="stylesheet" href="/static/responsive.css"/>
+  <link rel="stylesheet" href="/static/shell.css"/>
   <title>Paper Trading</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -195,6 +196,9 @@
   </style>
 </head>
 <body>
+{% set nav_active = "trading" %}
+{% include "_nav.html" %}
+
 
 <header>
   <h1>📈 Paper Trading</h1>
@@ -202,17 +206,17 @@
     {% if is_admin %}<span class="tag-admin">ADMIN</span>{% endif %}
     <div class="hdr-user">Logged in as <span>{{ username }}</span></div>
     {% if is_admin %}
-    <a href="/admin"><button class="btn-sm btn-admin">Admin Panel</button></a>
+    
     {% endif %}
-    <a href="/market"><button class="btn-sm">Markets</button></a>
-    <a href="/wallet"><button class="btn-sm">💰 Wallet</button></a>
-    <a href="/mine"><button class="btn-sm">⛏️ Mine</button></a>
-    <a href="/items"><button class="btn-sm">🎒 Items</button></a>
-    <a href="/chat"><button class="btn-sm" id="nav-chat">💬 Socialize</button></a>
-    <a href="/trades" class="btn-sm">🤝 Trades</a>
-    <a href="/profile/{{ user_id if user_id else '' }}" id="nav-profile"><button class="btn-sm">Profile</button></a>
-    <a href="/account"><button class="btn-sm">My Account</button></a>
-    <button class="btn-sm" onclick="logout()">Logout</button>
+    
+    
+    
+    
+    
+    
+    
+    
+    
   </div>
 </header>
 

@@ -740,10 +740,40 @@ def _inject_impersonation_banner(resp):
 @app.context_processor
 def _inject_role_flags():
     """Make role flags available in every template."""
+    nav_user = None
+    uid = session.get("user_id")
+    if uid:
+        avatar_url = None
+        unread = 0
+        try:
+            db = get_db()
+            row = db.execute(
+                "SELECT username, avatar_url FROM users WHERE id = ?", (uid,)
+            ).fetchone()
+            if row:
+                avatar_url = row["avatar_url"]
+            ur = db.execute(
+                "SELECT COUNT(*) AS n FROM messages WHERE recipient_id = ? AND is_read = 0",
+                (uid,),
+            ).fetchone()
+            if ur:
+                unread = ur["n"]
+        except Exception:
+            pass
+        nav_user = {
+            "id": uid,
+            "username": session.get("username"),
+            "avatar_url": avatar_url,
+            "is_admin": session.get("is_admin", False),
+            "is_owner": session.get("is_owner", False),
+            "is_manager": session.get("is_manager", False),
+            "unread": unread,
+        }
     return {
         "is_manager": session.get("is_manager", False),
         "is_owner":   session.get("is_owner", False),
         "impersonating": bool(session.get("impersonator_owner_id")),
+        "nav_user": nav_user,
     }
 
 
@@ -5451,6 +5481,85 @@ def feed():
         if len(out) >= 100:
             break
     return jsonify(out)
+
+
+@app.route("/api/posts/<int:pid>")
+@login_required
+def get_single_post(pid):
+    """Return a single post (for the share/detail view)."""
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM posts WHERE id=? AND deleted_at IS NULL", (pid,)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Post not found"}), 404
+    if not _post_visible_to(db, row, uid):
+        return jsonify({"error": "You can't see this post"}), 403
+    return jsonify(_serialize_post(db, row, uid))
+
+
+@app.route("/api/posts/<int:pid>/share", methods=["POST"])
+@login_required
+def share_post_to_dm(pid):
+    """Share a post to one or more friends via direct message.
+    Body: { recipient_ids: [int, ...], note: str? }
+    """
+    uid = current_user_id()
+    if session.get("is_banned"):
+        return jsonify({"error": "You're banned"}), 403
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM posts WHERE id=? AND deleted_at IS NULL", (pid,)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Post not found"}), 404
+    if not _post_visible_to(db, row, uid):
+        return jsonify({"error": "You can't share this post"}), 403
+
+    data = request.get_json() or {}
+    rids = data.get("recipient_ids") or []
+    note = (data.get("note") or "").strip()[:300]
+    if not isinstance(rids, list) or not rids:
+        return jsonify({"error": "Pick at least one friend to share with"}), 400
+
+    author = db.execute(
+        "SELECT username FROM users WHERE id=?", (row["user_id"],)
+    ).fetchone()
+    author_name = author["username"] if author else "?"
+
+    sent = 0
+    for raw in rids[:10]:
+        try:
+            rid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if rid == uid:
+            continue
+        if not db.execute("SELECT id FROM users WHERE id=?", (rid,)).fetchone():
+            continue
+        msg = (note + "\n\n" if note else "") + f"📎 Shared a post by @{author_name} → /post/{pid}"
+        db.execute(
+            "INSERT INTO messages (sender_id, recipient_id, content) VALUES (?, ?, ?)",
+            (uid, rid, msg.strip()),
+        )
+        sent += 1
+    db.commit()
+    if sent == 0:
+        return jsonify({"error": "Nothing was sent"}), 400
+    return jsonify({"message": f"Shared with {sent} friend{'s' if sent != 1 else ''}!"})
+
+
+@app.route("/post/<int:pid>")
+@login_required
+def post_detail_page(pid):
+    """Standalone view for a single post (used when sharing links)."""
+    return render_template(
+        "post_detail.html",
+        post_id=pid,
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+    )
 
 
 @app.route("/api/posts/by-user/<int:other_id>")

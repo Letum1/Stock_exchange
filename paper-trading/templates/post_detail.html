@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Post · Paper Trading</title>
+  <link rel="stylesheet" href="/static/responsive.css"/>
+  <link rel="stylesheet" href="/static/shell.css"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#0a0b10;color:#e7eaf3;min-height:100vh}
+    .wrap{max-width:620px;margin:0 auto;padding:24px 16px}
+    .crumb{font-size:.85rem;color:#94a3b8;margin-bottom:14px}
+    .crumb a{color:#7c85ff;text-decoration:none}
+    .post{background:#11131c;border:1px solid #2a2e40;border-radius:14px;overflow:hidden}
+    .post-head{display:flex;gap:12px;align-items:center;padding:14px 18px}
+    .avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#7c85ff,#a855f7);
+            display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;overflow:hidden}
+    .avatar img{width:100%;height:100%;object-fit:cover}
+    .post-meta{flex:1;min-width:0}
+    .post-meta .who a{color:#e7eaf3;font-weight:700;text-decoration:none}
+    .post-meta .when{font-size:.74rem;color:#64748b;margin-top:2px}
+    .privacy-pill{font-size:.62rem;background:#1a1d27;color:#94a3b8;padding:2px 7px;border-radius:5px;
+                  border:1px solid #2a2e40;text-transform:capitalize}
+    .post-body{padding:0 18px 14px;font-size:1rem;color:#e7eaf3;white-space:pre-wrap;word-break:break-word}
+    .post-link{display:block;margin:0 18px 14px;padding:10px 12px;background:#0a0b10;border:1px solid #2a2e40;
+               border-radius:8px;color:#7dd3fc;font-size:.86rem;text-decoration:none;word-break:break-all}
+    .post-media{width:100%;display:block;background:#000}
+    .post-media-file{margin:0 18px 14px;padding:12px;background:#0a0b10;border:1px solid #2a2e40;
+                     border-radius:8px;color:#cbd5e1}
+    .post-media-file a{color:#7dd3fc;text-decoration:none;font-weight:600}
+    .post-foot{padding:10px 14px;border-top:1px solid #2a2e40;display:flex;gap:6px;align-items:center}
+    .post-foot button{flex:1;background:transparent;border:none;color:#94a3b8;font-size:.88rem;
+                      font-weight:600;cursor:pointer;padding:9px;border-radius:7px}
+    .post-foot button:hover{background:#0a0b10;color:#e7eaf3}
+    .post-foot .liked{color:#ec4899}
+    .empty{color:#64748b;text-align:center;padding:32px;font-size:.95rem;background:#11131c;
+           border:1px solid #2a2e40;border-radius:14px}
+  </style>
+</head>
+<body>
+{% include "_nav.html" %}
+
+<div class="wrap">
+  <div class="crumb"><a href="/">← Back to home</a></div>
+  <div id="root"><div class="empty">Loading…</div></div>
+</div>
+
+<div class="app-toast" id="toast"></div>
+
+<script>
+const PID = {{ post_id }};
+const ME = {{ user_id }};
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
+function shortTime(ts){if(!ts)return'';try{const d=new Date(ts.replace(' ','T')+'Z');const diff=(Date.now()-d.getTime())/1000;
+  if(diff<60)return 'just now';if(diff<3600)return Math.floor(diff/60)+'m ago';if(diff<86400)return Math.floor(diff/3600)+'h ago';
+  return d.toLocaleDateString();}catch(e){return ts;}}
+function toast(msg, ok){const t=document.getElementById('toast');t.textContent=msg;t.className='app-toast show '+(ok?'ok':'err');setTimeout(()=>t.classList.remove('show'),2400);}
+
+async function load() {
+  try {
+    const r = await fetch('/api/posts/' + PID);
+    if (!r.ok) {
+      const d = await r.json().catch(()=>({}));
+      document.getElementById('root').innerHTML = '<div class="empty">'+escapeHtml(d.error||'Not found')+'</div>';
+      return;
+    }
+    const p = await r.json();
+    let media = '';
+    if (p.file) {
+      if (p.file.kind === 'image') media = `<img class="post-media" src="/api/files/${p.file.id}/download"/>`;
+      else if (p.file.kind === 'video') media = `<video class="post-media" src="/api/files/${p.file.id}/download" controls></video>`;
+      else media = `<div class="post-media-file">📎 <a href="/api/files/${p.file.id}/download" target="_blank">${escapeHtml(p.file.display_name)}</a></div>`;
+    }
+    const ava = p.avatar_url ? `<img src="${escapeHtml(p.avatar_url)}"/>` : escapeHtml((p.username||'?')[0].toUpperCase());
+    const link = p.link_url ? `<a class="post-link" href="${escapeHtml(p.link_url)}" target="_blank" rel="noreferrer">🔗 ${escapeHtml(p.link_url)}</a>` : '';
+    document.getElementById('root').innerHTML = `<div class="post">
+      <div class="post-head">
+        <div class="avatar">${ava}</div>
+        <div class="post-meta">
+          <div class="who"><a href="/profile/${p.user_id}">${escapeHtml(p.username)}</a></div>
+          <div class="when">${shortTime(p.created_at)} · <span class="privacy-pill">${escapeHtml(p.privacy)}</span></div>
+        </div>
+      </div>
+      ${p.content ? `<div class="post-body">${escapeHtml(p.content)}</div>` : ''}
+      ${link}${media}
+      <div class="post-foot">
+        <button class="${p.liked?'liked':''}" id="like-btn">${p.liked?'♥':'♡'} <span id="likes">${p.likes}</span></button>
+        <button onclick="location='/profile/${p.user_id}'">👤 Visit profile</button>
+      </div>
+    </div>`;
+    document.getElementById('like-btn').onclick = async () => {
+      const liked = document.getElementById('like-btn').classList.contains('liked');
+      try {
+        const j = liked
+          ? await (await fetch('/api/posts/'+PID+'/like',{method:'DELETE'})).json()
+          : await (await fetch('/api/posts/'+PID+'/like',{method:'POST'})).json();
+        document.getElementById('like-btn').classList.toggle('liked', j.liked);
+        document.getElementById('like-btn').innerHTML = (j.liked?'♥':'♡')+' <span id="likes">'+j.likes+'</span>';
+      } catch(e){ toast('Like failed', false); }
+    };
+  } catch(e) {
+    document.getElementById('root').innerHTML = '<div class="empty">Could not load post.</div>';
+  }
+}
+load();
+</script>
+</body>
+</html>

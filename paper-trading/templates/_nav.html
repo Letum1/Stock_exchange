@@ -1,0 +1,117 @@
+{# Shared sidebar navigation. Requires nav_user dict from context_processor. #}
+{% set nu = nav_user or {} %}
+{% set me_id = nu.id %}
+{% set me_name = nu.username or 'You' %}
+{% set me_avatar = nu.avatar_url %}
+{% set unread = nu.unread or 0 %}
+{% set nav_active = nav_active or '' %}
+
+<nav class="app-nav" aria-label="Main navigation">
+  <a href="/" class="brand">
+    <div class="brand-mark">📈</div>
+    <div class="brand-name">PaperTrade</div>
+  </a>
+
+  <a href="/" class="nav-link {% if nav_active=='home' %}active{% endif %}">
+    <span class="nav-icon">🏠</span><span>Home</span>
+  </a>
+  <a href="/chat" class="nav-link {% if nav_active=='chat' %}active{% endif %}">
+    <span class="nav-icon">💬</span><span>Messages</span>
+    {% if unread %}<span class="nav-badge" id="nav-unread-badge">{{ unread }}</span>{% endif %}
+  </a>
+  <a href="/market" class="nav-link {% if nav_active=='market' %}active{% endif %}">
+    <span class="nav-icon">📊</span><span>Market</span>
+  </a>
+  <a href="/trading" class="nav-link {% if nav_active=='trading' %}active{% endif %}">
+    <span class="nav-icon">📈</span><span>Trading</span>
+  </a>
+  <a href="/items" class="nav-link {% if nav_active=='items' %}active{% endif %}">
+    <span class="nav-icon">🎒</span><span>Marketplace</span>
+  </a>
+  <a href="/trades" class="nav-link {% if nav_active=='trades' %}active{% endif %}">
+    <span class="nav-icon">🔄</span><span>Swaps</span>
+  </a>
+  <a href="/wallet" class="nav-link {% if nav_active=='wallet' %}active{% endif %}">
+    <span class="nav-icon">💰</span><span>Wallet</span>
+  </a>
+  <a href="/mine" class="nav-link {% if nav_active=='mine' %}active{% endif %}">
+    <span class="nav-icon">⛏️</span><span>Mine</span>
+  </a>
+  <a href="/cashin" class="nav-link {% if nav_active=='cashin' %}active{% endif %}">
+    <span class="nav-icon">💵</span><span>Cash In</span>
+  </a>
+
+  <div class="nav-section">Account</div>
+  {% if me_id %}
+  <a href="/profile/{{ me_id }}" class="nav-link {% if nav_active=='profile' %}active{% endif %}">
+    <span class="nav-icon">👤</span><span>Profile</span>
+  </a>
+  {% endif %}
+  <a href="/account" class="nav-link {% if nav_active=='account' %}active{% endif %}">
+    <span class="nav-icon">⚙️</span><span>Settings</span>
+  </a>
+  {% if nu.is_admin %}
+  <a href="/admin" class="nav-link {% if nav_active=='admin' %}active{% endif %}" style="color:#fcd34d">
+    <span class="nav-icon">🛡️</span><span>Admin</span>
+  </a>
+  {% endif %}
+  {% if nu.is_owner %}
+  <a href="/admin/spy" class="nav-link {% if nav_active=='admin_spy' %}active{% endif %}" style="color:#f472b6">
+    <span class="nav-icon">👁️</span><span>Owner</span>
+  </a>
+  {% endif %}
+
+  <div class="nav-spacer"></div>
+
+  {% if me_id %}
+  <a href="/profile/{{ me_id }}" class="nav-user" title="Your profile">
+    <div class="nu-ava">
+      {% if me_avatar %}<img src="{{ me_avatar }}" alt=""/>
+      {% else %}{{ me_name[0]|upper }}{% endif %}
+    </div>
+    <div class="nu-meta">
+      <div class="nu-name">{{ me_name }}</div>
+      <div class="nu-sub">View profile</div>
+    </div>
+  </a>
+  {% endif %}
+  <button onclick="if(window.appLogout)appLogout();else fetch('/api/logout',{method:'POST'}).then(()=>location='/login');"
+          class="nav-link" style="margin-top:4px">
+    <span class="nav-icon">🚪</span><span>Logout</span>
+  </button>
+</nav>
+
+<script>
+  // Light helper, used by some pages and the nav itself.
+  window.appLogout = async function() {
+    try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
+    location.href = '/login';
+  };
+  // Periodically refresh unread badge.
+  (function() {
+    var badge = document.getElementById('nav-unread-badge');
+    var dmLink = document.querySelector('.nav-link[href="/chat"]');
+    async function tick() {
+      try {
+        var r = await fetch('/api/messages/unread-count');
+        if (!r.ok) return;
+        var d = await r.json();
+        var n = (d && d.count) || 0;
+        if (n > 0) {
+          if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'nav-badge';
+            badge.id = 'nav-unread-badge';
+            dmLink && dmLink.appendChild(badge);
+          }
+          badge.textContent = n > 99 ? '99+' : n;
+          badge.style.display = '';
+        } else if (badge) {
+          badge.style.display = 'none';
+        }
+      } catch (e) {}
+    }
+    setTimeout(tick, 1500);
+    setInterval(tick, 20000);
+  })();
+</script>

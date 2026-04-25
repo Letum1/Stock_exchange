@@ -5,159 +5,226 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Home · Paper Trading</title>
   <link rel="stylesheet" href="/static/responsive.css"/>
+  <link rel="stylesheet" href="/static/shell.css"/>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:system-ui,sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}
-    header{background:#1a1d27;border-bottom:1px solid #2d3148;padding:14px 28px;
-           display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
-    header h1{font-size:1.2rem;font-weight:800;color:#7c85ff}
-    .hdr-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .hdr-user{font-size:.85rem;color:#64748b}
-    .hdr-user span{color:#e2e8f0;font-weight:600}
-    .tag-admin{background:#78350f;color:#fcd34d;font-size:.72rem;font-weight:700;
-               padding:3px 9px;border-radius:20px;letter-spacing:.05em}
-    .btn-sm{padding:6px 14px;border:none;border-radius:6px;font-size:.8rem;
-            font-weight:600;cursor:pointer;background:#2d3148;color:#94a3b8;
-            text-decoration:none;display:inline-block}
-    .btn-sm:hover{opacity:.85}
-    .btn-admin{background:#78350f;color:#fcd34d}
+    body{font-family:-apple-system,system-ui,sans-serif;background:#0a0b10;color:#e7eaf3;min-height:100vh}
 
-    .container{max-width:760px;margin:0 auto;padding:18px 14px;display:flex;flex-direction:column;gap:18px}
-    .card{background:#1a1d27;border:1px solid #2d3148;border-radius:12px;padding:16px}
+    .feed-wrap{max-width:620px;margin:0 auto;padding:18px 14px 60px}
+
+    .top-banner{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:6px 4px 14px;flex-wrap:wrap;
+    }
+    .top-banner h1{font-size:1.05rem;font-weight:800;letter-spacing:-.01em}
+    .top-banner .pill{
+      display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:30px;
+      background:#11131c;border:1px solid #2a2e40;color:#94a3b8;font-size:.78rem;font-weight:600;
+      text-decoration:none;cursor:pointer;
+    }
+    .top-banner .pill:hover{background:#181b27;color:#e7eaf3}
 
     /* ── Stories strip ── */
-    .stories-strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
-    .story-tile{flex:0 0 auto;width:88px;cursor:pointer;text-align:center}
-    .story-avatar{width:78px;height:78px;border-radius:50%;background:#13151f;
-                  border:3px solid #7c85ff;display:flex;align-items:center;justify-content:center;
-                  overflow:hidden;font-size:1.6rem;color:#cbd5e1;margin:0 auto 6px;position:relative}
-    .story-tile.mine .story-avatar{border-color:#475569}
-    .story-tile.mine .story-avatar::after{content:'+';position:absolute;bottom:-2px;right:-2px;
-                                          width:24px;height:24px;background:#7c85ff;color:#fff;
-                                          border-radius:50%;display:flex;align-items:center;justify-content:center;
-                                          font-weight:700;border:2px solid #1a1d27}
+    .stories{
+      display:flex;gap:14px;padding:10px 4px 16px;overflow-x:auto;
+      scrollbar-width:none;-webkit-overflow-scrolling:touch;
+    }
+    .stories::-webkit-scrollbar{display:none}
+    .story-tile{flex:0 0 auto;width:78px;cursor:pointer;text-align:center}
+    .story-ring{
+      width:72px;height:72px;border-radius:50%;padding:2.5px;
+      background:linear-gradient(135deg,#7c85ff,#ec4899,#f59e0b);
+      margin:0 auto 6px;
+    }
+    .story-tile.viewed .story-ring{background:#2a2e40}
+    .story-tile.mine .story-ring{background:#2a2e40}
+    .story-avatar{
+      width:100%;height:100%;border-radius:50%;background:#11131c;
+      display:flex;align-items:center;justify-content:center;font-size:1.4rem;color:#cbd5e1;
+      overflow:hidden;border:2px solid #0a0b10;position:relative;
+    }
+    .story-tile.mine .story-avatar::after{
+      content:'+';position:absolute;bottom:-3px;right:-3px;
+      width:22px;height:22px;background:#7c85ff;color:#fff;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;
+      border:2px solid #0a0b10;
+    }
     .story-avatar img,.story-avatar video{width:100%;height:100%;object-fit:cover;border-radius:50%}
-    .story-name{font-size:.72rem;color:#cbd5e1;text-align:center;
-                white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .story-name{
+      font-size:.7rem;color:#cbd5e1;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
 
-    /* ── Composer ── */
-    .composer textarea{width:100%;background:#13151f;border:1px solid #2d3148;border-radius:8px;
-                       color:#e2e8f0;padding:10px 12px;font-family:inherit;font-size:.95rem;
-                       min-height:62px;resize:vertical;outline:none}
-    .composer textarea:focus{border-color:#7c85ff}
-    .composer .row{display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap}
-    .composer input[type=text]{flex:1;min-width:160px;background:#13151f;border:1px solid #2d3148;
-                               border-radius:7px;color:#e2e8f0;padding:8px 11px;font-size:.85rem;outline:none}
-    .composer select{background:#13151f;border:1px solid #2d3148;border-radius:7px;
-                     color:#e2e8f0;padding:8px 11px;font-size:.85rem;outline:none}
-    .composer .icon-btn{background:#2d3148;color:#cbd5e1;border:none;border-radius:7px;
-                        padding:8px 11px;cursor:pointer;font-size:.95rem}
-    .btn-primary{background:#7c85ff;color:#fff;padding:9px 18px;border:none;border-radius:7px;
-                 font-weight:700;font-size:.88rem;cursor:pointer}
-    .btn-primary:hover{opacity:.85}
-    .attach-preview{margin-top:8px;padding:8px 12px;background:#13151f;border:1px solid #2d3148;
-                    border-radius:7px;font-size:.82rem;color:#94a3b8;display:flex;justify-content:space-between;align-items:center}
-    .attach-preview .x{cursor:pointer;color:#f87171;font-weight:700}
+    /* ── Composer card ── */
+    .composer-card{
+      background:#11131c;border:1px solid #2a2e40;border-radius:14px;
+      padding:14px;margin-bottom:18px;
+    }
+    .composer-row1{display:flex;gap:10px;align-items:flex-start}
+    .composer-row1 .ava{
+      width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#7c85ff,#a855f7);
+      display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;
+      flex-shrink:0;overflow:hidden;
+    }
+    .composer-row1 .ava img{width:100%;height:100%;object-fit:cover}
+    .composer textarea{
+      flex:1;width:100%;background:transparent;border:none;color:#e7eaf3;
+      font-family:inherit;font-size:.95rem;min-height:34px;max-height:200px;
+      resize:none;outline:none;padding:7px 0;
+    }
+    .composer textarea::placeholder{color:#64748b}
+    .composer-row2{
+      display:flex;gap:6px;margin-top:10px;align-items:center;flex-wrap:wrap;
+      padding-top:10px;border-top:1px solid #2a2e40;
+    }
+    .composer-row2 input[type=text]{
+      flex:1;min-width:140px;background:#0a0b10;border:1px solid #2a2e40;
+      border-radius:7px;color:#e7eaf3;padding:7px 10px;font-size:.8rem;outline:none;
+    }
+    .composer-row2 input[type=text]:focus{border-color:#7c85ff}
+    .composer-row2 select{
+      background:#0a0b10;border:1px solid #2a2e40;border-radius:7px;
+      color:#e7eaf3;padding:7px 10px;font-size:.8rem;outline:none;
+    }
+    .icon-btn{
+      background:transparent;color:#94a3b8;border:none;border-radius:7px;
+      width:34px;height:34px;cursor:pointer;font-size:1.1rem;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .icon-btn:hover{background:#181b27;color:#e7eaf3}
+    .btn-primary{
+      background:linear-gradient(135deg,#7c85ff,#a855f7);color:#fff;
+      padding:8px 18px;border:none;border-radius:8px;
+      font-weight:700;font-size:.85rem;cursor:pointer;
+    }
+    .btn-primary:hover{filter:brightness(1.1)}
+    .btn-primary:disabled{opacity:.6;cursor:not-allowed}
+    .attach-preview{
+      margin-top:8px;padding:8px 12px;background:#0a0b10;border:1px solid #2a2e40;
+      border-radius:7px;font-size:.8rem;color:#94a3b8;
+      display:flex;justify-content:space-between;align-items:center;
+    }
+    .attach-preview .x{cursor:pointer;color:#f87171;font-weight:700;background:none;border:none;font-size:1rem}
 
-    /* ── Post card ── */
-    .post{background:#1a1d27;border:1px solid #2d3148;border-radius:12px;overflow:hidden}
-    .post-head{display:flex;gap:11px;align-items:center;padding:12px 16px}
-    .avatar{width:40px;height:40px;border-radius:50%;background:#2d3148;
-            display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-weight:700;overflow:hidden}
+    /* ── Post card (Instagram-style) ── */
+    .post{
+      background:#11131c;border:1px solid #2a2e40;border-radius:14px;
+      overflow:hidden;margin-bottom:20px;
+    }
+    .post-head{display:flex;gap:12px;align-items:center;padding:12px 14px}
+    .avatar{
+      width:38px;height:38px;border-radius:50%;
+      background:linear-gradient(135deg,#7c85ff,#a855f7);
+      display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;
+      overflow:hidden;flex-shrink:0;cursor:pointer;
+    }
     .avatar img{width:100%;height:100%;object-fit:cover}
     .post-meta{flex:1;min-width:0}
-    .post-meta .who a{color:#e2e8f0;font-weight:700;text-decoration:none;font-size:.95rem}
-    .post-meta .when{font-size:.72rem;color:#64748b;display:flex;gap:6px;align-items:center}
-    .privacy-pill{font-size:.62rem;background:#13151f;color:#94a3b8;padding:1px 6px;border-radius:4px;
-                  border:1px solid #2d3148;text-transform:capitalize}
-    .post-actions-top{display:flex;gap:6px}
-    .post-body{padding:0 16px 12px;font-size:.95rem;color:#e2e8f0;white-space:pre-wrap;word-break:break-word}
-    .post-link{display:block;margin:0 16px 12px;padding:10px 12px;background:#13151f;border:1px solid #2d3148;
-               border-radius:7px;color:#7dd3fc;font-size:.85rem;text-decoration:none;word-break:break-all}
-    .post-link:hover{background:#1e2130}
-    .post-media{width:100%;max-height:520px;background:#000;display:block}
-    .post-media-file{margin:0 16px 12px;padding:10px 12px;background:#13151f;border:1px solid #2d3148;
-                     border-radius:7px;color:#cbd5e1;font-size:.85rem}
+    .post-meta .who a{color:#e7eaf3;font-weight:700;text-decoration:none;font-size:.92rem}
+    .post-meta .who a:hover{text-decoration:underline}
+    .post-meta .when{font-size:.7rem;color:#64748b;display:flex;gap:6px;align-items:center;margin-top:1px}
+    .privacy-pill{
+      font-size:.6rem;background:#0a0b10;color:#94a3b8;
+      padding:1px 6px;border-radius:4px;border:1px solid #2a2e40;
+      text-transform:capitalize;
+    }
+    .post-actions-top{display:flex;gap:4px}
+    .post-body{
+      padding:0 14px 12px;font-size:.94rem;color:#e7eaf3;
+      white-space:pre-wrap;word-break:break-word;line-height:1.45;
+    }
+    .post-link{
+      display:block;margin:0 14px 12px;padding:10px 12px;background:#0a0b10;
+      border:1px solid #2a2e40;border-radius:8px;color:#7dd3fc;
+      font-size:.84rem;text-decoration:none;word-break:break-all;
+    }
+    .post-link:hover{background:#181b27}
+    .post-media{width:100%;max-height:560px;background:#000;display:block;cursor:pointer}
+    .post-media-file{
+      margin:0 14px 12px;padding:12px;background:#0a0b10;border:1px solid #2a2e40;
+      border-radius:8px;color:#cbd5e1;font-size:.85rem;
+    }
     .post-media-file a{color:#7dd3fc;text-decoration:none;font-weight:600}
-    .post-foot{padding:8px 12px;border-top:1px solid #2d3148;display:flex;gap:6px;align-items:center}
-    .post-foot button{flex:1;background:transparent;border:none;color:#94a3b8;font-size:.85rem;
-                      font-weight:600;cursor:pointer;padding:8px;border-radius:6px}
-    .post-foot button:hover{background:#13151f;color:#e2e8f0}
-    .post-foot .liked{color:#f472b6}
 
-    .empty{color:#475569;text-align:center;padding:30px 14px;font-size:.92rem}
+    .post-actions{
+      display:flex;align-items:center;gap:6px;padding:8px 10px;
+      border-top:1px solid #2a2e40;
+    }
+    .pa-btn{
+      background:transparent;border:none;color:#94a3b8;cursor:pointer;
+      padding:8px;border-radius:50%;font-size:1.35rem;
+      display:flex;align-items:center;justify-content:center;
+      transition:transform .15s, color .15s;
+    }
+    .pa-btn:hover{background:#181b27;color:#e7eaf3;transform:scale(1.1)}
+    .pa-btn.liked{color:#ec4899}
+    .pa-spacer{flex:1}
+    .post-likes{
+      padding:0 14px 4px;font-size:.85rem;font-weight:700;color:#e7eaf3;
+    }
+    .post-time-foot{padding:0 14px 12px;font-size:.68rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em}
 
-    .toast{position:fixed;bottom:24px;right:24px;background:#1e2130;border:1px solid #2d3148;
-           border-radius:9px;padding:12px 18px;max-width:320px;font-size:.86rem;
-           box-shadow:0 8px 32px rgba(0,0,0,.45);opacity:0;transform:translateY(10px);
-           transition:opacity .22s,transform .22s;pointer-events:none;z-index:999}
-    .toast.show{opacity:1;transform:translateY(0)}
-    .toast.ok{border-left:3px solid #4ade80}
-    .toast.err{border-left:3px solid #f87171}
+    .empty{color:#64748b;text-align:center;padding:36px 14px;font-size:.92rem;
+           background:#11131c;border:1px solid #2a2e40;border-radius:14px}
 
-    /* ── Story viewer modal ── */
-    .modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;
-           align-items:center;justify-content:center;z-index:1000;padding:20px}
-    .modal.show{display:flex}
-    .modal-card{background:#0f1117;border:1px solid #2d3148;border-radius:12px;
+    /* ── Story viewer / upload modal carry-over ── */
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;
+              align-items:center;justify-content:center;z-index:1000;padding:20px}
+    .modal-bg.show{display:flex}
+    .modal-card{background:#0a0b10;border:1px solid #2a2e40;border-radius:14px;
                 max-width:420px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
-    .story-view-head{padding:12px 16px;border-bottom:1px solid #2d3148;display:flex;
-                     gap:10px;align-items:center}
-    .story-view-head .who{flex:1;font-weight:700}
-    .story-view-head .x{background:#2d3148;color:#fff;border:none;border-radius:6px;
-                        padding:5px 10px;cursor:pointer}
-    .story-view-body{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+    .modal-head{padding:12px 16px;border-bottom:1px solid #2a2e40;display:flex;
+                gap:10px;align-items:center}
+    .modal-head .who{flex:1;font-weight:700}
+    .modal-head .x{background:#181b27;color:#fff;border:none;border-radius:6px;
+                   padding:5px 10px;cursor:pointer}
+    .modal-body{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
     .story-bubble img,.story-bubble video{max-width:100%;border-radius:8px;display:block}
-    .story-bubble p{font-size:.95rem;margin-top:6px;color:#e2e8f0;white-space:pre-wrap}
+    .story-bubble p{font-size:.94rem;margin-top:6px;color:#e7eaf3;white-space:pre-wrap}
+
+    /* Like animation overlay on media */
+    .heart-pop{
+      position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.3);
+      font-size:5rem;color:#fff;opacity:0;pointer-events:none;
+      text-shadow:0 0 20px rgba(0,0,0,.5);
+    }
+    .heart-pop.go{animation:heartPop .8s ease-out forwards}
+    @keyframes heartPop{
+      0%{transform:translate(-50%,-50%) scale(.3);opacity:0}
+      30%{transform:translate(-50%,-50%) scale(1.2);opacity:1}
+      60%{transform:translate(-50%,-50%) scale(1);opacity:1}
+      100%{transform:translate(-50%,-50%) scale(1.4);opacity:0}
+    }
+    .post-media-wrap{position:relative}
   </style>
 </head>
 <body>
+{% set nav_active = 'home' %}
+{% include "_nav.html" %}
 
-<header>
-  <h1>🏠 Home</h1>
-  <div class="hdr-right">
-    {% if is_admin %}<span class="tag-admin">ADMIN</span>{% endif %}
-    <div class="hdr-user">Logged in as <span>{{ username }}</span></div>
-    <a href="/trading" class="btn-sm">📈 Trading</a>
-    <a href="/wallet" class="btn-sm">💰 Wallet</a>
-    <a href="/cashin" class="btn-sm">💵 Cash In</a>
-    <a href="/mine" class="btn-sm">⛏️ Mine</a>
-    <a href="/items" class="btn-sm">🎒 Items</a>
-    <a href="/chat" class="btn-sm">💬 Socialize</a>
-    <a href="/profile/{{ user_id }}" class="btn-sm">👤 Profile</a>
-    <a href="/account" class="btn-sm">My Account</a>
-    {% if is_admin %}<a href="/admin" class="btn-sm btn-admin">Admin</a>{% endif %}
-    <button class="btn-sm" onclick="logout()">Logout</button>
+<div class="feed-wrap">
+  <div class="top-banner">
+    <h1>🏠 Home</h1>
+    <a href="/chat" class="pill">💬 Messages</a>
   </div>
-</header>
-
-<div class="container">
 
   <!-- Stories strip -->
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:.78rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.08em">
-        Stories · last 24h
-      </div>
-      <button class="btn-sm" onclick="openStoryUpload()">+ Add story</button>
-    </div>
-    <div class="stories-strip" id="stories"></div>
-  </div>
+  <div class="stories" id="stories"></div>
 
   <!-- Composer -->
-  <div class="card composer">
-    <div style="margin-bottom:10px;padding:10px 12px;background:#13151f;border:1px solid #2d3148;border-radius:8px;color:#cbd5e1;font-size:.85rem;line-height:1.45">
-      <b style="color:#e2e8f0">How to post:</b> type your message here, optionally add a link or file, choose who can see it, then tap <b>Post</b>.
+  <div class="composer-card composer">
+    <div class="composer-row1">
+      <div class="ava">{% if nav_user and nav_user.avatar_url %}<img src="{{ nav_user.avatar_url }}"/>{% else %}{{ username[0]|upper }}{% endif %}</div>
+      <textarea id="post-content" placeholder="What's on your mind, {{ username }}?" maxlength="5000" oninput="autoGrow(this)"></textarea>
     </div>
-    <textarea id="post-content" placeholder="What's on your mind, {{ username }}?" maxlength="5000"></textarea>
-    <div class="row">
-      <input type="text" id="post-link" placeholder="🔗 Optional link (https://…)" maxlength="500"/>
+    <div class="composer-row2">
+      <input type="text" id="post-link" placeholder="🔗 Optional link" maxlength="500"/>
       <select id="post-privacy" title="Who can see this post?">
         <option value="public">🌐 Public</option>
         <option value="followers">👥 Followers</option>
-        <option value="friends">⭐ Friends only</option>
+        <option value="friends">⭐ Friends</option>
       </select>
-      <button class="icon-btn" onclick="document.getElementById('post-file').click()" title="Attach an image, video, or file">📎</button>
+      <button class="icon-btn" onclick="document.getElementById('post-file').click()" title="Attach a photo, video, or file">📎</button>
       <input type="file" id="post-file" style="display:none" onchange="onFilePicked(event)"
              accept="image/*,video/*,audio/*,application/pdf,.zip,.txt,.csv,.json"/>
       <button class="btn-primary" onclick="submitPost()" id="post-btn">Post</button>
@@ -170,57 +237,86 @@
 </div>
 
 <!-- Story viewer modal -->
-<div class="modal" id="story-modal" onclick="if(event.target.id==='story-modal')closeStoryModal()">
+<div class="modal-bg" id="story-modal" onclick="if(event.target.id==='story-modal')closeStoryModal()">
   <div class="modal-card">
-    <div class="story-view-head">
+    <div class="modal-head">
       <div class="avatar" id="sv-ava">?</div>
       <div class="who" id="sv-who">…</div>
       <button class="x" onclick="closeStoryModal()">✕</button>
     </div>
-    <div class="story-view-body" id="sv-body"></div>
+    <div class="modal-body" id="sv-body"></div>
   </div>
 </div>
 
 <!-- Story upload modal -->
-<div class="modal" id="story-upload" onclick="if(event.target.id==='story-upload')closeStoryUpload()">
+<div class="modal-bg" id="story-upload" onclick="if(event.target.id==='story-upload')closeStoryUpload()">
   <div class="modal-card" style="max-width:380px">
-    <div class="story-view-head">
+    <div class="modal-head">
       <div class="who">+ New story</div>
       <button class="x" onclick="closeStoryUpload()">✕</button>
     </div>
-    <div class="story-view-body">
+    <div class="modal-body">
       <textarea id="su-text" placeholder="What's happening? (optional)" maxlength="280"
-                style="width:100%;background:#13151f;border:1px solid #2d3148;border-radius:7px;
-                       color:#e2e8f0;padding:9px 12px;font-family:inherit;font-size:.9rem;min-height:60px"></textarea>
+                style="width:100%;background:#11131c;border:1px solid #2a2e40;border-radius:7px;
+                       color:#e7eaf3;padding:9px 12px;font-family:inherit;font-size:.9rem;min-height:60px;resize:vertical"></textarea>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn-sm" onclick="document.getElementById('su-file').click()">📎 Pick image/video</button>
-        <span id="su-fname" style="font-size:.78rem;color:#94a3b8"></span>
+        <button class="icon-btn" onclick="document.getElementById('su-file').click()" style="background:#181b27">📎</button>
+        <span id="su-fname" style="font-size:.78rem;color:#94a3b8;flex:1">No file selected</span>
       </div>
       <input type="file" id="su-file" style="display:none" accept="image/*,video/*"
-             onchange="document.getElementById('su-fname').textContent=this.files[0]?this.files[0].name:''"/>
-      <button class="btn-primary" onclick="submitStory()" style="margin-top:6px">Post 24h story</button>
-      <p style="font-size:.74rem;color:#64748b">Stories disappear automatically after 24 hours.</p>
+             onchange="document.getElementById('su-fname').textContent=this.files[0]?this.files[0].name:'No file selected'"/>
+      <button class="btn-primary" onclick="submitStory()" style="width:100%">Post 24h story</button>
+      <p style="font-size:.74rem;color:#64748b;text-align:center">Stories disappear after 24 hours.</p>
     </div>
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<!-- Share-to-DM modal -->
+<div class="app-modal-bg" id="share-modal" onclick="if(event.target.id==='share-modal')closeShare()">
+  <div class="app-modal" style="max-width:420px">
+    <div class="app-modal-head">
+      <span>📤 Share post</span>
+      <button class="close" onclick="closeShare()">✕</button>
+    </div>
+    <div class="app-modal-body">
+      <div style="margin-bottom:10px;font-size:.85rem;color:#94a3b8">Send to friends as a direct message</div>
+      <input type="text" id="share-search" placeholder="Search users…"
+             style="width:100%;background:#0a0b10;border:1px solid #2a2e40;border-radius:8px;
+                    color:#e7eaf3;padding:9px 12px;font-size:.9rem;outline:none;margin-bottom:10px"
+             oninput="onShareSearch(this.value)"/>
+      <div class="user-pick-list" id="share-results"></div>
+      <div style="margin-top:14px;border-top:1px solid #2a2e40;padding-top:12px">
+        <div style="font-size:.78rem;color:#64748b;margin-bottom:6px">Or copy link</div>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="share-link" readonly
+                 style="flex:1;background:#0a0b10;border:1px solid #2a2e40;border-radius:7px;
+                        color:#7dd3fc;padding:8px 11px;font-size:.82rem;outline:none"/>
+          <button class="btn-primary" onclick="copyShareLink()">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="app-toast" id="toast"></div>
 
 <script>
 let currentFileId = null;
+let activeSharePostId = null;
 
 function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
 function shortTime(ts){if(!ts)return'';try{const d=new Date(ts.replace(' ','T')+'Z');const diff=(Date.now()-d.getTime())/1000;
   if(diff<60)return 'just now';if(diff<3600)return Math.floor(diff/60)+'m ago';if(diff<86400)return Math.floor(diff/3600)+'h ago';
   return d.toLocaleDateString();}catch(e){return ts;}}
-function toast(msg, ok){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+(ok?'ok':'err');setTimeout(()=>t.classList.remove('show'),2400);}
+function toast(msg, ok){const t=document.getElementById('toast');t.textContent=msg;t.className='app-toast show '+(ok?'ok':'err');setTimeout(()=>t.classList.remove('show'),2400);}
+function autoGrow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,200)+'px';}
+
 async function api(url, opts={}){const o={headers:{'Content-Type':'application/json'},credentials:'same-origin',...opts};
   if(o.body&&typeof o.body==='object'&&!(o.body instanceof FormData))o.body=JSON.stringify(o.body);
   if(o.body instanceof FormData)delete o.headers['Content-Type'];
   const r=await fetch(url,o);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;}
-async function logout(){await fetch('/api/logout',{method:'POST'});location='/login';}
 
-// ── Stories ──
+// ── Stories ──────────────────────────────────────────────
 async function loadStories(){
   try{
     const groups = await api('/api/stories/active');
@@ -230,7 +326,7 @@ async function loadStories(){
     const tiles = [];
     if (!haveMine) {
       tiles.push(`<div class="story-tile mine" onclick="openStoryUpload()">
-        <div class="story-avatar">+</div>
+        <div class="story-ring"><div class="story-avatar">+</div></div>
         <div class="story-name">Your story</div></div>`);
     }
     for (const g of groups) {
@@ -238,10 +334,10 @@ async function loadStories(){
         ? `<img src="${escapeHtml(g.avatar_url)}" alt=""/>`
         : escapeHtml((g.username||'?')[0].toUpperCase());
       tiles.push(`<div class="story-tile ${g.is_me?'mine':''}" onclick="viewStories(${g.user_id})">
-        <div class="story-avatar">${ava}</div>
+        <div class="story-ring"><div class="story-avatar">${ava}</div></div>
         <div class="story-name">${g.is_me?'You':escapeHtml(g.username)}</div></div>`);
     }
-    el.innerHTML = tiles.join('') || '<div style="color:#64748b;font-size:.85rem;padding:6px">No stories yet — be the first!</div>';
+    el.innerHTML = tiles.join('');
     window._storyGroups = groups;
   } catch(e) { console.error(e); }
 }
@@ -266,7 +362,7 @@ function viewStories(userId){
 function closeStoryModal(){document.getElementById('story-modal').classList.remove('show');}
 function openStoryUpload(){document.getElementById('story-upload').classList.add('show');}
 function closeStoryUpload(){document.getElementById('story-upload').classList.remove('show');
-  document.getElementById('su-text').value='';document.getElementById('su-file').value='';document.getElementById('su-fname').textContent='';}
+  document.getElementById('su-text').value='';document.getElementById('su-file').value='';document.getElementById('su-fname').textContent='No file selected';}
 
 async function submitStory(){
   const text = document.getElementById('su-text').value.trim();
@@ -286,17 +382,16 @@ async function submitStory(){
   } catch(e){ toast(e.message, false); }
 }
 
-// ── Posts ──
+// ── Posts ──────────────────────────────────────────────
 function onFilePicked(e){
   const f = e.target.files[0]; if(!f) return;
   const info = document.getElementById('attach-info');
   info.style.display = 'flex';
-  info.innerHTML = `<span>📎 ${escapeHtml(f.name)} (${(f.size/1024).toFixed(0)} KB)</span>
-                    <span class="x" onclick="clearAttach()">✕</span>`;
-  // Upload immediately
+  info.innerHTML = `<span>📎 ${escapeHtml(f.name)} (${(f.size/1024).toFixed(0)} KB) · uploading…</span>
+                    <button class="x" onclick="clearAttach()">✕</button>`;
   const fd = new FormData(); fd.append('file', f);
   api('/api/files/upload', {method:'POST', body:fd})
-    .then(j => { currentFileId = j.file.id; info.innerHTML = `<span>📎 ${escapeHtml(j.file.display_name)} ✓ uploaded</span><span class="x" onclick="clearAttach()">✕</span>`; })
+    .then(j => { currentFileId = j.file.id; info.innerHTML = `<span>📎 ${escapeHtml(j.file.display_name)} ✓ uploaded</span><button class="x" onclick="clearAttach()">✕</button>`; })
     .catch(e => { toast(e.message, false); clearAttach(); });
 }
 function clearAttach(){
@@ -315,6 +410,7 @@ async function submitPost(){
     await api('/api/posts', {method:'POST', body:{content, link_url, privacy, file_id:currentFileId}});
     document.getElementById('post-content').value = '';
     document.getElementById('post-link').value = '';
+    autoGrow(document.getElementById('post-content'));
     clearAttach();
     toast('Posted!', true);
     loadFeed();
@@ -326,7 +422,7 @@ async function loadFeed(){
   try {
     const posts = await api('/api/feed');
     const el = document.getElementById('feed');
-    if (!posts.length){el.innerHTML='<div class="empty">No posts yet — be the first!</div>'; return;}
+    if (!posts.length){el.innerHTML='<div class="empty">No posts yet — be the first to share something!</div>'; return;}
     el.innerHTML = posts.map(renderPost).join('');
   } catch(e){
     document.getElementById('feed').innerHTML = '<div class="empty">'+escapeHtml(e.message)+'</div>';
@@ -336,17 +432,28 @@ async function loadFeed(){
 function renderPost(p){
   let media = '';
   if (p.file) {
-    if (p.file.kind === 'image') media = `<img class="post-media" src="/api/files/${p.file.id}/download" alt=""/>`;
-    else if (p.file.kind === 'video') media = `<video class="post-media" src="/api/files/${p.file.id}/download" controls></video>`;
-    else if (p.file.kind === 'audio') media = `<div class="post-media-file"><audio controls src="/api/files/${p.file.id}/download" style="width:100%"></audio></div>`;
-    else media = `<div class="post-media-file">📎 <a href="/api/files/${p.file.id}/download" target="_blank">${escapeHtml(p.file.display_name)}</a> (${p.file.kind})</div>`;
+    if (p.file.kind === 'image') {
+      media = `<div class="post-media-wrap" ondblclick="doubleTapLike(${p.id}, this)">
+        <img class="post-media" src="/api/files/${p.file.id}/download" alt="" onclick="viewMedia(this.src,'image')"/>
+        <div class="heart-pop">♥</div>
+      </div>`;
+    } else if (p.file.kind === 'video') {
+      media = `<div class="post-media-wrap" ondblclick="doubleTapLike(${p.id}, this)">
+        <video class="post-media" src="/api/files/${p.file.id}/download" controls></video>
+        <div class="heart-pop">♥</div>
+      </div>`;
+    } else if (p.file.kind === 'audio') {
+      media = `<div class="post-media-file"><audio controls src="/api/files/${p.file.id}/download" style="width:100%"></audio></div>`;
+    } else {
+      media = `<div class="post-media-file">📎 <a href="/api/files/${p.file.id}/download" target="_blank">${escapeHtml(p.file.display_name)}</a> (${p.file.kind})</div>`;
+    }
   }
   const ava = p.avatar_url ? `<img src="${escapeHtml(p.avatar_url)}" alt=""/>` : escapeHtml((p.username||'?')[0].toUpperCase());
   const link = p.link_url ? `<a class="post-link" href="${escapeHtml(p.link_url)}" target="_blank" rel="noreferrer">🔗 ${escapeHtml(p.link_url)}</a>` : '';
-  const delBtn = p.mine ? `<button class="btn-sm" onclick="deletePost(${p.id})" title="Delete post">🗑</button>` : '';
+  const delBtn = p.mine ? `<button class="icon-btn" onclick="deletePost(${p.id})" title="Delete post">🗑</button>` : '';
   return `<div class="post" id="post-${p.id}">
     <div class="post-head">
-      <div class="avatar">${ava}</div>
+      <div class="avatar" onclick="location='/profile/${p.user_id}'">${ava}</div>
       <div class="post-meta">
         <div class="who"><a href="/profile/${p.user_id}">${escapeHtml(p.username)}</a></div>
         <div class="when">${shortTime(p.created_at)} · <span class="privacy-pill">${escapeHtml(p.privacy)}</span></div>
@@ -356,10 +463,14 @@ function renderPost(p){
     ${p.content ? `<div class="post-body">${escapeHtml(p.content)}</div>` : ''}
     ${link}
     ${media}
-    <div class="post-foot">
-      <button class="${p.liked?'liked':''}" onclick="toggleLike(${p.id}, this)">${p.liked?'♥':'♡'} <span data-likes>${p.likes}</span></button>
-      <button onclick="location='/profile/${p.user_id}'">👤 ${escapeHtml(p.username)}</button>
+    <div class="post-actions">
+      <button class="pa-btn ${p.liked?'liked':''}" data-like="${p.id}" onclick="toggleLike(${p.id}, this)" title="Like">${p.liked?'♥':'♡'}</button>
+      <button class="pa-btn" onclick="location='/post/${p.id}'" title="Open">💬</button>
+      <button class="pa-btn" onclick="openShare(${p.id})" title="Share to DM">📤</button>
+      <div class="pa-spacer"></div>
+      <button class="pa-btn" onclick="copyPostLink(${p.id})" title="Copy link" style="font-size:1.05rem">🔗</button>
     </div>
+    <div class="post-likes" data-likes-count="${p.id}">${p.likes ? p.likes + (p.likes===1?' like':' likes') : ''}</div>
   </div>`;
 }
 
@@ -370,14 +481,94 @@ async function toggleLike(pid, btn){
       ? await api(`/api/posts/${pid}/like`, {method:'DELETE'})
       : await api(`/api/posts/${pid}/like`, {method:'POST'});
     btn.classList.toggle('liked', j.liked);
-    btn.innerHTML = (j.liked?'♥':'♡')+' <span data-likes>'+j.likes+'</span>';
+    btn.innerHTML = j.liked ? '♥' : '♡';
+    const lblock = document.querySelector(`[data-likes-count="${pid}"]`);
+    if (lblock) lblock.textContent = j.likes ? j.likes + (j.likes===1?' like':' likes') : '';
   } catch(e){ toast(e.message, false); }
+}
+
+async function doubleTapLike(pid, wrap) {
+  const heart = wrap.querySelector('.heart-pop');
+  if (heart) { heart.classList.remove('go'); void heart.offsetWidth; heart.classList.add('go'); }
+  const btn = document.querySelector(`[data-like="${pid}"]`);
+  if (btn && !btn.classList.contains('liked')) toggleLike(pid, btn);
 }
 
 async function deletePost(pid){
   if(!confirm('Delete this post?')) return;
   try{ await api(`/api/posts/${pid}`, {method:'DELETE'}); document.getElementById('post-'+pid).remove(); }
   catch(e){ toast(e.message, false); }
+}
+
+function viewMedia(src, kind) {
+  // Open full-screen lightbox
+  const bg = document.createElement('div');
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.95);display:flex;align-items:center;justify-content:center;z-index:2000;cursor:zoom-out;padding:20px';
+  bg.onclick = () => bg.remove();
+  bg.innerHTML = `<img src="${src}" style="max-width:100%;max-height:100%;border-radius:8px"/>`;
+  document.body.appendChild(bg);
+}
+
+function copyPostLink(pid) {
+  const url = location.origin + '/post/' + pid;
+  navigator.clipboard.writeText(url).then(() => toast('Link copied!', true)).catch(()=>toast('Copy failed', false));
+}
+
+// ── Share modal ──────────────────────────────────────────
+function openShare(pid) {
+  activeSharePostId = pid;
+  document.getElementById('share-link').value = location.origin + '/post/' + pid;
+  document.getElementById('share-search').value = '';
+  document.getElementById('share-results').innerHTML = '<div style="color:#64748b;font-size:.85rem;padding:10px">Type a username to search…</div>';
+  document.getElementById('share-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('share-search').focus(), 100);
+}
+function closeShare() {
+  document.getElementById('share-modal').classList.remove('open');
+  activeSharePostId = null;
+}
+function copyShareLink() {
+  const inp = document.getElementById('share-link');
+  inp.select();
+  navigator.clipboard.writeText(inp.value).then(()=>toast('Link copied!', true)).catch(()=>toast('Copy failed', false));
+}
+
+let _shareDebounce = null;
+function onShareSearch(q) {
+  clearTimeout(_shareDebounce);
+  _shareDebounce = setTimeout(() => doShareSearch(q.trim()), 200);
+}
+async function doShareSearch(q) {
+  const el = document.getElementById('share-results');
+  if (!q) { el.innerHTML = '<div style="color:#64748b;font-size:.85rem;padding:10px">Type a username to search…</div>'; return; }
+  try {
+    const r = await fetch('/api/users/search?q=' + encodeURIComponent(q));
+    const users = await r.json();
+    if (!Array.isArray(users) || !users.length) { el.innerHTML = '<div style="color:#64748b;font-size:.85rem;padding:10px">No users found.</div>'; return; }
+    el.innerHTML = users.map(u => {
+      const ava = u.avatar_url
+        ? `<img src="${escapeHtml(u.avatar_url)}" alt=""/>`
+        : escapeHtml((u.username||'?')[0].toUpperCase());
+      return `<div class="user-pick">
+        <div class="avatar-mini">${ava}</div>
+        <div class="upn">${escapeHtml(u.username)}</div>
+        <button class="send-btn" onclick="sendShare(${u.id}, this)">Send</button>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = '<div style="color:#f87171;font-size:.85rem;padding:10px">Search failed.</div>'; }
+}
+async function sendShare(uid, btn) {
+  if (!activeSharePostId) return;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await api(`/api/posts/${activeSharePostId}/share`, {method:'POST', body:{recipient_ids:[uid]}});
+    btn.textContent = 'Sent ✓';
+    btn.style.background = '#16a34a';
+    toast('Post shared!', true);
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Send';
+    toast(e.message, false);
+  }
 }
 
 loadStories();

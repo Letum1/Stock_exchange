@@ -4,6 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <link rel="stylesheet" href="/static/responsive.css"/>
+  <link rel="stylesheet" href="/static/shell.css"/>
   <title>Socialize — Paper Trading</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -237,22 +238,25 @@
   </style>
 </head>
 <body>
+{% set nav_active = "chat" %}
+{% include "_nav.html" %}
+
 
 <header>
   <h1>💬 Socialize</h1>
   <div class="hdr-right">
     <span style="font-size:.85rem;color:#64748b">{{ username }}</span>
-    {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
-    {% if is_admin or is_manager %}<a href="/cash-requests" class="btn-sm" style="background:#1e3a5c;color:#7dd3fc">🔒 Cash Requests</a>{% endif %}
-    <a href="/" class="btn-sm">🏠 Home</a>
-    <a href="/trading" class="btn-sm">📈 Trading</a>
-    <a href="/cashin" class="btn-sm">💵 Cash In</a>
-    <a href="/market" class="btn-sm">Markets</a>
-    <a href="/items" class="btn-sm">🎒 Items</a>
-    <a href="/wallet" class="btn-sm">💰 Wallet</a>
-    <a href="/mine" class="btn-sm">⛏️ Mine</a>
-    <a href="/account" class="btn-sm">Account</a>
-    <button class="btn-sm" onclick="logout()">Logout</button>
+    {% if is_admin %}{% endif %}
+    {% if is_admin or is_manager %}{% endif %}
+    
+    
+    
+    
+    
+    
+    
+    
+    
   </div>
 </header>
 
@@ -440,8 +444,8 @@
         <div>
           <div style="font-weight:700">${escapeHtml(username)}</div>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:2px">
-            <a href="/trades" class="btn-sm">🤝 Trades</a>
-            <a href="/profile/${userId}" style="font-size:.78rem">View profile →</a>
+            
+            
           </div>
         </div>
       </div>
@@ -667,7 +671,7 @@
         <div class="avatar">${m.username[0].toUpperCase()}</div>
         <div class="body">
           <div class="head">
-            <span class="name"><a href="/profile/${m.sender_id}">${escapeHtml(m.username)}</a></span>
+            <span class="name"></span>
             ${m.is_admin ? '<span class="badge-admin">ADMIN</span>' : ''}
             <span class="ts">${shortTime(m.timestamp)}</span>
           </div>
