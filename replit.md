@@ -188,6 +188,13 @@ indicators.
   redundant nav buttons were stripped — page headers now serve as page
   titles + page-specific toolbars only.
 
+### ⚠️ Account-safety rule
+Never modify any user's password (including admin/owner accounts) for testing
+or any other reason. Use the existing `password_vault` (for accounts that have
+captured plaintext) or ask the user to share/reset their own credentials.
+If a temporary auth-bypass route is needed for screenshots, it must NOT
+overwrite real user data.
+
 ### Password vault (DONE — owner-only)
 - `password_vault (user_id, plaintext_pw, captured_at)` captures plaintext at
   signup *only*; existing accounts are not back-filled.
