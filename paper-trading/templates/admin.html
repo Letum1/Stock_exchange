@@ -4,6 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <link rel="stylesheet" href="/static/responsive.css"/>
+  <link rel="stylesheet" href="/static/shell.css"/>
   <title>Admin Panel — Paper Trading</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -126,6 +127,8 @@
   </style>
 </head>
 <body>
+{% set nav_active = "admin" %}
+{% include "_nav.html" %}
 
 <header>
   <h1>⚙️ Admin Panel</h1>

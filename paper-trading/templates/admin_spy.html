@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Owner Spy — All Conversations</title>
   <link rel="stylesheet" href="/static/responsive.css"/>
+  <link rel="stylesheet" href="/static/shell.css"/>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     html,body{height:100%;background:#0f1117;color:#e2e8f0;font-family:system-ui,sans-serif}
@@ -66,6 +67,8 @@
   </style>
 </head>
 <body>
+{% set nav_active = "admin_spy" %}
+{% include "_nav.html" %}
 
 <header>
   <h1>👁 Owner Spy <span class="badge">GHOST VIEW</span></h1>
