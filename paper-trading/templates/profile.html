@@ -31,7 +31,9 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 2.4rem; font-weight: 800; color: #fff; flex-shrink: 0;
       box-shadow: 0 6px 20px rgba(124,133,255,0.3);
+      overflow: hidden;
     }
+    .avatar-big img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .hero-info { flex: 1; min-width: 200px; }
     .hero-name { font-size: 1.7rem; font-weight: 800; }
     .hero-meta { color: #64748b; font-size: 0.85rem; margin-top: 4px; }
@@ -181,6 +183,11 @@
     if (p.bio && p.bio.trim()) {
       document.getElementById('bio-text').textContent = p.bio;
       document.getElementById('bio-section').style.display = '';
+    }
+
+    if (p.avatar_url) {
+      document.getElementById('avatar').innerHTML =
+        `<img src="${p.avatar_url}" alt=""/>`;
     }
   }
 

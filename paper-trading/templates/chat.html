@@ -54,7 +54,49 @@
     .avatar {
       width: 38px; height: 38px; border-radius: 50%; background: #4f46e5; color: #fff;
       display: flex; align-items: center; justify-content: center; font-weight: 800;
-      font-size: 1rem; flex-shrink: 0;
+      font-size: 1rem; flex-shrink: 0; overflow: hidden;
+    }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    /* File attachments inside messages */
+    .msg-file { margin-top: 4px; }
+    .msg-file img, .msg-file video {
+      max-width: 280px; max-height: 320px; border-radius: 10px; display: block;
+      background: #0b0d14;
+    }
+    .msg-file audio { width: 240px; display: block; }
+    .msg-file .file-card {
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+      background: rgba(0,0,0,.25); border-radius: 10px; min-width: 200px;
+      max-width: 320px;
+    }
+    .msg-file .file-card .fic { font-size: 1.4rem; }
+    .msg-file .file-card .fname { font-weight: 700; font-size: .88rem; word-break: break-all; }
+    .msg-file .file-card .fmeta { font-size: .72rem; color: #94a3b8; margin-top: 2px; }
+    .msg-file a.dl { color: inherit; text-decoration: none; display: block; }
+    .msg-file a.dl:hover { opacity: .85; }
+    .msg-file .locked {
+      display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+      background: rgba(0,0,0,.25); border-radius: 10px; font-size: .82rem;
+      color: #94a3b8; font-style: italic;
+    }
+
+    .composer .icon-btn {
+      background: #2d3148; color: #cbd5e1; border: none; border-radius: 50%;
+      width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 1.1rem; flex-shrink: 0; padding: 0;
+    }
+    .composer .icon-btn:hover { background: #3b425e; }
+    .composer .icon-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .attach-preview {
+      display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+      background: #13151f; border-top: 1px solid #2d3148; font-size: .82rem;
+      color: #94a3b8;
+    }
+    .attach-preview .x {
+      background: none; border: none; color: #f87171; cursor: pointer;
+      font-size: 1rem; padding: 0 6px;
     }
     .convo-meta { flex: 1; min-width: 0; }
     .convo-name { font-weight: 700; font-size: 0.92rem; display: flex; justify-content: space-between; align-items: center; }
@@ -289,8 +331,8 @@
       return;
     }
     el.innerHTML = conversations.map(c => `
-      <div class="convo ${c.user_id === activeUserId ? 'active' : ''}" onclick="openChat(${c.user_id}, '${escapeJs(c.username)}')">
-        <div class="avatar">${c.username[0].toUpperCase()}</div>
+      <div class="convo ${c.user_id === activeUserId ? 'active' : ''}" onclick="openChat(${c.user_id}, '${escapeJs(c.username)}', '${escapeJs(c.avatar_url||'')}')">
+        ${avatarHtml(c.username, c.avatar_url)}
         <div class="convo-meta">
           <div class="convo-name">
             <span>${escapeHtml(c.username)}</span>
@@ -302,18 +344,25 @@
     `).join('');
   }
 
+  function avatarHtml(username, url) {
+    const initial = (username && username[0] ? username[0] : '?').toUpperCase();
+    if (url) return `<div class="avatar"><img src="${escapeAttr(url)}" alt=""/></div>`;
+    return `<div class="avatar">${initial}</div>`;
+  }
+
   // ── Open chat ───────────────────────────────────────────────────────────
-  async function openChat(userId, username) {
+  async function openChat(userId, username, avatarUrl) {
     activeUserId = userId;
     activeUsername = username;
     lastMsgId = 0;
+    pendingFile = null;
     renderConvos();
 
     document.body.classList.add('chat-open');
     document.getElementById('panel').innerHTML = `
       <div class="panel-header">
         <button class="btn-sm back-btn" onclick="closeChat()" aria-label="Back" style="display:none">←</button>
-        <div class="avatar">${username[0].toUpperCase()}</div>
+        ${avatarHtml(username, avatarUrl || '')}
         <div>
           <div style="font-weight:700">${escapeHtml(username)}</div>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:2px">
@@ -323,7 +372,11 @@
         </div>
       </div>
       <div class="messages" id="messages"></div>
+      <div id="attach-row"></div>
       <div class="composer">
+        <button class="icon-btn" onclick="document.getElementById('file-picker').click()" title="Attach a file">📎</button>
+        <input type="file" id="file-picker" style="display:none" onchange="onFilePicked(event)"
+               accept="image/*,video/*,audio/*,application/pdf,.zip,.txt,.csv,.json"/>
         <input id="composer" type="text" placeholder="Type a message…" maxlength="1000"
                onkeydown="if(event.key==='Enter')sendMsg()"/>
         <button onclick="sendMsg()" id="send-btn">Send</button>
@@ -373,13 +426,53 @@
       const canDelete = me || IS_ADMIN;
       const actions = canDelete
         ? `<div class="msg-actions"><button onclick="deleteDm(${m.id})" title="Delete">🗑</button></div>` : '';
+      const text = m.content ? `<div class="msg ${me?'me':'them'}">${escapeHtml(m.content)}</div>` : '';
+      const file = m.file ? `<div class="msg ${me?'me':'them'} msg-file">${renderFileAttachment(m.file)}</div>` : '';
+      const body = text || file
+        ? `${text}${file}`
+        : `<div class="msg ${me?'me':'them'}">(empty)</div>`;
       return `<div class="msg-row ${me?'me':'them'}">
-                <div class="msg ${me?'me':'them'}">${escapeHtml(m.content)}</div>
+                <div style="display:flex;flex-direction:column;gap:4px;align-items:${me?'flex-end':'flex-start'}">${body}</div>
                 ${actions}
               </div>
               <div class="msg-time ${me?'me':'them'}">${shortTime(m.timestamp)}</div>`;
     }).join('');
     if (wasAtBottom) el.scrollTop = el.scrollHeight;
+  }
+
+  function renderFileAttachment(f) {
+    if (!f.can_view) {
+      return `<div class="locked">🔒 Attachment no longer available</div>`;
+    }
+    const url = '/api/files/' + f.id + '/download';
+    if (f.kind === 'image') {
+      return `<a class="dl" href="${url}" target="_blank" rel="noopener">
+                <img src="${url}" alt="${escapeAttr(f.display_name)}"/>
+              </a>`;
+    }
+    if (f.kind === 'video') {
+      return `<video controls preload="metadata" src="${url}"></video>`;
+    }
+    if (f.kind === 'audio') {
+      return `<audio controls preload="metadata" src="${url}"></audio>`;
+    }
+    return `<a class="dl" href="${url}" target="_blank" rel="noopener">
+              <div class="file-card">
+                <div class="fic">📎</div>
+                <div>
+                  <div class="fname">${escapeHtml(f.display_name)}</div>
+                  <div class="fmeta">${humanSize(f.size_bytes)} · ${escapeHtml(f.mime || 'file')}</div>
+                </div>
+              </div>
+            </a>`;
+  }
+
+  function humanSize(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + ' B';
+    if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+    if (n < 1024*1024*1024) return (n/1024/1024).toFixed(1) + ' MB';
+    return (n/1024/1024/1024).toFixed(2) + ' GB';
   }
 
   async function deleteDm(id) {
@@ -538,22 +631,67 @@
     if (!r.ok) alert(d.error || 'Failed');
   }
 
+  let pendingFile = null;
+
+  function renderAttachRow() {
+    const row = document.getElementById('attach-row');
+    if (!row) return;
+    if (!pendingFile) { row.innerHTML = ''; return; }
+    row.innerHTML = `<div class="attach-preview">
+      <span>📎 ${escapeHtml(pendingFile.display_name)} <span style="color:#64748b">(${humanSize(pendingFile.size_bytes)})</span></span>
+      <button class="x" title="Remove" onclick="cancelPending()">✕</button>
+    </div>`;
+  }
+
+  function cancelPending() { pendingFile = null; renderAttachRow(); }
+
+  async function onFilePicked(ev) {
+    const f = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if (!f) return;
+    if (f.size > 25 * 1024 * 1024) {
+      alert('File too large (25 MB max).');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', f);
+    const btn = document.getElementById('send-btn');
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/files/upload', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || 'Upload failed'); return; }
+      pendingFile = d.file;
+      renderAttachRow();
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   async function sendMsg() {
     const inp = document.getElementById('composer');
     const content = inp.value.trim();
-    if (!content || !activeUserId) return;
+    if (!activeUserId) return;
+    if (!content && !pendingFile) return;
     const btn = document.getElementById('send-btn');
     btn.disabled = true;
+    const sentFile = pendingFile;
     inp.value = '';
+    pendingFile = null;
+    renderAttachRow();
+    const payload = { recipient_id: activeUserId, content };
+    if (sentFile) payload.file_id = sentFile.id;
     const r = await fetch('/api/messages/send', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ recipient_id: activeUserId, content }),
+      body: JSON.stringify(payload),
     });
     btn.disabled = false;
     if (!r.ok) {
       const d = await r.json();
       alert(d.error || 'Failed to send');
       inp.value = content;
+      pendingFile = sentFile;
+      renderAttachRow();
       return;
     }
     await loadMessages();
@@ -575,14 +713,14 @@
     const users = await r.json();
     const box = document.getElementById('search-results');
     if (!users.length) { box.innerHTML = '<div style="color:#64748b">No users found</div>'; box.classList.add('open'); return; }
-    box.innerHTML = users.map(u => `<div onclick="pickUser(${u.id}, '${escapeJs(u.username)}')">${escapeHtml(u.username)} <small style="color:#64748b">#${u.id}</small></div>`).join('');
+    box.innerHTML = users.map(u => `<div onclick="pickUser(${u.id}, '${escapeJs(u.username)}', '${escapeJs(u.avatar_url||'')}')">${escapeHtml(u.username)} <small style="color:#64748b">#${u.id}</small></div>`).join('');
     box.classList.add('open');
   }
 
-  function pickUser(uid, uname) {
+  function pickUser(uid, uname, avatarUrl) {
     document.getElementById('user-search').value = '';
     document.getElementById('search-results').classList.remove('open');
-    openChat(uid, uname);
+    openChat(uid, uname, avatarUrl || '');
   }
 
   document.addEventListener('click', e => {
@@ -591,6 +729,7 @@
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(s) { return escapeHtml(s); }
   function escapeJs(s)   { return String(s).replace(/['\\]/g, '\\$&'); }
   function shortTime(ts) {
     if (!ts) return '';
@@ -611,7 +750,7 @@
     const to = params.get('to');
     if (to) {
       const r = await fetch('/api/profile/' + to);
-      if (r.ok) { const u = await r.json(); openChat(u.id, u.username); }
+      if (r.ok) { const u = await r.json(); openChat(u.id, u.username, u.avatar_url || ''); }
     }
   })();
 

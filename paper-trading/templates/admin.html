@@ -243,6 +243,24 @@
     </table>
   </div>
 
+  <!-- Game Settings -->
+  <div class="card">
+    <h2>⚙️ Game Settings</h2>
+    <div class="filter-bar" style="margin-bottom:8px">
+      <label style="font-size:.88rem;color:#94a3b8;flex:1">
+        BON drop rate (1-in-N per mined block, deeper than the threshold layer)
+      </label>
+      <input type="number" id="set-bon-rate" min="1" step="1" placeholder="100" style="width:120px"/>
+      <button class="btn-sm btn-add" onclick="saveSettings()">Save</button>
+    </div>
+    <p style="font-size:.78rem;color:#64748b">
+      Lower = more frequent drops. e.g. <b>100</b> means roughly 1 in 100 blocks
+      mined (past the deep-layer threshold) will yield a BON.
+      A value of <b>1</b> would drop a BON on every eligible block.
+    </p>
+    <div id="settings-msg" style="font-size:.82rem;color:#86efac;margin-top:8px"></div>
+  </div>
+
   <!-- Items Management -->
   <div class="card">
     <h2>🎒 Items Catalog</h2>
@@ -704,11 +722,38 @@
     } catch (_) {}
   }
 
+  async function loadSettings() {
+    try {
+      const r = await fetch('/api/admin/settings');
+      if (!r.ok) return;
+      const d = await r.json();
+      document.getElementById('set-bon-rate').value = d.bon_drop_rate || '';
+    } catch (_) {}
+  }
+
+  async function saveSettings() {
+    const bon = document.getElementById('set-bon-rate').value;
+    const msg = document.getElementById('settings-msg');
+    const r = await fetch('/api/admin/settings', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ bon_drop_rate: bon }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      msg.style.color = '#86efac';
+      msg.textContent = '✓ Saved (1-in-' + d.saved.bon_drop_rate + ' chance per eligible block)';
+    } else {
+      msg.style.color = '#f87171';
+      msg.textContent = d.error || 'Failed to save';
+    }
+  }
+
   loadUsers();
   loadTrades();
   loadItems();
   loadRevenue();
   loadTax();
+  loadSettings();
   setInterval(() => { loadRevenue(); loadTax(); }, 15000);
 </script>
 

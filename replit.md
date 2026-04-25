@@ -99,16 +99,30 @@ A standalone Python Flask app at `paper-trading/`.
   decorated via `@staff_required`.
 
 ### Data model (SQLite at `paper-trading/portfolio.db`)
-`users` (with `bio`, `bon`, `satoshi`, `is_manager` columns), `portfolios`,
-`holdings`, `trades`, `items`, `user_items`,
+`users` (with `bio`, `avatar_url`, `bon`, `satoshi`, `is_manager` columns),
+`portfolios`, `holdings`, `trades`, `items`, `user_items`,
 `item_listings` (with optional cash price + JSON `accepts_items` for swaps),
-`item_trades`, `messages`, `public_messages`, `public_mutes`,
+`item_trades`, `messages` (with optional `file_id`),
+`public_messages`, `public_mutes`,
 `mining_worlds` (with `is_locked`, `max_members`), `mining_blocks`,
 `mining_world_members`, `mining_invites`,
 `mining_user_stats` (with `bon_found`),
-`bon_listings`, `cash_requests`.
+`bon_listings`, `cash_requests`,
+`app_settings` (admin-tunable key/value, e.g. `bon_drop_rate`),
+`chat_files` (uploads with current `owner_id`, original `uploader_id`,
+display + stored names, mime, kind, size),
+`file_access` (per-user view grants — sending a file in chat grants the
+recipient access; selling on the marketplace wipes all grants and transfers
+ownership to the buyer),
+`file_listings` (file marketplace: only the filename is public, contents
+remain hidden until purchase).
 New tables auto-create on startup; new user columns are added via
 best-effort `ALTER TABLE` migrations.
+
+### Uploads
+Saved under `paper-trading/uploads/` — `avatars/` for profile pics
+(public via `/uploads/avatars/<name>`) and `files/` for chat/marketplace
+files (gated by `/api/files/<id>/download`). 25 MB cap per upload.
 
 ### Startup
 `init_db()` runs at module import time so the schema is created/migrated whether

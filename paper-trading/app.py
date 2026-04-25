@@ -1,19 +1,36 @@
 import json
+import mimetypes
 import os
 import random
 import sqlite3
+import uuid
 from functools import wraps
 
 import requests
 import yfinance as yf
 from flask import (
     Flask, g, jsonify, redirect, render_template,
-    request, session, url_for,
+    request, send_from_directory, session, url_for,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-change-me")
+
+# Uploads — used for chat file attachments and profile avatars.
+UPLOAD_ROOT      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+UPLOAD_FILES_DIR = os.path.join(UPLOAD_ROOT, "files")
+UPLOAD_AVA_DIR   = os.path.join(UPLOAD_ROOT, "avatars")
+os.makedirs(UPLOAD_FILES_DIR, exist_ok=True)
+os.makedirs(UPLOAD_AVA_DIR,   exist_ok=True)
+
+# 25 MB hard cap for any single uploaded file (chat attachment or avatar).
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
+
+ALLOWED_AVATAR_MIMES = {
+    "image/png", "image/jpeg", "image/webp", "image/gif",
+}
 
 DB_PATH = "portfolio.db"
 STARTING_CASH = 0.0          # admin must fund accounts
@@ -255,6 +272,41 @@ def init_db():
                 sold_at     DATETIME
             );
 
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS chat_files (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                uploader_id     INTEGER NOT NULL REFERENCES users(id),
+                owner_id        INTEGER NOT NULL REFERENCES users(id),
+                display_name    TEXT    NOT NULL,
+                stored_name     TEXT    NOT NULL UNIQUE,
+                mime            TEXT    NOT NULL DEFAULT 'application/octet-stream',
+                kind            TEXT    NOT NULL DEFAULT 'file',
+                size_bytes      INTEGER NOT NULL DEFAULT 0,
+                uploaded_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS file_access (
+                file_id    INTEGER NOT NULL REFERENCES chat_files(id),
+                user_id    INTEGER NOT NULL REFERENCES users(id),
+                granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (file_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS file_listings (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                seller_id   INTEGER NOT NULL REFERENCES users(id),
+                file_id     INTEGER NOT NULL REFERENCES chat_files(id),
+                price       REAL    NOT NULL,
+                status      TEXT    NOT NULL DEFAULT 'OPEN',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                buyer_id    INTEGER REFERENCES users(id),
+                sold_at     DATETIME
+            );
+
             CREATE TABLE IF NOT EXISTS cash_requests (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id      INTEGER NOT NULL REFERENCES users(id),
@@ -277,6 +329,9 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_blocks_world ON mining_blocks(world_id, generation);
             CREATE INDEX IF NOT EXISTS idx_bonlist_status ON bon_listings(status);
             CREATE INDEX IF NOT EXISTS idx_cashreq_status ON cash_requests(status);
+            CREATE INDEX IF NOT EXISTS idx_filelist_status ON file_listings(status);
+            CREATE INDEX IF NOT EXISTS idx_chatfiles_owner ON chat_files(owner_id);
+            CREATE INDEX IF NOT EXISTS idx_msg_file       ON messages(file_id);
         """)
         # Best-effort schema migrations on existing DBs
         for ddl in (
@@ -293,6 +348,8 @@ def init_db():
             "ALTER TABLE trades ADD COLUMN tax REAL DEFAULT 0",
             "ALTER TABLE mining_worlds ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE mining_worlds ADD COLUMN max_members INTEGER NOT NULL DEFAULT 5",
+            "ALTER TABLE messages ADD COLUMN file_id INTEGER REFERENCES chat_files(id)",
+            "ALTER TABLE users    ADD COLUMN avatar_url TEXT DEFAULT ''",
         ):
             try:
                 db.execute(ddl)
@@ -390,6 +447,98 @@ def _inject_role_flags():
     }
 
 
+# ── App settings (admin-tunable) ─────────────────────────────────────────────
+DEFAULT_SETTINGS = {
+    "bon_drop_rate": "100",   # 1-in-N chance per mined block (deeper than DEEP_LAYER_BON_REQUIRED)
+}
+
+
+def _get_setting(key, default=None):
+    """Read a string setting from app_settings, falling back to DEFAULT_SETTINGS
+    or the explicit `default` value."""
+    db = get_db()
+    row = db.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+    if row:
+        return row["value"]
+    if default is not None:
+        return default
+    return DEFAULT_SETTINGS.get(key)
+
+
+def _get_int_setting(key, default):
+    """Read an int setting; return `default` if missing or unparseable."""
+    raw = _get_setting(key, str(default))
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _set_setting(key, value):
+    db = get_db()
+    db.execute(
+        "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, str(value)),
+    )
+    db.commit()
+
+
+# ── File access helpers ──────────────────────────────────────────────────────
+
+def _file_kind_for_mime(mime):
+    """Bucket a mime type into a coarse 'kind' used by the chat UI."""
+    mime = (mime or "").lower()
+    if mime.startswith("image/"):
+        return "image"
+    if mime.startswith("video/"):
+        return "video"
+    if mime.startswith("audio/"):
+        return "audio"
+    return "file"
+
+
+def _can_view_file(db, file_id, user_id):
+    """A user may view a file iff they currently own it OR they have an explicit
+    access grant (e.g. they were sent the file in a chat). The marketplace
+    listing flow does NOT grant view access — only a successful purchase does."""
+    if not file_id or not user_id:
+        return False
+    own = db.execute(
+        "SELECT 1 FROM chat_files WHERE id = ? AND owner_id = ?",
+        (file_id, user_id),
+    ).fetchone()
+    if own:
+        return True
+    grant = db.execute(
+        "SELECT 1 FROM file_access WHERE file_id = ? AND user_id = ?",
+        (file_id, user_id),
+    ).fetchone()
+    return bool(grant)
+
+
+def _grant_file_access(db, file_id, user_id):
+    db.execute(
+        "INSERT OR IGNORE INTO file_access (file_id, user_id) VALUES (?, ?)",
+        (file_id, user_id),
+    )
+
+
+def _serialize_file_meta(row, viewer_id=None):
+    """Return the public, listing-safe metadata for a chat file."""
+    return {
+        "id":           row["id"],
+        "display_name": row["display_name"],
+        "kind":         row["kind"],
+        "mime":         row["mime"],
+        "size_bytes":   row["size_bytes"],
+        "owner_id":     row["owner_id"],
+        "uploader_id":  row["uploader_id"],
+        "uploaded_at":  row["uploaded_at"],
+        "can_view":     bool(viewer_id and (row["owner_id"] == viewer_id)),
+    }
+
+
 # Conversion rates (changeable in one place)
 BON_PER_SATOSHI = 100         # 100 BON = 1 satoshi (game-internal)
 SATOSHI_PER_BTC = 100_000_000 # 1 BTC = 100,000,000 satoshi (real Bitcoin)
@@ -419,7 +568,7 @@ def get_btc_price_usd():
     return _BTC_PRICE_CACHE["price"]
 
 
-BON_DROP_RATE   = 100         # 1 in 100 mined blocks drops a BON
+BON_DROP_RATE   = 100         # default 1-in-N chance; admin-tunable via app_settings
 
 
 def current_user_id():
@@ -1520,7 +1669,8 @@ def search_users():
         return jsonify([])
     db = get_db()
     rows = db.execute(
-        "SELECT id, username FROM users WHERE username LIKE ? AND id != ? LIMIT 8",
+        """SELECT id, username, COALESCE(avatar_url, '') AS avatar_url
+             FROM users WHERE username LIKE ? AND id != ? LIMIT 8""",
         (f"%{q}%", current_user_id()),
     ).fetchall()
     return jsonify([dict(r) for r in rows])
@@ -1544,11 +1694,12 @@ def conversations():
     out = []
     for r in rows:
         last = db.execute(
-            "SELECT sender_id, content, timestamp FROM messages WHERE id = ?",
+            "SELECT sender_id, content, timestamp, file_id FROM messages WHERE id = ?",
             (r["last_id"],),
         ).fetchone()
         user = db.execute(
-            "SELECT id, username FROM users WHERE id = ?", (r["other_id"],),
+            "SELECT id, username, COALESCE(avatar_url,'') AS avatar_url FROM users WHERE id = ?",
+            (r["other_id"],),
         ).fetchone()
         unread = db.execute(
             """SELECT COUNT(*) AS n FROM messages
@@ -1556,13 +1707,23 @@ def conversations():
             (r["other_id"], uid),
         ).fetchone()["n"]
         if user:
+            preview = last["content"][:60]
+            if last["file_id"] and not preview:
+                f = db.execute(
+                    "SELECT kind, display_name FROM chat_files WHERE id = ?",
+                    (last["file_id"],),
+                ).fetchone()
+                if f:
+                    icon = {"image":"🖼️","video":"🎬","audio":"🔊"}.get(f["kind"], "📎")
+                    preview = f"{icon} {f['display_name']}"
             out.append({
-                "user_id":   user["id"],
-                "username":  user["username"],
-                "preview":   last["content"][:60],
-                "from_me":   last["sender_id"] == uid,
-                "timestamp": last["timestamp"],
-                "unread":    unread,
+                "user_id":    user["id"],
+                "username":   user["username"],
+                "avatar_url": user["avatar_url"],
+                "preview":    preview,
+                "from_me":    last["sender_id"] == uid,
+                "timestamp":  last["timestamp"],
+                "unread":     unread,
             })
     return jsonify(out)
 
@@ -1573,7 +1734,7 @@ def messages_with(other_id):
     uid = current_user_id()
     db  = get_db()
     rows = db.execute(
-        """SELECT id, sender_id, recipient_id, content, timestamp, is_read
+        """SELECT id, sender_id, recipient_id, content, timestamp, is_read, file_id
            FROM messages
            WHERE (sender_id = ? AND recipient_id = ?)
               OR (sender_id = ? AND recipient_id = ?)
@@ -1585,7 +1746,20 @@ def messages_with(other_id):
         (other_id, uid),
     )
     db.commit()
-    return jsonify([dict(r) for r in rows])
+    out = []
+    for r in rows:
+        d = dict(r)
+        if d.get("file_id"):
+            f = db.execute(
+                "SELECT * FROM chat_files WHERE id = ?", (d["file_id"],),
+            ).fetchone()
+            if f:
+                d["file"] = _serialize_file_meta(f, viewer_id=uid)
+                d["file"]["can_view"] = _can_view_file(db, f["id"], uid)
+            else:
+                d["file"] = None
+        out.append(d)
+    return jsonify(out)
 
 
 @app.route("/api/messages/unread-count")
@@ -1604,13 +1778,19 @@ def unread_count():
 @login_required
 def send_message():
     uid  = current_user_id()
-    data = request.get_json()
+    data = request.get_json() or {}
     try:
         recipient_id = int(data.get("recipient_id"))
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid recipient"}), 400
     content = (data.get("content") or "").strip()
-    if not content:
+    file_id = data.get("file_id")
+    try:
+        file_id = int(file_id) if file_id is not None else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid file_id"}), 400
+
+    if not content and not file_id:
         return jsonify({"error": "Message cannot be empty"}), 400
     if len(content) > 1000:
         return jsonify({"error": "Message too long (max 1000 chars)"}), 400
@@ -1621,9 +1801,22 @@ def send_message():
     if not db.execute("SELECT id FROM users WHERE id = ?", (recipient_id,)).fetchone():
         return jsonify({"error": "User not found"}), 404
 
+    # If a file is attached, the sender must currently own it. Sending the file
+    # grants the recipient permanent view access (they can re-open it from
+    # chat history) but does NOT transfer ownership.
+    if file_id is not None:
+        f = db.execute(
+            "SELECT id, owner_id FROM chat_files WHERE id = ?", (file_id,),
+        ).fetchone()
+        if not f:
+            return jsonify({"error": "File not found"}), 404
+        if f["owner_id"] != uid:
+            return jsonify({"error": "You don't own that file"}), 403
+        _grant_file_access(db, file_id, recipient_id)
+
     db.execute(
-        "INSERT INTO messages (sender_id, recipient_id, content) VALUES (?, ?, ?)",
-        (uid, recipient_id, content),
+        "INSERT INTO messages (sender_id, recipient_id, content, file_id) VALUES (?, ?, ?, ?)",
+        (uid, recipient_id, content, file_id),
     )
     db.commit()
     return jsonify({"message": "Sent"})
@@ -1636,7 +1829,10 @@ def send_message():
 def api_profile(user_id):
     db   = get_db()
     user = db.execute(
-        "SELECT id, username, is_admin, is_banned, created, COALESCE(bio, '') AS bio FROM users WHERE id = ?",
+        """SELECT id, username, is_admin, is_banned, created,
+                  COALESCE(bio, '') AS bio,
+                  COALESCE(avatar_url, '') AS avatar_url
+           FROM users WHERE id = ?""",
         (user_id,),
     ).fetchone()
     if not user:
@@ -1664,6 +1860,7 @@ def api_profile(user_id):
         "is_banned": bool(user["is_banned"]),
         "created":  user["created"],
         "bio":      user["bio"] or "",
+        "avatar_url": user["avatar_url"] or "",
         "trade_count":      trade_count,
         "item_trade_count": item_trade_count,
         "item_count":       item_count,
@@ -1690,10 +1887,298 @@ def update_bio():
 def my_account():
     db = get_db()
     row = db.execute(
-        "SELECT id, username, COALESCE(bio, '') AS bio FROM users WHERE id = ?",
+        """SELECT id, username, COALESCE(bio, '') AS bio,
+                  COALESCE(avatar_url, '') AS avatar_url
+           FROM users WHERE id = ?""",
         (current_user_id(),),
     ).fetchone()
     return jsonify(dict(row))
+
+
+# ── Avatar upload ────────────────────────────────────────────────────────────
+
+@app.route("/api/account/avatar", methods=["POST"])
+@login_required
+def upload_avatar():
+    """Save a user's profile avatar (image or animated GIF)."""
+    uid = current_user_id()
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "No file uploaded"}), 400
+    mime = (f.mimetype or
+            mimetypes.guess_type(f.filename)[0] or
+            "application/octet-stream").lower()
+    if mime not in ALLOWED_AVATAR_MIMES:
+        return jsonify({
+            "error": "Avatar must be a PNG, JPEG, WebP, or GIF image",
+        }), 400
+    ext = os.path.splitext(secure_filename(f.filename))[1].lower() or ".png"
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        ext = ".png"
+    stored = f"u{uid}_{uuid.uuid4().hex}{ext}"
+    path = os.path.join(UPLOAD_AVA_DIR, stored)
+    f.save(path)
+    url = f"/uploads/avatars/{stored}"
+    db = get_db()
+    db.execute("UPDATE users SET avatar_url = ? WHERE id = ?", (url, uid))
+    db.commit()
+    return jsonify({"message": "Avatar updated", "avatar_url": url})
+
+
+@app.route("/api/account/avatar", methods=["DELETE"])
+@login_required
+def clear_avatar():
+    db = get_db()
+    db.execute("UPDATE users SET avatar_url = '' WHERE id = ?", (current_user_id(),))
+    db.commit()
+    return jsonify({"message": "Avatar removed", "avatar_url": ""})
+
+
+@app.route("/uploads/avatars/<path:filename>")
+def serve_avatar(filename):
+    return send_from_directory(UPLOAD_AVA_DIR, filename)
+
+
+# ── Chat file uploads ────────────────────────────────────────────────────────
+
+@app.route("/api/files/upload", methods=["POST"])
+@login_required
+def upload_chat_file():
+    """Upload a file. The uploader becomes its sole owner; nobody else can see
+    or download it until they're either sent it via DM or buy it on the
+    marketplace."""
+    uid = current_user_id()
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "No file uploaded"}), 400
+    display = secure_filename(os.path.basename(f.filename)) or "upload"
+    mime = (f.mimetype or mimetypes.guess_type(display)[0]
+            or "application/octet-stream").lower()
+    kind = _file_kind_for_mime(mime)
+    ext = os.path.splitext(display)[1].lower()
+    stored = f"u{uid}_{uuid.uuid4().hex}{ext}"
+    path = os.path.join(UPLOAD_FILES_DIR, stored)
+    f.save(path)
+    size = os.path.getsize(path)
+    db = get_db()
+    cur = db.execute(
+        """INSERT INTO chat_files
+                (uploader_id, owner_id, display_name, stored_name, mime, kind, size_bytes)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (uid, uid, display, stored, mime, kind, size),
+    )
+    db.commit()
+    file_id = cur.lastrowid
+    row = db.execute("SELECT * FROM chat_files WHERE id = ?", (file_id,)).fetchone()
+    meta = _serialize_file_meta(row, viewer_id=uid)
+    meta["can_view"] = True
+    return jsonify({"message": "Uploaded", "file": meta})
+
+
+@app.route("/api/files/<int:file_id>/meta")
+@login_required
+def file_meta(file_id):
+    """Public metadata (name, size, kind) — visible to anyone, e.g. for
+    marketplace listings. Does NOT reveal file contents."""
+    db = get_db()
+    row = db.execute("SELECT * FROM chat_files WHERE id = ?", (file_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    meta = _serialize_file_meta(row, viewer_id=current_user_id())
+    meta["can_view"] = _can_view_file(db, file_id, current_user_id())
+    return jsonify(meta)
+
+
+@app.route("/api/files/<int:file_id>/download")
+@login_required
+def file_download(file_id):
+    """Stream the file contents — only allowed for the current owner or users
+    who have been granted access (e.g. via a chat share)."""
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute("SELECT * FROM chat_files WHERE id = ?", (file_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    if not _can_view_file(db, file_id, uid):
+        return jsonify({"error": "You don't have access to this file"}), 403
+    return send_from_directory(
+        UPLOAD_FILES_DIR, row["stored_name"],
+        mimetype=row["mime"], download_name=row["display_name"],
+    )
+
+
+@app.route("/api/files/mine")
+@login_required
+def list_my_files():
+    """List files the current user can act on: ones they own (can list/sell)
+    plus ones they've been granted access to (can re-share or save)."""
+    uid = current_user_id()
+    db = get_db()
+    owned = db.execute(
+        "SELECT * FROM chat_files WHERE owner_id = ? ORDER BY id DESC LIMIT 200",
+        (uid,),
+    ).fetchall()
+    granted = db.execute(
+        """SELECT cf.* FROM chat_files cf
+           JOIN file_access fa ON fa.file_id = cf.id
+           WHERE fa.user_id = ? AND cf.owner_id != ?
+           ORDER BY cf.id DESC LIMIT 200""",
+        (uid, uid),
+    ).fetchall()
+    return jsonify({
+        "owned":   [_serialize_file_meta(r, uid) for r in owned],
+        "granted": [_serialize_file_meta(r, uid) for r in granted],
+    })
+
+
+# ── File marketplace ─────────────────────────────────────────────────────────
+
+def _serialize_file_listing(db, row, viewer_id=None):
+    f = db.execute("SELECT * FROM chat_files WHERE id = ?", (row["file_id"],)).fetchone()
+    seller = db.execute(
+        "SELECT id, username FROM users WHERE id = ?", (row["seller_id"],),
+    ).fetchone()
+    return {
+        "id":          row["id"],
+        "seller_id":   row["seller_id"],
+        "seller_name": seller["username"] if seller else "?",
+        "price":       row["price"],
+        "status":      row["status"],
+        "created_at":  row["created_at"],
+        "file": {
+            "id":           f["id"]            if f else row["file_id"],
+            "display_name": f["display_name"]  if f else "(missing)",
+            "kind":         f["kind"]          if f else "file",
+            "mime":         f["mime"]          if f else "",
+            "size_bytes":   f["size_bytes"]    if f else 0,
+            "can_view":     bool(f and viewer_id and _can_view_file(db, f["id"], viewer_id)),
+        },
+        "is_mine":  bool(viewer_id and row["seller_id"] == viewer_id),
+    }
+
+
+@app.route("/api/file-listings")
+@login_required
+def file_listings_list():
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM file_listings WHERE status = 'OPEN' ORDER BY id DESC LIMIT 200"
+    ).fetchall()
+    return jsonify([_serialize_file_listing(db, r, current_user_id()) for r in rows])
+
+
+@app.route("/api/file-listings/mine")
+@login_required
+def file_listings_mine():
+    uid = current_user_id()
+    db = get_db()
+    rows = db.execute(
+        """SELECT * FROM file_listings
+           WHERE seller_id = ? OR (buyer_id = ? AND status = 'SOLD')
+           ORDER BY id DESC LIMIT 200""",
+        (uid, uid),
+    ).fetchall()
+    return jsonify([_serialize_file_listing(db, r, uid) for r in rows])
+
+
+@app.route("/api/file-listings/create", methods=["POST"])
+@login_required
+def file_listings_create():
+    uid = current_user_id()
+    data = request.get_json() or {}
+    try:
+        file_id = int(data.get("file_id"))
+        price   = float(data.get("price"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid file or price"}), 400
+    if price <= 0:
+        return jsonify({"error": "Price must be greater than 0"}), 400
+    db = get_db()
+    f = db.execute(
+        "SELECT id, owner_id, display_name FROM chat_files WHERE id = ?", (file_id,),
+    ).fetchone()
+    if not f:
+        return jsonify({"error": "File not found"}), 404
+    if f["owner_id"] != uid:
+        return jsonify({"error": "You don't own this file"}), 403
+    existing = db.execute(
+        "SELECT id FROM file_listings WHERE file_id = ? AND status = 'OPEN'", (file_id,),
+    ).fetchone()
+    if existing:
+        return jsonify({"error": "This file is already listed"}), 400
+    cur = db.execute(
+        "INSERT INTO file_listings (seller_id, file_id, price) VALUES (?, ?, ?)",
+        (uid, file_id, price),
+    )
+    db.commit()
+    return jsonify({"message": "Listed", "listing_id": cur.lastrowid})
+
+
+@app.route("/api/file-listings/<int:listing_id>/cancel", methods=["POST"])
+@login_required
+def file_listings_cancel(listing_id):
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute("SELECT * FROM file_listings WHERE id = ?", (listing_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Listing not found"}), 404
+    if row["seller_id"] != uid and not session.get("is_admin"):
+        return jsonify({"error": "Not your listing"}), 403
+    if row["status"] != "OPEN":
+        return jsonify({"error": "Listing already closed"}), 400
+    db.execute("UPDATE file_listings SET status = 'CANCELLED' WHERE id = ?", (listing_id,))
+    db.commit()
+    return jsonify({"message": "Listing cancelled"})
+
+
+@app.route("/api/file-listings/<int:listing_id>/buy", methods=["POST"])
+@login_required
+def file_listings_buy(listing_id):
+    """Purchase a file. On success the file's ownership transfers to the buyer
+    and ALL prior view-access grants are wiped — only the new owner can see
+    the contents. The listing's name was already public; only the contents
+    were hidden."""
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute("SELECT * FROM file_listings WHERE id = ?", (listing_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Listing not found"}), 404
+    if row["status"] != "OPEN":
+        return jsonify({"error": "Listing is no longer available"}), 400
+    if row["seller_id"] == uid:
+        return jsonify({"error": "Cannot buy your own listing"}), 400
+    price = float(row["price"])
+    seller_id = row["seller_id"]
+    file_id = row["file_id"]
+
+    buyer = db.execute(
+        "SELECT cash FROM portfolios WHERE user_id = ?", (uid,),
+    ).fetchone()
+    if not buyer or float(buyer["cash"] or 0) < price:
+        return jsonify({"error": "Insufficient cash"}), 400
+
+    f = db.execute("SELECT id, owner_id FROM chat_files WHERE id = ?", (file_id,)).fetchone()
+    if not f or f["owner_id"] != seller_id:
+        return jsonify({"error": "File no longer owned by seller"}), 400
+
+    # Move cash buyer → seller
+    db.execute("UPDATE portfolios SET cash = cash - ? WHERE user_id = ?", (price, uid))
+    db.execute(
+        "INSERT INTO portfolios (user_id, cash) VALUES (?, ?) "
+        "ON CONFLICT(user_id) DO UPDATE SET cash = cash + ?",
+        (seller_id, price, price),
+    )
+    # Transfer ownership and reset view-access list — buyer is now exclusive viewer
+    db.execute("UPDATE chat_files SET owner_id = ? WHERE id = ?", (uid, file_id))
+    db.execute("DELETE FROM file_access WHERE file_id = ?", (file_id,))
+    # Close listing
+    db.execute(
+        """UPDATE file_listings SET status = 'SOLD', buyer_id = ?, sold_at = CURRENT_TIMESTAMP
+           WHERE id = ?""",
+        (uid, listing_id),
+    )
+    db.commit()
+    return jsonify({"message": "Purchase complete"})
 
 
 # ── Direct message: delete ────────────────────────────────────────────────────
@@ -1822,6 +2307,38 @@ def admin_mutes_list():
 
 
 # ── Admin API ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/settings", methods=["GET"])
+@admin_required
+def admin_settings_get():
+    out = {}
+    for key, default in DEFAULT_SETTINGS.items():
+        out[key] = _get_setting(key, default)
+    return jsonify(out)
+
+
+@app.route("/api/admin/settings", methods=["POST"])
+@admin_required
+def admin_settings_set():
+    data = request.get_json() or {}
+    saved = {}
+    for key in DEFAULT_SETTINGS.keys():
+        if key in data:
+            val = str(data[key]).strip()
+            if key == "bon_drop_rate":
+                try:
+                    iv = int(val)
+                except ValueError:
+                    return jsonify({"error": f"{key} must be a whole number"}), 400
+                if iv < 1:
+                    return jsonify({"error": "bon_drop_rate must be at least 1"}), 400
+                if iv > 1_000_000:
+                    return jsonify({"error": "bon_drop_rate is too large"}), 400
+                val = str(iv)
+            _set_setting(key, val)
+            saved[key] = val
+    return jsonify({"message": "Settings saved", "saved": saved})
+
 
 @app.route("/api/admin/items", methods=["POST"])
 @admin_required
@@ -2989,7 +3506,8 @@ def mining_mine():
     # DEEP_LAYER_BON_REQUIRED). Shallower layers never drop BON.
     bon_dropped = False
     if w["layer"] >= DEEP_LAYER_BON_REQUIRED:
-        bon_dropped = (random.randint(1, BON_DROP_RATE) == 1)
+        rate = max(1, _get_int_setting("bon_drop_rate", BON_DROP_RATE))
+        bon_dropped = (random.randint(1, rate) == 1)
         if bon_dropped:
             db.execute("UPDATE users SET bon = COALESCE(bon,0) + 1 WHERE id = ?", (uid,))
             db.execute(
