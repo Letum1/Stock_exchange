@@ -171,18 +171,18 @@
 <header>
   <h1>📈 Paper Trading</h1>
   <div class="hdr-right">
-    {% if is_admin %}{% endif %}
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+    {% if is_admin %}<a href="/admin" class="btn-sm" style="background:#78350f;color:#fcd34d">Admin</a>{% endif %}
+    <a href="/" class="btn-sm">🏠 Home</a>
+    <a href="/trading" class="btn-sm">📈 Trading</a>
+    <a href="/cashin" class="btn-sm">💵 Cash In</a>
+    <a href="/market" class="btn-sm btn-active">Markets</a>
+    <a href="/wallet" class="btn-sm">💰 Wallet</a>
+    <a href="/mine" class="btn-sm">⛏️ Mine</a>
+    <a href="/items" class="btn-sm">🎒 Items</a>
+    <a href="/chat" class="btn-sm">💬 Socialize</a>
+    <a href="/trades" class="btn-sm">🤝 Trades</a>
+    <a href="/profile/{{ user_id }}" class="btn-sm">Profile</a>
+    <a href="/account" class="btn-sm">Account</a>
     <button class="btn-sm" onclick="doLogout()">Logout</button>
   </div>
 </header>

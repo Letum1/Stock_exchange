@@ -167,18 +167,18 @@
   <div class="brand">📈 Paper Trading</div>
   <div class="hdr-right">
     <span style="font-size:.82rem;color:#737373">{{ username }}</span>
-    {% if is_admin %}{% endif %}
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+    {% if is_admin %}<a href="/admin" class="btn-sm" style="color:#fcd34d;border-color:#3b2410">Admin</a>{% endif %}
+    <a href="/" class="btn-sm">🏠</a>
+    <a href="/trading" class="btn-sm">📈</a>
+    <a href="/cashin" class="btn-sm">💵</a>
+    <a href="/market" class="btn-sm">Markets</a>
+    <a href="/wallet" class="btn-sm">💰</a>
+    <a href="/mine" class="btn-sm">⛏️</a>
+    <a href="/items" class="btn-sm">🎒</a>
+    <a href="/chat" class="btn-sm">💬</a>
+    <a href="/trades" class="btn-sm">🤝</a>
+    <a href="/account" class="btn-sm">⚙</a>
+    <button class="btn-sm" onclick="logout()">Logout</button>
   </div>
 </header>
 
