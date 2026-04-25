@@ -138,6 +138,82 @@
     .small-btn { padding: 5px 10px; font-size: .75rem; border: none; border-radius: 6px;
                  background: #2d3148; color: #94a3b8; cursor: pointer; }
     .small-btn:hover { background: #3a3f5c; color: #e2e8f0; }
+
+    .lock-badge {
+      display:inline-flex; align-items:center; gap:4px; padding:2px 7px;
+      background:#312e1f; border:1px solid #fcd34d40; color:#fcd34d;
+      border-radius:10px; font-size:.65rem; font-weight:700; margin-left:6px;
+    }
+    .lock-badge.open { background:#0c2418; border-color:#4ade8040; color:#4ade80; }
+
+    .owner-tools {
+      background:#13151f; border:1px solid #2d3148; border-radius:9px;
+      padding:12px; margin-top:14px;
+    }
+    .owner-tools h3 {
+      font-size:.7rem; font-weight:700; text-transform:uppercase;
+      letter-spacing:.07em; color:#64748b; margin-bottom:10px;
+    }
+    .lock-row { display:flex; align-items:center; justify-content:space-between; gap:8px;
+                margin-bottom:10px; }
+    .lock-row .lbl { font-size:.85rem; color:#e2e8f0; font-weight:600; }
+    .invite-row { display:flex; gap:6px; margin-bottom:10px; }
+    .invite-row input {
+      flex:1; padding:7px 10px; font-size:.82rem; background:#0f1117;
+      border:1px solid #2d3148; border-radius:6px; color:#e2e8f0; outline:none;
+    }
+    .invite-row input:focus { border-color:#7c85ff; }
+    .invite-row button {
+      padding:7px 12px; font-size:.78rem; font-weight:700; background:#7c85ff;
+      color:#fff; border:none; border-radius:6px; cursor:pointer;
+    }
+    .invite-row button:hover { opacity:.85; }
+    .pending-invites { display:flex; flex-direction:column; gap:5px; }
+    .pending-invite {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:6px 10px; background:#0f1117; border:1px solid #2d3148;
+      border-radius:7px; font-size:.78rem;
+    }
+    .pending-invite .x {
+      cursor:pointer; color:#94a3b8; padding:2px 6px; border-radius:4px;
+      background:#2d3148; font-size:.7rem;
+    }
+    .pending-invite .x:hover { background:#7f1d1d; color:#fca5a5; }
+    .member .kick {
+      cursor:pointer; padding:3px 8px; border-radius:5px; background:#2d3148;
+      color:#94a3b8; font-size:.66rem; font-weight:700; border:none; margin-left:auto;
+    }
+    .member .kick:hover { background:#7f1d1d; color:#fca5a5; }
+
+    .depth-gate-banner {
+      margin-top:10px; padding:8px 12px; background:#312e1f;
+      border:1px solid #fcd34d40; border-radius:7px; color:#fcd34d;
+      font-size:.78rem; line-height:1.45;
+    }
+
+    /* Challenge modal */
+    .modal-back {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,.65);
+      align-items:center; justify-content:center; z-index:9000; padding:20px;
+    }
+    .modal-back.show { display:flex; }
+    .modal-card {
+      background:#1a1d27; border:1px solid #2d3148; border-radius:14px;
+      padding:22px; width:100%; max-width:440px;
+    }
+    .modal-title { font-size:1.05rem; font-weight:800; color:#f1f5f9; margin-bottom:6px; }
+    .modal-sub   { font-size:.82rem; color:#94a3b8; margin-bottom:14px; line-height:1.5; }
+    .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+    .modal-actions button {
+      padding:8px 14px; border:none; border-radius:7px; cursor:pointer;
+      font-size:.82rem; font-weight:700; background:#2d3148; color:#94a3b8;
+    }
+    .modal-actions button:hover { opacity:.85; }
+
+    .locked-stub {
+      text-align:center; padding:40px 20px; color:#94a3b8;
+    }
+    .locked-stub .ic { font-size:2.5rem; margin-bottom:10px; }
   </style>
 </head>
 <body>
@@ -174,39 +250,69 @@
       <div class="progress-label" id="progress-label">— / —</div>
     </div>
 
-    <div class="grid-shell">
+    <div class="grid-shell" id="grid-shell">
       <div class="grid" id="grid"></div>
     </div>
 
     <div class="stats-grid">
       <div class="stat"><div class="lbl">Layer</div><div class="val" id="st-layer">—</div></div>
-      <div class="stat"><div class="lbl">Mined</div><div class="val" id="st-mined">—</div></div>
+      <div class="stat"><div class="lbl">Tiles mined</div><div class="val" id="st-mined">—</div></div>
       <div class="stat"><div class="lbl">Miners online</div><div class="val" id="st-members">—</div></div>
     </div>
 
+    <div class="depth-gate-banner" id="depth-banner" style="display:none"></div>
+
     <div class="help">
-      Click any block to mine it. When the entire layer is cleared, a new layer appears with a different colour and you go deeper.
-      Other players in the same world will see your progress in real time, and you'll see theirs.
+      Click any tile to mine it. When the entire layer is cleared, a new layer appears with a different colour and you go deeper.
+      Other miners in this block see your progress in real time, and you see theirs.
     </div>
   </div>
 
   <!-- Sidebar -->
   <div class="panel">
-    <h2>Active Miners</h2>
+    <h2 id="members-heading">Members <span id="members-count" style="color:#64748b;font-weight:600"></span></h2>
     <div class="members" id="members"></div>
 
-    <div style="margin-top:18px;display:flex;gap:8px">
-      <button class="small-btn" onclick="goToMyWorld()">🏠 My World</button>
-      <button class="small-btn" id="leave-btn" onclick="leaveWorld()" style="display:none">Leave</button>
+    <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="small-btn" onclick="goToMyWorld()">🏠 My Block</button>
+      <button class="small-btn" id="leave-btn" onclick="leaveBlock()" style="display:none">Leave</button>
     </div>
 
-    <h2 style="margin-top:24px">Other Worlds</h2>
+    <!-- Owner-only controls -->
+    <div class="owner-tools" id="owner-tools" style="display:none">
+      <h3>Owner controls</h3>
+      <div class="lock-row">
+        <span class="lbl"><span id="lock-icon">🔒</span> <span id="lock-label">Locked (invite only)</span></span>
+        <button class="small-btn" id="lock-toggle-btn" onclick="toggleLock()">Unlock</button>
+      </div>
+      <div class="invite-row">
+        <input type="text" id="invite-username" placeholder="Username to invite" autocomplete="off"/>
+        <button onclick="sendInvite()">Invite</button>
+      </div>
+      <div class="pending-invites" id="pending-invites"></div>
+    </div>
+
+    <h2 style="margin-top:24px">Other Players' Blocks</h2>
     <div class="worlds-list" id="worlds-list">
       <div style="color:#64748b;font-size:.83rem">Loading…</div>
     </div>
-    <div class="help">Tap any world to join other miners in real time.</div>
+    <div class="help">🔒 = invite-only · 🌐 = open to anyone (up to 5 miners).</div>
   </div>
 
+</div>
+
+<!-- Deep-mine challenge modal -->
+<div class="modal-back" id="ch-modal">
+  <div class="modal-card">
+    <div class="modal-title">🛡️ Deep mine — quick check</div>
+    <div class="modal-sub" id="ch-modal-sub">
+      You're going past layer 60. Prove you're a real miner to keep digging.
+    </div>
+    <div id="ch-modal-host"></div>
+    <div class="modal-actions">
+      <button onclick="closeChallenge()">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -229,18 +335,106 @@
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  function renderState(s, opts) {
-    opts = opts || {};
-    state = s;
+  function renderLockedStub(s) {
+    state = { id: s.id, name: s.name, _stub: true };
     document.getElementById('world-name').textContent = s.name;
     document.getElementById('world-owner').textContent =
-      s.owner ? ('Owner: ' + s.owner.username + (s.owner.id === ME ? ' (you)' : '')) : '';
+      'Owner: ' + (s.owner ? s.owner.username : '?');
+    document.getElementById('layer-pill').textContent = '🔒 Locked';
+    document.getElementById('layer-pill').style.background = '#312e1f';
+    document.getElementById('layer-pill').style.color = '#fcd34d';
+    document.getElementById('st-layer').textContent  = '—';
+    document.getElementById('st-mined').textContent  = '—';
+    document.getElementById('st-members').textContent =
+      (s.members_count || 0) + ' / ' + (s.max_members || 5);
+    document.getElementById('progress-fill').style.width = '0%';
+    document.getElementById('progress-label').textContent = '—';
+    document.getElementById('leave-btn').style.display = 'none';
+    document.getElementById('owner-tools').style.display = 'none';
+    document.getElementById('depth-banner').style.display = 'none';
+    document.getElementById('members').innerHTML =
+      '<div style="color:#64748b;font-size:.83rem">Members are private — ask the owner for an invite.</div>';
+    document.getElementById('members-count').textContent = '';
+    document.getElementById('grid').innerHTML = `
+      <div class="locked-stub" style="grid-column:1/-1">
+        <div class="ic">🔒</div>
+        <div style="font-size:1rem;color:#e2e8f0;font-weight:700;margin-bottom:6px">This block is private</div>
+        <div style="font-size:.85rem">The owner needs to invite you before you can join.</div>
+      </div>
+    `;
+    document.getElementById('grid').style.gridTemplateColumns = '1fr';
+    document.getElementById('grid').style.gridTemplateRows = '1fr';
+  }
+
+  function renderDepthBanner(s) {
+    const banner = document.getElementById('depth-banner');
+    const bonGate    = s.deep_bon_layer    || 50;
+    const verifyGate = s.deep_verify_layer || 60;
+    const layerNum   = s.layer + 1; // user-facing 1-indexed
+
+    if (s.layer >= verifyGate) {
+      banner.style.display = 'block';
+      banner.innerHTML = `🛡️ <b>Deep zone</b> — past layer ${verifyGate}. Each session needs a quick human check before you can mine.`;
+    } else if (s.layer >= bonGate) {
+      banner.style.display = 'block';
+      banner.innerHTML = `💎 <b>BON-required zone</b> — past layer ${bonGate}. You need at least 1 BON to mine here.`;
+    } else if (s.layer + 5 >= bonGate) {
+      banner.style.display = 'block';
+      banner.innerHTML = `⚠️ Heads up: at layer ${bonGate + 1} you'll need 1 BON, and at layer ${verifyGate + 1} a human check.`;
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
+  function renderOwnerTools(s) {
+    const tools = document.getElementById('owner-tools');
+    if (!s.is_owner) { tools.style.display = 'none'; return; }
+    tools.style.display = 'block';
+
+    const lockBtn   = document.getElementById('lock-toggle-btn');
+    const lockIcon  = document.getElementById('lock-icon');
+    const lockLabel = document.getElementById('lock-label');
+    if (s.is_locked) {
+      lockIcon.textContent  = '🔒';
+      lockLabel.textContent = 'Locked (invite only)';
+      lockBtn.textContent   = 'Unlock';
+    } else {
+      lockIcon.textContent  = '🌐';
+      lockLabel.textContent = 'Open to anyone';
+      lockBtn.textContent   = 'Lock';
+    }
+
+    const pend = document.getElementById('pending-invites');
+    if (s.invites && s.invites.length) {
+      pend.innerHTML = s.invites.map(i => `
+        <div class="pending-invite">
+          <span>📨 ${escapeHtml(i.username)} <span style="color:#64748b">(invited)</span></span>
+          <button class="x" onclick="cancelInvite(${i.id})">Cancel</button>
+        </div>
+      `).join('');
+    } else {
+      pend.innerHTML = '<div style="font-size:.74rem;color:#64748b">No pending invites.</div>';
+    }
+  }
+
+  function renderState(s) {
+    if (s && s.needs_invite) { renderLockedStub(s); return; }
+
+    state = s;
+    document.getElementById('world-name').textContent = s.name;
+    document.getElementById('world-owner').innerHTML =
+      (s.owner ? ('Owner: ' + escapeHtml(s.owner.username) + (s.owner.id === ME ? ' (you)' : '')) : '')
+      + (s.is_locked ? ' <span class="lock-badge">🔒 Invite only</span>'
+                     : ' <span class="lock-badge open">🌐 Open</span>');
     document.getElementById('layer-pill').textContent = `Layer ${s.layer + 1} · ${s.layer_name}`;
     document.getElementById('layer-pill').style.background = s.color;
     document.getElementById('layer-pill').style.color = '#0f1117';
-    document.getElementById('st-layer').textContent = (s.layer + 1) + ' (' + s.layer_name + ')';
-    document.getElementById('st-mined').textContent = s.blocks_mined + ' / ' + s.blocks_total;
-    document.getElementById('st-members').textContent = s.members.length;
+    document.getElementById('st-layer').textContent  = (s.layer + 1) + ' (' + s.layer_name + ')';
+    document.getElementById('st-mined').textContent  = s.blocks_mined + ' / ' + s.blocks_total;
+    document.getElementById('st-members').textContent =
+      s.members.length + ' / ' + (s.max_members || 5);
+    document.getElementById('members-count').textContent =
+      '(' + s.members.length + '/' + (s.max_members || 5) + ')';
 
     const pct = s.blocks_total ? (s.blocks_mined / s.blocks_total * 100) : 0;
     document.getElementById('progress-fill').style.width = pct + '%';
@@ -249,16 +443,17 @@
     document.getElementById('leave-btn').style.display =
       (s.owner && s.owner.id === ME) ? 'none' : 'inline-block';
 
+    renderDepthBanner(s);
+    renderOwnerTools(s);
+
     // Render grid
     const grid = document.getElementById('grid');
     grid.style.gridTemplateColumns = `repeat(${s.width}, 1fr)`;
     grid.style.gridTemplateRows = `repeat(${s.height}, 1fr)`;
 
-    // Build a map of mined blocks for quick check
     const minedSet = new Set(s.blocks.filter(b => b.mined).map(b => b.x + ',' + b.y));
-
-    // Re-use existing block elements when possible (preserve animation); rebuild only on layer change or size change.
-    const needsRebuild = grid.dataset.gen !== String(s.generation) || grid.children.length !== s.width * s.height;
+    const needsRebuild = grid.dataset.gen !== String(s.generation)
+                      || grid.children.length !== s.width * s.height;
     if (needsRebuild) {
       grid.dataset.gen = String(s.generation);
       grid.innerHTML = '';
@@ -268,13 +463,11 @@
           cell.className = 'block';
           cell.style.background = s.color;
           cell.dataset.x = x; cell.dataset.y = y;
-          cell.addEventListener('click', () => mineBlock(x, y, cell));
+          cell.addEventListener('click', () => mineTile(x, y, cell));
           grid.appendChild(cell);
         }
       }
     }
-
-    // Update mined state on every render
     for (const cell of grid.children) {
       const x = parseInt(cell.dataset.x, 10), y = parseInt(cell.dataset.y, 10);
       const isMined = minedSet.has(x + ',' + y);
@@ -282,13 +475,14 @@
       if (!isMined) cell.style.background = s.color;
     }
 
-    // Members list
+    // Members list (with kick buttons for owner)
     const mEl = document.getElementById('members');
     mEl.innerHTML = s.members.map(m => `
       <div class="member">
         <span class="dot"></span>
         <a href="/profile/${m.id}">${escapeHtml(m.username)}</a>
         ${m.id === ME ? '<span class="you">YOU</span>' : ''}
+        ${(s.is_owner && m.id !== ME) ? `<button class="kick" onclick="kickMember(${m.id}, '${escapeHtml(m.username)}')">Kick</button>` : ''}
       </div>
     `).join('') || '<div style="color:#64748b;font-size:.83rem">Empty</div>';
   }
@@ -296,21 +490,36 @@
   async function loadState(worldId) {
     const url = worldId ? ('/api/mining/world/' + worldId + '?join=1') : '/api/mining/my-world';
     const r = await fetch(url);
-    if (!r.ok) { showToast('Failed to load world', 'err'); return; }
-    const s = await r.json();
+    const s = await r.json().catch(() => ({}));
+    if (!r.ok) { showToast(s.error || 'Failed to load block', 'err'); return; }
     renderState(s);
     if (worldId == null && myWorldId == null) myWorldId = s.id;
   }
 
-  async function mineBlock(x, y, cell) {
-    if (!state || cell.classList.contains('mined')) return;
+  // Pending mine attempt awaiting deep-mine verification
+  let pendingMine = null;
+
+  async function mineTile(x, y, cell) {
+    if (!state || state._stub || cell.classList.contains('mined')) return;
     cell.classList.add('mined', 'flash');
     const r = await fetch('/api/mining/mine', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ world_id: state.id, x, y }),
     });
-    const d = await r.json();
-    if (!r.ok) { showToast(d.error || 'Could not mine', 'err'); }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      // Roll back the optimistic mine
+      cell.classList.remove('mined', 'flash');
+      if (d.requires_challenge) {
+        pendingMine = { x, y, cell };
+        openChallenge(d.min_layer || 60);
+      } else if (d.needs_bon) {
+        showToast(d.error || 'Need a BON to mine here', 'err');
+      } else {
+        showToast(d.error || 'Could not mine', 'err');
+      }
+      return;
+    }
     if (d.bon_dropped) {
       showToast('💎 You found a BON! Trade it on the Wallet page.', 'info');
       spawnBonBurst(cell);
@@ -320,6 +529,88 @@
       showToast('🎉 Layer cleared! Going deeper…', 'info');
     }
     if (d.state) renderState(d.state);
+  }
+
+  // ── Owner actions ────────────────────────────────────────────────────────
+  async function toggleLock() {
+    if (!state || !state.is_owner) return;
+    const r = await fetch(`/api/mining/world/${state.id}/lock`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({}),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showToast(d.error || 'Could not change lock', 'err'); return; }
+    showToast(d.is_locked ? '🔒 Block is now invite-only' : '🌐 Block is now open', 'ok');
+    loadState(state.id);
+  }
+
+  async function sendInvite() {
+    if (!state || !state.is_owner) return;
+    const inp = document.getElementById('invite-username');
+    const username = inp.value.trim();
+    if (!username) { showToast('Type a username', 'err'); return; }
+    const r = await fetch(`/api/mining/world/${state.id}/invite`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showToast(d.error || 'Could not invite', 'err'); return; }
+    inp.value = '';
+    showToast(d.message || 'Invited', 'ok');
+    loadState(state.id);
+  }
+
+  async function cancelInvite(userId) {
+    if (!state || !state.is_owner) return;
+    const r = await fetch(`/api/mining/world/${state.id}/uninvite`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ user_id: userId }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showToast(d.error || 'Could not cancel invite', 'err'); return; }
+    showToast('Invite cancelled', 'ok');
+    loadState(state.id);
+  }
+
+  async function kickMember(userId, username) {
+    if (!state || !state.is_owner) return;
+    if (!confirm('Remove ' + username + ' from this block?')) return;
+    const r = await fetch(`/api/mining/world/${state.id}/uninvite`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ user_id: userId }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showToast(d.error || 'Could not remove', 'err'); return; }
+    showToast('Removed ' + username, 'ok');
+    loadState(state.id);
+  }
+
+  // ── Deep-mine challenge modal ────────────────────────────────────────────
+  function openChallenge(minLayer) {
+    document.getElementById('ch-modal-sub').textContent =
+      `You're going past layer ${minLayer}. Pass a quick check to keep digging — it stays good for 10 minutes.`;
+    document.getElementById('ch-modal').classList.add('show');
+    Challenge.mount(document.getElementById('ch-modal-host'), {
+      purpose: 'deep_mine',
+      onSuccess: async () => {
+        document.getElementById('ch-modal-host').innerHTML =
+          '<div style="color:#4ade80;font-weight:700;text-align:center;padding:20px">✓ Verified — back to mining</div>';
+        setTimeout(async () => {
+          closeChallenge();
+          if (pendingMine && state) {
+            const cell = document.querySelector(
+              `#grid .block[data-x="${pendingMine.x}"][data-y="${pendingMine.y}"]`
+            );
+            if (cell) mineTile(pendingMine.x, pendingMine.y, cell);
+            pendingMine = null;
+          }
+        }, 600);
+      },
+    });
+  }
+  function closeChallenge() {
+    document.getElementById('ch-modal').classList.remove('show');
+    document.getElementById('ch-modal-host').innerHTML = '';
   }
 
   function spawnBonBurst(cell){
@@ -350,27 +641,32 @@
     const list = await r.json();
     const el = document.getElementById('worlds-list');
     if (!list.length) {
-      el.innerHTML = '<div style="color:#64748b;font-size:.83rem">No other worlds yet.</div>';
+      el.innerHTML = '<div style="color:#64748b;font-size:.83rem">No other blocks yet.</div>';
       return;
     }
-    el.innerHTML = list.map(w => `
-      <div class="world-card ${state && w.id === state.id ? 'active' : ''}" onclick="loadState(${w.id})">
-        <div class="world-swatch" style="background:${w.color}"></div>
-        <div class="world-info">
-          <div class="nm">${escapeHtml(w.name)}</div>
-          <div class="meta">Layer ${w.layer + 1} · ${escapeHtml(w.layer_name)} · ${w.members} miner${w.members === 1 ? '' : 's'}</div>
+    el.innerHTML = list.map(w => {
+      const lockIcon = w.is_locked ? '🔒' : '🌐';
+      const youBadge = w.is_member ? ' <span style="color:#4ade80">· you</span>'
+                       : (w.is_invited ? ' <span style="color:#fcd34d">· invited</span>' : '');
+      return `
+        <div class="world-card ${state && w.id === state.id ? 'active' : ''}" onclick="loadState(${w.id})">
+          <div class="world-swatch" style="background:${w.color}"></div>
+          <div class="world-info">
+            <div class="nm">${lockIcon} ${escapeHtml(w.name)}${w.is_owner ? ' <span style="color:#fcd34d">★</span>' : ''}</div>
+            <div class="meta">Layer ${w.layer + 1} · ${w.members}/${w.max_members} miner${w.members === 1 ? '' : 's'}${youBadge}</div>
+          </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   }
 
-  async function leaveWorld() {
+  async function leaveBlock() {
     if (!state || !state.id) return;
     const r = await fetch('/api/mining/leave', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ world_id: state.id }),
     });
-    const d = await r.json();
+    const d = await r.json().catch(() => ({}));
     showToast(d.message || d.error, r.ok ? 'ok' : 'err');
     if (r.ok) goToMyWorld();
   }
@@ -384,11 +680,13 @@
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
-      if (state && state.id) {
+      // Don't poll if a challenge modal is open or we're looking at a locked stub
+      const modalOpen = document.getElementById('ch-modal').classList.contains('show');
+      if (state && state.id && !state._stub && !modalOpen) {
         const r = await fetch('/api/mining/world/' + state.id);
         if (r.ok) renderState(await r.json());
       }
-      loadWorlds();
+      if (!modalOpen) loadWorlds();
     }, 2000);
   }
 

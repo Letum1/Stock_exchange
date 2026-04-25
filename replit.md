@@ -49,9 +49,12 @@ A standalone Python Flask app at `paper-trading/`.
 - `/account` — change username, password, and bio
 - `/admin` — admin panel (users, balance, trades, items catalog, grant items,
   grant/revoke admin, grant/revoke manager, admin self-funding)
-- `/mine` — multiplayer 2D BON mining game (10×10 grid; cleared layer
-  regenerates with a deeper colour; everyone in a world mines the same grid in real time;
-  1/100 chance per mined block to drop a BON token)
+- `/mine` — multiplayer 2D BON mining game on a "block" (10×10 grid of tiles;
+  cleared layer regenerates with a deeper colour; up to 5 miners per block mine
+  the same grid in real time; 1/100 chance per mined tile to drop a BON token).
+  Blocks are **invite-only by default** — owner uses the sidebar lock toggle and
+  invite/kick controls. Layer 51+ requires the miner to hold ≥1 BON; layer 61+
+  also requires a fresh playful human-verification challenge (good for 10 min).
 - `/wallet` — BON / satoshi / USD wallet:
   - 100 BON ↔ 1 satoshi (game-internal, fixed)
   - satoshi ↔ USD uses the **live BTC price** (1 BTC = 100,000,000 satoshi),
@@ -63,14 +66,17 @@ A standalone Python Flask app at `paper-trading/`.
   deposit/withdrawal requests with user payment credentials, with Mark Done
   (credits user on cash-in) and Reject (refunds escrow on cash-out) actions
 - `/chat` — DM chat + Public Chat tab (admin can mute users and delete messages)
-- `/login` `/register` — auth (register requires anti-bot math captcha)
+- `/login` `/register` — auth (register requires the playful human-verification
+  challenge from `/static/challenge.js` — same widget reused for deep mining)
 
 ### Mobile/UX
 - All templates link `/static/responsive.css` which forces inputs to 16px
   font-size (prevents iOS auto-zoom on tap) and adds responsive nav/grid rules.
 
 ### Backend modules in `app.py`
-- Auth (with math captcha for register), portfolio + trading, market data, ticker search
+- Auth (register gated by `/api/challenge/new` + `/api/challenge/verify` —
+  random math / riddle / emoji-fillin / odd-one-out / drag-drop), portfolio +
+  trading, market data, ticker search
 - Items: catalog, inventory, listings (cash and/or item-for-item swaps), trade history
 - Messages: 1-to-1 DMs with conversations + unread counts; messages can be deleted by sender or any admin
 - Public chat: site-wide public room with admin mute + delete
@@ -78,8 +84,12 @@ A standalone Python Flask app at `paper-trading/`.
 - Admin: user management, item create/delete/grant, trading activity feed,
   grant/revoke admin (with last-admin protection), grant/revoke manager,
   admin self-funding allowed, public-chat mute management
-- Mining: world grid mining (block click, layer regeneration, multi-user worlds,
-  1/100 BON drop on each successful mine)
+- Mining: per-user "blocks" with tile mining, layer regeneration, 1/100 BON drop
+  per tile. Membership is required (no auto-join). Blocks default to locked +
+  max-5 members; owners use `/api/mining/world/<id>/lock|invite|uninvite`. Depth
+  gates: layer ≥ `DEEP_LAYER_BON_REQUIRED` (50) needs ≥1 BON, layer ≥
+  `DEEP_LAYER_VERIFY` (60) needs `session.deep_mine_verified_until` set by
+  passing the playful challenge. Pending invites stored in `mining_invites`.
 - Wallet: per-user BON, satoshi, USD balances with instant 4-way conversions
   (100 BON = 1 sat = $0.01); BON marketplace with escrow on listing creation
 - Cash flow: deposit (cash_in) and withdrawal (cash_out, satoshi-only) requests
@@ -93,7 +103,8 @@ A standalone Python Flask app at `paper-trading/`.
 `holdings`, `trades`, `items`, `user_items`,
 `item_listings` (with optional cash price + JSON `accepts_items` for swaps),
 `item_trades`, `messages`, `public_messages`, `public_mutes`,
-`mining_worlds`, `mining_blocks`, `mining_world_members`,
+`mining_worlds` (with `is_locked`, `max_members`), `mining_blocks`,
+`mining_world_members`, `mining_invites`,
 `mining_user_stats` (with `bon_found`),
 `bon_listings`, `cash_requests`.
 New tables auto-create on startup; new user columns are added via

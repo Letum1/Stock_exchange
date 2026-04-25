@@ -236,6 +236,14 @@ def init_db():
                 layers_cleared INTEGER NOT NULL DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS mining_invites (
+                world_id    INTEGER NOT NULL REFERENCES mining_worlds(id),
+                user_id     INTEGER NOT NULL REFERENCES users(id),
+                invited_by  INTEGER NOT NULL REFERENCES users(id),
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (world_id, user_id)
+            );
+
             CREATE TABLE IF NOT EXISTS bon_listings (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 seller_id   INTEGER NOT NULL REFERENCES users(id),
@@ -283,6 +291,8 @@ def init_db():
             "ALTER TABLE trades ADD COLUMN regulatory_fee REAL DEFAULT 0",
             "ALTER TABLE trades ADD COLUMN platform_fee REAL DEFAULT 0",
             "ALTER TABLE trades ADD COLUMN tax REAL DEFAULT 0",
+            "ALTER TABLE mining_worlds ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE mining_worlds ADD COLUMN max_members INTEGER NOT NULL DEFAULT 5",
         ):
             try:
                 db.execute(ddl)
@@ -487,22 +497,16 @@ def register():
     data = request.get_json()
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
-    captcha_input = data.get("captcha")
 
     if len(username) < 3:
         return jsonify({"error": "Username must be at least 3 characters"}), 400
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters"}), 400
 
-    expected = session.get("captcha_answer")
-    if expected is None:
-        return jsonify({"error": "Captcha expired. Refresh the page and try again."}), 400
-    try:
-        if int(captcha_input) != int(expected):
-            return jsonify({"error": "Wrong captcha answer. Try again."}), 400
-    except (TypeError, ValueError):
-        return jsonify({"error": "Please enter a number for the captcha"}), 400
-    session.pop("captcha_answer", None)
+    # The browser must complete a playful human-check first (handled by
+    # /api/challenge/* — once passed, the session carries `registration_verified`).
+    if not session.pop("registration_verified", False):
+        return jsonify({"error": "Please complete the human check first"}), 400
 
     db = get_db()
     if db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
@@ -1003,28 +1007,181 @@ def search_ticker():
         return jsonify([])
 
 
-# ── Captcha (anti-bot) ────────────────────────────────────────────────────────
+# ── Playful human verification ────────────────────────────────────────────────
+# Used both at registration and when entering deep mining layers.
 
-CAPTCHA_OPS = [
-    ("+", lambda a, b: a + b),
-    ("−", lambda a, b: a - b),
-    ("×", lambda a, b: a * b),
+import time as _time
+import secrets as _secrets
+
+CHALLENGE_TTL_SECONDS    = 120  # how long a single challenge stays valid
+DEEP_VERIFY_TTL_SECONDS  = 600  # how long a passed deep-mine check is honored
+
+# Riddles where the answer is a simple number
+_CHALLENGE_RIDDLES = [
+    ("What's 2 + the number of sides on a triangle?", "5"),
+    ("How many legs does a spider have, divided by 2?", "4"),
+    ("How many letters are in the word 'hello'?", "5"),
+    ("What's 10 minus the number of fingers on one hand?", "5"),
+    ("How many days are in a week?", "7"),
+    ("What number comes right after eleven?", "12"),
+    ("How many wheels on a normal car?", "4"),
+    ("How many sides on a square?", "4"),
+    ("How many minutes are in half an hour?", "30"),
+    ("What is half of twenty?", "10"),
+    ("How many colours are in a rainbow?", "7"),
+    ("How many seconds in a minute?", "60"),
 ]
 
-def make_captcha():
-    op_sym, op_fn = random.choice(CAPTCHA_OPS)
-    a = random.randint(2, 9)
-    b = random.randint(2, 9)
-    if op_sym == "−" and b > a:
-        a, b = b, a
-    return f"{a} {op_sym} {b}", op_fn(a, b)
+# Emoji fill-in-the-blank: (sentence with ___, correct emoji, distractors)
+_CHALLENGE_EMOJI = [
+    ("The cat chased the ___",            "🐭", ["🚗","📚","🛏️"]),
+    ("I drank a hot ___ this morning",     "☕", ["🚲","📺","🌮"]),
+    ("She kicked the soccer ___",          "⚽", ["🥞","🎩","🚀"]),
+    ("I unlocked the door with the ___",   "🔑", ["🐟","🎂","🚀"]),
+    ("Bees make sweet ___",                "🍯", ["🚲","🎮","🛏️"]),
+    ("Brush your ___ after eating",        "🦷", ["🚀","🌧️","🪑"]),
+    ("It's hot, I want some ice ___",      "🍦", ["🔨","📞","🌵"]),
+    ("Knock on the ___ before entering",   "🚪", ["🍕","🎈","🐠"]),
+    ("Plant the seeds in the ___",         "🌱", ["🚀","🧦","🎮"]),
+    ("Birthday party with a big ___",      "🎂", ["🪛","🧹","🚂"]),
+    ("Light up the dark with a ___",       "🔦", ["🥒","📞","🪑"]),
+]
+
+# "Find the one that's different" — coloured circles
+_CHALLENGE_PATTERN_POOL = ["🔴","🟠","🟡","🟢","🔵","🟣","🟤","⚫","⚪"]
+
+# Drag-and-drop pairings: (prompt, correct_item, target, distractors)
+_CHALLENGE_DRAG = [
+    ("Drag the apple into the basket",   "🍎", "🧺", ["⚽","🎩","🚲"]),
+    ("Drag the flower into the vase",    "🌻", "🏺", ["🚲","🎩","🚀"]),
+    ("Drag the letter into the mailbox", "✉️", "📬", ["🍕","🎮","🥁"]),
+    ("Drag the ball into the basket",    "⚽", "🧺", ["🚀","🎁","🐶"]),
+    ("Drag the bone to the dog",         "🦴", "🐶", ["🪑","🌵","🔔"]),
+    ("Drag the key into the lock",       "🔑", "🔒", ["🍕","🎈","🐠"]),
+    ("Drag the fish into the bowl",      "🐟", "🥣", ["📺","🪑","🎩"]),
+]
 
 
+def _make_challenge():
+    """Return (public_payload_dict, expected_answer_string).
+    Picks one of riddle / math / emoji / pattern / drag at random."""
+    kind = random.choice(["math", "riddle", "emoji", "pattern", "drag"])
+
+    if kind == "math":
+        op_sym, op_fn = random.choice([
+            ("+", lambda a, b: a + b),
+            ("×", lambda a, b: a * b),
+        ])
+        a = random.randint(2, 9)
+        b = random.randint(2, 9)
+        return (
+            {"kind": "math", "prompt": f"What is {a} {op_sym} {b}?", "input": "number"},
+            str(op_fn(a, b)),
+        )
+
+    if kind == "riddle":
+        prompt, ans = random.choice(_CHALLENGE_RIDDLES)
+        return ({"kind": "riddle", "prompt": prompt, "input": "number"}, ans)
+
+    if kind == "emoji":
+        sentence, correct, distractors = random.choice(_CHALLENGE_EMOJI)
+        opts = [correct] + distractors
+        random.shuffle(opts)
+        return (
+            {"kind": "emoji", "prompt": sentence, "options": opts, "input": "choice"},
+            correct,
+        )
+
+    if kind == "pattern":
+        base, odd = random.sample(_CHALLENGE_PATTERN_POOL, 2)
+        n = 6
+        items = [base] * n
+        odd_idx = random.randrange(n)
+        items[odd_idx] = odd
+        return (
+            {"kind": "pattern",
+             "prompt": "Click the one that's different",
+             "items": items,
+             "input": "index"},
+            str(odd_idx),
+        )
+
+    # drag
+    prompt, correct, target, distractors = random.choice(_CHALLENGE_DRAG)
+    items = [correct] + distractors
+    random.shuffle(items)
+    return (
+        {"kind": "drag",
+         "prompt": prompt,
+         "items": items,
+         "target": target,
+         "input": "drop"},
+        correct,
+    )
+
+
+def _cleanup_session_challenges(challenges):
+    now = _time.time()
+    return {k: v for k, v in challenges.items() if v.get("exp", 0) > now}
+
+
+@app.route("/api/challenge/new")
+def challenge_new():
+    payload, expected = _make_challenge()
+    cid = _secrets.token_urlsafe(8)
+    challenges = _cleanup_session_challenges(session.get("challenges", {}))
+    challenges[cid] = {
+        "a":   expected,
+        "exp": _time.time() + CHALLENGE_TTL_SECONDS,
+        "kind": payload["kind"],
+    }
+    session["challenges"] = challenges
+    payload["id"] = cid
+    return jsonify(payload)
+
+
+@app.route("/api/challenge/verify", methods=["POST"])
+def challenge_verify():
+    data    = request.get_json() or {}
+    cid     = str(data.get("id", "") or "")
+    answer  = str(data.get("answer", "") or "").strip()
+    purpose = (data.get("purpose") or "").strip().lower()
+
+    challenges = _cleanup_session_challenges(session.get("challenges", {}))
+    rec = challenges.get(cid)
+    if not rec:
+        session["challenges"] = challenges
+        return jsonify({"error": "Challenge expired — please get a new one", "expired": True}), 400
+
+    expected = str(rec.get("a", "")).strip()
+    # Case-insensitive comparison for text answers; exact for emoji/index
+    if rec.get("kind") in ("riddle", "math"):
+        ok = answer.lower() == expected.lower()
+    else:
+        ok = answer == expected
+
+    if not ok:
+        # Consume the failed challenge so users can't brute-force the same one
+        challenges.pop(cid, None)
+        session["challenges"] = challenges
+        return jsonify({"error": "That's not quite right — try a new one"}), 400
+
+    challenges.pop(cid, None)
+    session["challenges"] = challenges
+
+    if purpose == "deep_mine":
+        session["deep_mine_verified_until"] = _time.time() + DEEP_VERIFY_TTL_SECONDS
+    elif purpose == "registration":
+        session["registration_verified"] = True
+
+    return jsonify({"ok": True, "purpose": purpose or None})
+
+
+# Legacy alias — older clients posting to /api/captcha keep working by
+# being redirected to a fresh challenge. Returns nothing identifying.
 @app.route("/api/captcha")
-def captcha():
-    question, answer = make_captcha()
-    session["captcha_answer"] = answer
-    return jsonify({"question": question})
+def captcha_legacy():
+    return challenge_new()
 
 
 # ── Pages: Items / Chat / Profile ─────────────────────────────────────────────
@@ -2505,18 +2662,62 @@ def _generate_blocks(db, world_id, generation, width, height):
     )
 
 
+# ── Mining lock / depth gate constants ───────────────────────────────────────
+DEEP_LAYER_BON_REQUIRED = 50   # past this layer, miner needs >= 1 BON
+DEEP_LAYER_VERIFY       = 60   # past this layer, miner must pass a human check
+DEFAULT_BLOCK_LOCKED    = 1    # new blocks (worlds) are locked by default
+DEFAULT_BLOCK_MAX_USERS = 5    # at most this many people in a single block
+
+
+def _is_member(db, world_id, uid):
+    return db.execute(
+        "SELECT 1 FROM mining_world_members WHERE world_id = ? AND user_id = ?",
+        (world_id, uid),
+    ).fetchone() is not None
+
+
+def _member_count(db, world_id):
+    r = db.execute(
+        "SELECT COUNT(*) AS n FROM mining_world_members WHERE world_id = ?",
+        (world_id,),
+    ).fetchone()
+    return int(r["n"]) if r else 0
+
+
+def _has_invite(db, world_id, uid):
+    return db.execute(
+        "SELECT 1 FROM mining_invites WHERE world_id = ? AND user_id = ?",
+        (world_id, uid),
+    ).fetchone() is not None
+
+
+def _world_caps(w):
+    """Pull cap values from a row, falling back to defaults so old DBs are fine."""
+    try:
+        locked = int(w["is_locked"])
+    except (IndexError, KeyError, TypeError):
+        locked = DEFAULT_BLOCK_LOCKED
+    try:
+        cap = int(w["max_members"])
+    except (IndexError, KeyError, TypeError):
+        cap = DEFAULT_BLOCK_MAX_USERS
+    return bool(locked), max(1, cap)
+
+
 def _ensure_my_world(db, uid):
-    """Make sure the user has at least one world; auto-create their personal one."""
+    """Make sure the user has at least one block; auto-create their personal one (locked)."""
     row = db.execute(
         "SELECT id FROM mining_worlds WHERE owner_id = ? ORDER BY id LIMIT 1", (uid,)
     ).fetchone()
     if row:
         return row["id"]
     user = db.execute("SELECT username FROM users WHERE id = ?", (uid,)).fetchone()
-    name = f"{user['username'] if user else 'Player'}'s World"
+    name = f"{user['username'] if user else 'Player'}'s Block"
     cur = db.execute(
-        "INSERT INTO mining_worlds (owner_id, name, width, height, layer, generation) VALUES (?, ?, 10, 10, 0, 0)",
-        (uid, name),
+        """INSERT INTO mining_worlds
+                (owner_id, name, width, height, layer, generation, is_locked, max_members)
+           VALUES (?, ?, 10, 10, 0, 0, ?, ?)""",
+        (uid, name, DEFAULT_BLOCK_LOCKED, DEFAULT_BLOCK_MAX_USERS),
     )
     world_id = cur.lastrowid
     db.execute(
@@ -2528,7 +2729,7 @@ def _ensure_my_world(db, uid):
     return world_id
 
 
-def _world_state(db, world_id):
+def _world_state(db, world_id, viewer_id=None):
     w = db.execute("SELECT * FROM mining_worlds WHERE id = ?", (world_id,)).fetchone()
     if not w:
         return None
@@ -2549,6 +2750,20 @@ def _world_state(db, world_id):
     info = _layer_info(w["layer"])
     total = w["width"] * w["height"]
     mined_count = sum(1 for b in blocks if b["mined_by"])
+    locked, max_members = _world_caps(w)
+    is_owner = (viewer_id is not None and owner is not None and viewer_id == owner["id"])
+    is_member = (viewer_id is not None and any(m["id"] == viewer_id for m in members))
+
+    invites = []
+    if is_owner:
+        irows = db.execute(
+            """SELECT u.id, u.username FROM mining_invites i
+               JOIN users u ON u.id = i.user_id
+               WHERE i.world_id = ? ORDER BY i.created_at""",
+            (world_id,),
+        ).fetchall()
+        invites = [{"id": r["id"], "username": r["username"]} for r in irows]
+
     return {
         "id": w["id"],
         "name": w["name"],
@@ -2567,6 +2782,13 @@ def _world_state(db, world_id):
             for b in blocks
         ],
         "members": [{"id": m["id"], "username": m["username"]} for m in members],
+        "is_locked":   locked,
+        "max_members": max_members,
+        "is_owner":    is_owner,
+        "is_member":   is_member,
+        "invites":     invites,
+        "deep_bon_layer":     DEEP_LAYER_BON_REQUIRED,
+        "deep_verify_layer":  DEEP_LAYER_VERIFY,
     }
 
 
@@ -2587,46 +2809,100 @@ def mining_my_world():
     uid = current_user_id()
     db = get_db()
     world_id = _ensure_my_world(db, uid)
-    return jsonify(_world_state(db, world_id))
+    return jsonify(_world_state(db, world_id, viewer_id=uid))
 
 
 @app.route("/api/mining/world/<int:world_id>")
 @login_required
 def mining_world_get(world_id):
+    uid = current_user_id()
     db = get_db()
-    state = _world_state(db, world_id)
-    if not state:
-        return jsonify({"error": "World not found"}), 404
-    # auto-join if requested via ?join=1
-    if request.args.get("join") == "1":
-        uid = current_user_id()
+    w = db.execute("SELECT * FROM mining_worlds WHERE id = ?", (world_id,)).fetchone()
+    if not w:
+        return jsonify({"error": "Block not found"}), 404
+
+    locked, max_members = _world_caps(w)
+    is_owner_self = (w["owner_id"] == uid)
+    already_member = _is_member(db, world_id, uid)
+
+    # Optional join request
+    if request.args.get("join") == "1" and not already_member and not is_owner_self:
+        # Locked blocks require a pending invite
+        if locked and not _has_invite(db, world_id, uid):
+            return jsonify({
+                "error": "This block is locked. Ask the owner for an invite.",
+                "locked": True,
+            }), 403
+        if _member_count(db, world_id) >= max_members:
+            return jsonify({
+                "error": f"This block is full ({max_members} miners max).",
+                "full": True,
+            }), 403
         db.execute(
             "INSERT OR IGNORE INTO mining_world_members (world_id, user_id) VALUES (?, ?)",
             (world_id, uid),
         )
+        # Consume the invite
+        db.execute(
+            "DELETE FROM mining_invites WHERE world_id = ? AND user_id = ?",
+            (world_id, uid),
+        )
         db.commit()
-        state = _world_state(db, world_id)
-    return jsonify(state)
+
+    # Non-members peeking at a locked block see only a stub
+    if locked and not _is_member(db, world_id, uid) and not is_owner_self:
+        owner = db.execute(
+            "SELECT username FROM users WHERE id = ?", (w["owner_id"],)
+        ).fetchone()
+        return jsonify({
+            "id": w["id"],
+            "name": w["name"],
+            "is_locked": True,
+            "owner": {"id": w["owner_id"], "username": owner["username"] if owner else "?"},
+            "members_count": _member_count(db, world_id),
+            "max_members":   max_members,
+            "needs_invite":  True,
+        }), 200
+
+    return jsonify(_world_state(db, world_id, viewer_id=uid))
 
 
 @app.route("/api/mining/worlds")
 @login_required
 def mining_worlds_list():
-    """All worlds the user can join (public list)."""
+    """List of all blocks; the lock state is shown so users know which they can join."""
+    uid = current_user_id()
     db = get_db()
     rows = db.execute(
-        """SELECT w.id, w.name, w.layer, w.width, w.height, u.username AS owner_username,
-                  (SELECT COUNT(*) FROM mining_world_members mm WHERE mm.world_id = w.id) AS members
+        """SELECT w.id, w.name, w.layer, w.width, w.height, w.owner_id,
+                  COALESCE(w.is_locked, 1)   AS is_locked,
+                  COALESCE(w.max_members, 5) AS max_members,
+                  u.username AS owner_username,
+                  (SELECT COUNT(*) FROM mining_world_members mm WHERE mm.world_id = w.id) AS members,
+                  (SELECT 1 FROM mining_world_members mm
+                    WHERE mm.world_id = w.id AND mm.user_id = ?)            AS is_member,
+                  (SELECT 1 FROM mining_invites ii
+                    WHERE ii.world_id = w.id AND ii.user_id = ?)            AS is_invited
            FROM mining_worlds w JOIN users u ON u.id = w.owner_id
-           ORDER BY members DESC, w.id DESC LIMIT 50"""
+           ORDER BY (is_member IS NOT NULL) DESC, members DESC, w.id DESC LIMIT 50""",
+        (uid, uid),
     ).fetchall()
     out = []
     for r in rows:
         info = _layer_info(r["layer"])
         out.append({
-            "id": r["id"], "name": r["name"], "layer": r["layer"],
-            "layer_name": info["name"], "color": info["color"],
-            "owner_username": r["owner_username"], "members": r["members"],
+            "id":             r["id"],
+            "name":           r["name"],
+            "layer":          r["layer"],
+            "layer_name":     info["name"],
+            "color":          info["color"],
+            "owner_username": r["owner_username"],
+            "is_owner":       (r["owner_id"] == uid),
+            "members":        r["members"],
+            "max_members":    r["max_members"],
+            "is_locked":      bool(r["is_locked"]),
+            "is_member":      bool(r["is_member"]),
+            "is_invited":     bool(r["is_invited"]),
         })
     return jsonify(out)
 
@@ -2646,15 +2922,49 @@ def mining_mine():
     db = get_db()
     w = db.execute("SELECT * FROM mining_worlds WHERE id = ?", (world_id,)).fetchone()
     if not w:
-        return jsonify({"error": "World not found"}), 404
+        return jsonify({"error": "Block not found"}), 404
     if not (0 <= x < w["width"] and 0 <= y < w["height"]):
         return jsonify({"error": "Out of bounds"}), 400
 
-    # Auto-join the world (no permissions for now)
-    db.execute(
-        "INSERT OR IGNORE INTO mining_world_members (world_id, user_id) VALUES (?, ?)",
-        (world_id, uid),
-    )
+    locked, max_members = _world_caps(w)
+    is_owner_self = (w["owner_id"] == uid)
+
+    # Membership is required — no more silent auto-join.
+    if not _is_member(db, world_id, uid) and not is_owner_self:
+        if locked and not _has_invite(db, world_id, uid):
+            return jsonify({"error": "You're not a member of this block.", "locked": True}), 403
+        if _member_count(db, world_id) >= max_members:
+            return jsonify({"error": f"This block is full ({max_members} miners max).", "full": True}), 403
+        db.execute(
+            "INSERT OR IGNORE INTO mining_world_members (world_id, user_id) VALUES (?, ?)",
+            (world_id, uid),
+        )
+        db.execute(
+            "DELETE FROM mining_invites WHERE world_id = ? AND user_id = ?",
+            (world_id, uid),
+        )
+
+    # Depth gate 1: past layer N you need at least 1 BON
+    if w["layer"] >= DEEP_LAYER_BON_REQUIRED:
+        urow = db.execute("SELECT COALESCE(bon, 0) AS bon FROM users WHERE id = ?", (uid,)).fetchone()
+        if int(urow["bon"]) < 1:
+            return jsonify({
+                "error": (f"You need at least 1 BON to mine past layer "
+                          f"{DEEP_LAYER_BON_REQUIRED}. Find or buy one first."),
+                "needs_bon":   True,
+                "min_layer":   DEEP_LAYER_BON_REQUIRED,
+            }), 403
+
+    # Depth gate 2: past layer N you must complete a human verification first
+    if w["layer"] >= DEEP_LAYER_VERIFY:
+        verified_until = float(session.get("deep_mine_verified_until") or 0)
+        if verified_until < _time.time():
+            return jsonify({
+                "error": (f"Identity check required to mine past layer "
+                          f"{DEEP_LAYER_VERIFY}."),
+                "requires_challenge": True,
+                "min_layer":          DEEP_LAYER_VERIFY,
+            }), 403
 
     # Try to mine the block (only if not already mined this generation)
     cur = db.execute(
@@ -2722,19 +3032,125 @@ def mining_leave():
     try:
         world_id = int(data.get("world_id"))
     except (TypeError, ValueError):
-        return jsonify({"error": "Invalid world"}), 400
+        return jsonify({"error": "Invalid block"}), 400
     db = get_db()
     w = db.execute("SELECT owner_id FROM mining_worlds WHERE id = ?", (world_id,)).fetchone()
     if not w:
-        return jsonify({"error": "World not found"}), 404
+        return jsonify({"error": "Block not found"}), 404
     if w["owner_id"] == uid:
-        return jsonify({"error": "Owners cannot leave their own world"}), 400
+        return jsonify({"error": "Owners cannot leave their own block"}), 400
     db.execute(
         "DELETE FROM mining_world_members WHERE world_id = ? AND user_id = ?",
         (world_id, uid),
     )
     db.commit()
-    return jsonify({"message": "Left the world"})
+    return jsonify({"message": "Left the block"})
+
+
+# ── Block management: lock toggle, invite, kick (owner only) ────────────────
+
+def _require_owner(db, world_id, uid):
+    """Returns (world_row, error_response_or_None)."""
+    w = db.execute(
+        "SELECT * FROM mining_worlds WHERE id = ?", (world_id,)
+    ).fetchone()
+    if not w:
+        return None, (jsonify({"error": "Block not found"}), 404)
+    if w["owner_id"] != uid:
+        return None, (jsonify({"error": "Only the block owner can do that"}), 403)
+    return w, None
+
+
+@app.route("/api/mining/world/<int:world_id>/lock", methods=["POST"])
+@login_required
+def mining_world_lock(world_id):
+    uid = current_user_id()
+    db = get_db()
+    w, err = _require_owner(db, world_id, uid)
+    if err:
+        return err
+    data = request.get_json() or {}
+    locked, _ = _world_caps(w)
+    if "locked" in data:
+        new_val = 1 if bool(data["locked"]) else 0
+    else:
+        new_val = 0 if locked else 1
+    db.execute("UPDATE mining_worlds SET is_locked = ? WHERE id = ?", (new_val, world_id))
+    db.commit()
+    return jsonify({"is_locked": bool(new_val)})
+
+
+@app.route("/api/mining/world/<int:world_id>/invite", methods=["POST"])
+@login_required
+def mining_world_invite(world_id):
+    uid = current_user_id()
+    db = get_db()
+    w, err = _require_owner(db, world_id, uid)
+    if err:
+        return err
+
+    data = request.get_json() or {}
+    target_username = (data.get("username") or "").strip()
+    if not target_username:
+        return jsonify({"error": "Type a username to invite"}), 400
+
+    target = db.execute(
+        "SELECT id, username FROM users WHERE username = ? COLLATE NOCASE",
+        (target_username,),
+    ).fetchone()
+    if not target:
+        return jsonify({"error": f"No user named '{target_username}'"}), 404
+    if target["id"] == uid:
+        return jsonify({"error": "You're already in your own block"}), 400
+
+    if _is_member(db, world_id, target["id"]):
+        return jsonify({"error": f"{target['username']} is already a member"}), 400
+
+    _, max_members = _world_caps(w)
+    if _member_count(db, world_id) >= max_members:
+        return jsonify({"error": f"Block is full ({max_members} miners max)"}), 400
+
+    db.execute(
+        """INSERT OR IGNORE INTO mining_invites (world_id, user_id, invited_by)
+           VALUES (?, ?, ?)""",
+        (world_id, target["id"], uid),
+    )
+    db.commit()
+    return jsonify({
+        "message": f"Invited {target['username']}",
+        "invite":  {"id": target["id"], "username": target["username"]},
+    })
+
+
+@app.route("/api/mining/world/<int:world_id>/uninvite", methods=["POST"])
+@login_required
+def mining_world_uninvite(world_id):
+    """Owner removes either a pending invite or kicks a current member."""
+    uid = current_user_id()
+    db = get_db()
+    w, err = _require_owner(db, world_id, uid)
+    if err:
+        return err
+
+    data = request.get_json() or {}
+    try:
+        target_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid user"}), 400
+
+    if target_id == uid:
+        return jsonify({"error": "Owners can't kick themselves"}), 400
+
+    db.execute(
+        "DELETE FROM mining_invites WHERE world_id = ? AND user_id = ?",
+        (world_id, target_id),
+    )
+    db.execute(
+        "DELETE FROM mining_world_members WHERE world_id = ? AND user_id = ?",
+        (world_id, target_id),
+    )
+    db.commit()
+    return jsonify({"message": "Removed"})
 
 
 # ── Wallet / BON / Satoshi ────────────────────────────────────────────────────

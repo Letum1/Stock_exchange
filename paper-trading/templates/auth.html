@@ -30,25 +30,13 @@
     .alert.err  { background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5; }
     .alert.warn { background: #78350f; border: 1px solid #92400e; color: #fde68a; }
 
-    .captcha-box {
-      background: #13151f; border: 1px solid #2d3148; border-radius: 8px;
-      padding: 14px 16px; margin-bottom: 16px;
+    .verified-pill {
+      display: none; align-items: center; gap: 8px; padding: 10px 14px;
+      background: #052e1a; border: 1px solid #14532d; border-radius: 8px;
+      color: #4ade80; font-size: .85rem; font-weight: 600; margin-bottom: 16px;
     }
-    .cap-row { display: flex; gap: 12px; align-items: center; }
-    .cap-question {
-      background: #0f1117; border: 1px solid #2d3148; border-radius: 6px;
-      padding: 10px 16px; font-size: 1.15rem; font-weight: 800; color: #fcd34d;
-      letter-spacing: .08em; min-width: 110px; text-align: center;
-    }
-    .cap-input { margin: 0 !important; flex: 1; }
-    .cap-refresh {
-      width: auto; padding: 9px 12px; margin: 0; background: #2d3148; color: #94a3b8;
-      font-size: 0.78rem; border-radius: 6px;
-    }
-    .cap-label {
-      font-size: 0.72rem; color: #64748b; text-transform: uppercase;
-      letter-spacing: .07em; margin-bottom: 8px; font-weight: 700;
-    }
+    .verified-pill.show { display: flex; }
+    #challenge-host { margin-bottom: 16px; }
   </style>
 </head>
 <body>
@@ -98,49 +86,65 @@
     <label>Confirm Password</label>
     <input type="password" id="password2" placeholder="Repeat password" autocomplete="new-password" required/>
 
-    <div class="captcha-box">
-      <div class="cap-label">🤖 Prove you're human</div>
-      <div class="cap-row">
-        <div class="cap-question" id="cap-q">…</div>
-        <span style="color:#64748b;font-weight:700">=</span>
-        <input type="number" class="cap-input" id="captcha" placeholder="Answer" autocomplete="off" required/>
-        <button type="button" class="cap-refresh" onclick="loadCaptcha()" title="New question">↻</button>
-      </div>
-    </div>
+    <div id="challenge-host"></div>
+    <div class="verified-pill" id="verified-pill">✓ You're verified — go ahead and create your account</div>
 
-    <button type="submit">Create Account</button>
+    <button type="submit" id="submit-btn" disabled style="opacity:.5;cursor:not-allowed">
+      Complete the check above
+    </button>
   </form>
+  <script src="/static/challenge.js"></script>
   <script>
-    async function loadCaptcha() {
-      document.getElementById('cap-q').textContent = '…';
-      document.getElementById('captcha').value = '';
-      try {
-        const r = await fetch('/api/captcha');
-        const d = await r.json();
-        document.getElementById('cap-q').textContent = d.question;
-      } catch (e) {
-        document.getElementById('cap-q').textContent = '?';
-      }
+    let verified = false;
+
+    function startChallenge() {
+      verified = false;
+      document.getElementById('verified-pill').classList.remove('show');
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.style.opacity = '.5';
+      btn.style.cursor = 'not-allowed';
+      btn.textContent  = 'Complete the check above';
+
+      Challenge.mount(document.getElementById('challenge-host'), {
+        purpose: 'registration',
+        onSuccess: () => {
+          verified = true;
+          document.getElementById('challenge-host').innerHTML = '';
+          document.getElementById('verified-pill').classList.add('show');
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.cursor = 'pointer';
+          btn.textContent = 'Create Account';
+        },
+      });
     }
-    loadCaptcha();
+    startChallenge();
 
     document.getElementById('form').addEventListener('submit', async e => {
       e.preventDefault();
       const pw  = document.getElementById('password').value;
       const pw2 = document.getElementById('password2').value;
       const err = document.getElementById('err');
+      err.style.display = 'none';
+
       if (pw !== pw2) { err.textContent = 'Passwords do not match'; err.style.display = 'block'; return; }
+      if (!verified)  { err.textContent = 'Please complete the human check first'; err.style.display = 'block'; return; }
+
       const r = await fetch('/api/register', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
           username: document.getElementById('username').value.trim(),
           password: pw,
-          captcha:  document.getElementById('captcha').value,
         }),
       });
       const d = await r.json();
       if (r.ok) { window.location.href = d.is_admin ? '/admin' : '/'; }
-      else      { err.textContent = d.error; err.style.display = 'block'; loadCaptcha(); }
+      else {
+        err.textContent = d.error; err.style.display = 'block';
+        // Server consumed the verification flag — make the user pass again
+        startChallenge();
+      }
     });
   </script>
   {% endif %}

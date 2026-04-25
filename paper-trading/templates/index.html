@@ -151,7 +151,32 @@
                font-size:.78rem; color:#94a3b8; padding:3px 0; }
     .fee-row.fee-total { border-top:1px solid #2d3148; margin-top:4px; padding-top:8px;
                          font-size:.95rem; color:#f1f5f9; font-weight:700; }
-    .fee-row span:last-child { font-variant-numeric:tabular-nums; }
+    .fee-row > span:last-child { font-variant-numeric:tabular-nums; }
+    .fee-row .lbl { display:inline-flex; align-items:center; gap:6px; }
+    .fee-info {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:14px; height:14px; border-radius:50%;
+      background:#2d3148; color:#94a3b8; font-size:.62rem; font-weight:700;
+      cursor:help; position:relative; user-select:none;
+    }
+    .fee-info:hover { background:#7c85ff; color:#fff; }
+    .fee-info::after {
+      content: attr(data-tip);
+      position:absolute; bottom:calc(100% + 8px); left:50%;
+      transform:translateX(-50%) translateY(4px);
+      background:#0b0d14; color:#e2e8f0; font-size:.72rem; font-weight:500;
+      line-height:1.4; text-align:left; white-space:normal;
+      padding:8px 10px; border-radius:6px; border:1px solid #2d3148;
+      width:230px; pointer-events:none; opacity:0; transition:opacity .15s, transform .15s;
+      box-shadow:0 8px 24px rgba(0,0,0,.55); z-index:10;
+    }
+    .fee-info::before {
+      content: ''; position:absolute; bottom:calc(100% + 2px); left:50%;
+      transform:translateX(-50%); border:5px solid transparent; border-top-color:#0b0d14;
+      opacity:0; transition:opacity .15s; z-index:10;
+    }
+    .fee-info:hover::after, .fee-info:focus::after { opacity:1; transform:translateX(-50%) translateY(0); }
+    .fee-info:hover::before, .fee-info:focus::before { opacity:1; }
 
     .cm-expired {
       background: #450a0a; color: #f87171; border-radius: 7px;
@@ -299,9 +324,30 @@
       <div class="cm-field"><div class="cm-lbl">Subtotal</div><div class="cm-val" id="cm-subtotal">—</div></div>
     </div>
     <div class="fee-breakdown" id="fee-breakdown">
-      <div class="fee-row"><span>Trade fee (0.25%)</span><span id="fee-gotrade">—</span></div>
-      <div class="fee-row"><span>Regulatory fee</span><span id="fee-reg">—</span></div>
-      <div class="fee-row"><span>Platform fee (0.10%)</span><span id="fee-plat">—</span></div>
+      <div class="fee-row">
+        <span class="lbl">Trade fee (0.25%)
+          <span class="fee-info" tabindex="0"
+                data-tip="Charged by the stock exchange that actually fills your order. It's a flat 0.25% of the trade value and is passed straight through — the platform doesn't keep any of it."
+          >ⓘ</span>
+        </span>
+        <span id="fee-gotrade">—</span>
+      </div>
+      <div class="fee-row">
+        <span class="lbl">Regulatory fee
+          <span class="fee-info" tabindex="0"
+                data-tip="Mandatory regulatory levy on every trade (0.008% of value, with a minimum of $0.05 on buys and $0.07 on sells). Goes to the regulator, not the platform."
+          >ⓘ</span>
+        </span>
+        <span id="fee-reg">—</span>
+      </div>
+      <div class="fee-row">
+        <span class="lbl">Platform fee (0.10%)
+          <span class="fee-info" tabindex="0"
+                data-tip="Our markup for routing your order, securing your account, and keeping the lights on. A small slice of this funds platform improvements."
+          >ⓘ</span>
+        </span>
+        <span id="fee-plat">—</span>
+      </div>
       <div class="fee-row fee-total"><span id="fee-total-label">You pay</span><span id="cm-total">—</span></div>
     </div>
     <div class="cm-expired" id="cm-expired" style="display:none">⏰ Price expired — please retry</div>
