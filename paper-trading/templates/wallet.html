@@ -124,14 +124,22 @@
     <h2>Balances</h2>
     <div class="balances">
       <div class="bal bon"><div class="lbl">BON</div><div class="val" id="bal-bon">—</div></div>
-      <div class="bal sat"><div class="lbl">Satoshi</div><div class="val" id="bal-sat">—</div></div>
+      <div class="bal sat">
+        <div class="lbl">Satoshi</div>
+        <div class="val" id="bal-sat">—</div>
+        <div class="lbl" id="bal-sat-usd" style="margin-top:4px;font-size:.75rem;color:#94a3b8;">≈ —</div>
+      </div>
       <div class="bal usd"><div class="lbl">USD Cash</div><div class="val" id="bal-usd">—</div></div>
+    </div>
+    <div class="sub" id="btc-price-line" style="margin-top:10px;">
+      Live BTC price: <strong id="btc-price">—</strong>
+      <span style="color:#64748b">(1 BTC = 100,000,000 satoshi)</span>
     </div>
   </div>
 
   <div class="card">
     <h2>Exchange</h2>
-    <div class="sub">100 BON = 1 satoshi · 100 satoshi = $1.00 · all conversions are instant.</div>
+    <div class="sub">100 BON = 1 satoshi · satoshi ↔ USD uses the live Bitcoin price · all conversions are instant.</div>
     <div class="convert-grid">
       <div class="conv-card">
         <h3>BON → Satoshi</h3>
@@ -151,19 +159,21 @@
       </div>
       <div class="conv-card">
         <h3>Satoshi → USD</h3>
-        <div class="rate">100 satoshi earns $1.00 (must be a multiple of 100)</div>
+        <div class="rate" id="rate-sat-usd">Live rate: 1 sat ≈ —</div>
         <div class="conv-row">
-          <input type="number" id="c-sat-usd" min="100" step="100" placeholder="Satoshi to convert"/>
+          <input type="number" id="c-sat-usd" min="1" step="1" placeholder="Satoshi to convert" oninput="updatePreview()"/>
           <button onclick="convert('satoshi_to_usd','c-sat-usd')">Convert</button>
         </div>
+        <div class="rate" id="prev-sat-usd" style="margin-top:6px;color:#7dd3fc;"></div>
       </div>
       <div class="conv-card">
         <h3>USD → Satoshi</h3>
-        <div class="rate">$1.00 earns 100 satoshi</div>
+        <div class="rate" id="rate-usd-sat">Live rate: $1.00 ≈ —</div>
         <div class="conv-row">
-          <input type="number" id="c-usd-sat" min="0.01" step="0.01" placeholder="USD to convert"/>
+          <input type="number" id="c-usd-sat" min="0.01" step="0.01" placeholder="USD to convert" oninput="updatePreview()"/>
           <button onclick="convert('usd_to_satoshi','c-usd-sat')">Convert</button>
         </div>
+        <div class="rate" id="prev-usd-sat" style="margin-top:6px;color:#7dd3fc;"></div>
       </div>
     </div>
   </div>
@@ -290,13 +300,61 @@ document.querySelectorAll('.tab').forEach(t=>{
   };
 });
 
+let LIVE_BTC = null;        // last-seen BTC price (USD)
+let USD_PER_SAT = null;     // last-seen 1 sat → USD
+
 async function loadWallet(){
   try {
     const w = await api('/api/wallet');
     document.getElementById('bal-bon').textContent = fmt(w.bon);
     document.getElementById('bal-sat').textContent = fmt(w.satoshi);
     document.getElementById('bal-usd').textContent = fmtUSD(w.cash);
+
+    LIVE_BTC    = w.rates.btc_price_usd;
+    USD_PER_SAT = w.rates.usd_per_satoshi;
+
+    if (LIVE_BTC) {
+      document.getElementById('btc-price').textContent = fmtUSD(LIVE_BTC);
+    } else {
+      document.getElementById('btc-price').textContent = 'unavailable';
+    }
+    if (w.satoshi_value_usd != null) {
+      document.getElementById('bal-sat-usd').textContent = '≈ ' + fmtUSD(w.satoshi_value_usd);
+    } else {
+      document.getElementById('bal-sat-usd').textContent = '≈ —';
+    }
+    if (USD_PER_SAT) {
+      // sat → USD rate (use enough decimals so the cent figure is visible)
+      const satUsd = USD_PER_SAT.toFixed(8).replace(/0+$/,'').replace(/\.$/,'');
+      document.getElementById('rate-sat-usd').textContent =
+        'Live rate: 1 sat ≈ $' + satUsd;
+      document.getElementById('rate-usd-sat').textContent =
+        'Live rate: $1.00 ≈ ' + fmt(Math.floor(1 / USD_PER_SAT)) + ' sat';
+    }
+    updatePreview();
   } catch(e){ /* ignore */ }
+}
+
+function updatePreview(){
+  const satEl  = document.getElementById('c-sat-usd');
+  const usdEl  = document.getElementById('c-usd-sat');
+  const satOut = document.getElementById('prev-sat-usd');
+  const usdOut = document.getElementById('prev-usd-sat');
+  if (USD_PER_SAT && satEl && satEl.value) {
+    const sats = parseFloat(satEl.value);
+    if (sats > 0) {
+      const usd = Math.floor(sats * USD_PER_SAT * 100) / 100;
+      satOut.textContent = '→ ' + fmtUSD(usd);
+    } else satOut.textContent = '';
+  } else if (satOut) satOut.textContent = '';
+
+  if (USD_PER_SAT && usdEl && usdEl.value) {
+    const usd = parseFloat(usdEl.value);
+    if (usd > 0) {
+      const sats = Math.floor(usd / USD_PER_SAT);
+      usdOut.textContent = '→ ' + fmt(sats) + ' sat';
+    } else usdOut.textContent = '';
+  } else if (usdOut) usdOut.textContent = '';
 }
 
 async function convert(direction, inputId){

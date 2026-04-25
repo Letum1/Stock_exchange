@@ -53,7 +53,10 @@ A standalone Python Flask app at `paper-trading/`.
   regenerates with a deeper colour; everyone in a world mines the same grid in real time;
   1/100 chance per mined block to drop a BON token)
 - `/wallet` — BON / satoshi / USD wallet:
-  - Instant exchange: 100 BON ↔ 1 satoshi; 100 satoshi ↔ $1.00
+  - 100 BON ↔ 1 satoshi (game-internal, fixed)
+  - satoshi ↔ USD uses the **live BTC price** (1 BTC = 100,000,000 satoshi),
+    fetched from yfinance ticker `BTC-USD` and cached for 60 s
+  - Live BTC price + satoshi USD value shown on the page
   - BON marketplace (sell BON for USD, buy from other players)
   - Cash-in / cash-out request forms (credentials + optional note)
 - `/cash-requests` — private staff panel (admin or manager only) showing pending

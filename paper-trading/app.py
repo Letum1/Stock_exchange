@@ -291,8 +291,34 @@ def _inject_role_flags():
 
 
 # Conversion rates (changeable in one place)
-BON_PER_SATOSHI = 100         # 100 BON = 1 satoshi
-SATOSHI_PER_USD = 100         # 100 satoshi = $1.00 (1 satoshi = $0.01)
+BON_PER_SATOSHI = 100         # 100 BON = 1 satoshi (game-internal)
+SATOSHI_PER_BTC = 100_000_000 # 1 BTC = 100,000,000 satoshi (real Bitcoin)
+
+# Live BTC/USD price cache — refreshed via yfinance every BTC_PRICE_TTL seconds.
+BTC_PRICE_TTL = 60
+_BTC_PRICE_CACHE = {"price": None, "ts": 0.0}
+
+
+def get_btc_price_usd():
+    """Return the current BTC price in USD, cached for BTC_PRICE_TTL seconds.
+    Falls back to the last known price if a fresh fetch fails. Returns None if
+    no price has ever been successfully fetched."""
+    import time as _time
+    now = _time.time()
+    if _BTC_PRICE_CACHE["price"] and (now - _BTC_PRICE_CACHE["ts"]) < BTC_PRICE_TTL:
+        return _BTC_PRICE_CACHE["price"]
+    try:
+        t = yf.Ticker("BTC-USD")
+        price = float(t.fast_info.last_price)
+        if price > 0:
+            _BTC_PRICE_CACHE["price"] = price
+            _BTC_PRICE_CACHE["ts"] = now
+            return price
+    except Exception as e:
+        logging.warning("BTC price fetch failed: %s", e)
+    return _BTC_PRICE_CACHE["price"]
+
+
 BON_DROP_RATE   = 100         # 1 in 100 mined blocks drops a BON
 
 
@@ -2470,15 +2496,21 @@ def _wallet_state(db, uid):
            WHERE u.id = ?""",
         (uid,),
     ).fetchone()
+    btc_price = get_btc_price_usd()
+    usd_per_satoshi = (btc_price / SATOSHI_PER_BTC) if btc_price else None
+    sat_value_usd = float(row["satoshi"]) * usd_per_satoshi if usd_per_satoshi else None
     return {
         "user_id": uid,
         "username": row["username"],
         "bon": int(row["bon"]),
         "satoshi": int(row["satoshi"]),
         "cash": float(row["cash"]),
+        "satoshi_value_usd": sat_value_usd,
         "rates": {
             "bon_per_satoshi": BON_PER_SATOSHI,
-            "satoshi_per_usd": SATOSHI_PER_USD,
+            "satoshi_per_btc": SATOSHI_PER_BTC,
+            "btc_price_usd": btc_price,
+            "usd_per_satoshi": usd_per_satoshi,
         },
     }
 
@@ -2544,31 +2576,40 @@ def wallet_convert():
 
     elif direction == "satoshi_to_usd":
         sat_in = int(amount)
-        if sat_in <= 0 or sat_in % SATOSHI_PER_USD != 0:
-            return jsonify({"error": f"Must be a positive multiple of {SATOSHI_PER_USD} satoshi"}), 400
+        if sat_in <= 0:
+            return jsonify({"error": "Must be a positive number of satoshi"}), 400
         if sat_in > sat:
             return jsonify({"error": "Not enough satoshi"}), 400
-        gained_usd = sat_in / SATOSHI_PER_USD
+        btc_price = get_btc_price_usd()
+        if not btc_price:
+            return jsonify({"error": "Live BTC price unavailable, try again shortly"}), 503
+        # USD value at current BTC price, rounded down to the nearest cent
+        gained_usd = int(sat_in * btc_price * 100 / SATOSHI_PER_BTC) / 100.0
+        if gained_usd <= 0:
+            min_sat = int(SATOSHI_PER_BTC / (btc_price * 100)) + 1
+            return jsonify({"error": f"Too small to be worth $0.01 — need at least {min_sat} sat"}), 400
         db.execute("UPDATE users SET satoshi = satoshi - ? WHERE id = ?", (sat_in, uid))
-        # Make sure portfolio exists
         if not cash:
             db.execute("INSERT INTO portfolios (user_id, cash) VALUES (?, 0)", (uid,))
         db.execute("UPDATE portfolios SET cash = cash + ? WHERE user_id = ?", (gained_usd, uid))
-        msg = f"Converted {sat_in} satoshi → ${gained_usd:.2f}"
+        msg = f"Converted {sat_in:,} satoshi → ${gained_usd:.2f} (BTC ${btc_price:,.2f})"
 
     elif direction == "usd_to_satoshi":
         usd_in = round(float(amount), 2)
         if usd_in <= 0:
             return jsonify({"error": "Amount must be positive"}), 400
-        # only whole-cent amounts produce whole satoshi
-        sats_gained = int(round(usd_in * SATOSHI_PER_USD))
+        btc_price = get_btc_price_usd()
+        if not btc_price:
+            return jsonify({"error": "Live BTC price unavailable, try again shortly"}), 503
+        # satoshi at current BTC price, rounded down to whole satoshi
+        sats_gained = int(usd_in * SATOSHI_PER_BTC / btc_price)
         if sats_gained <= 0:
-            return jsonify({"error": f"Minimum is ${1/SATOSHI_PER_USD:.2f}"}), 400
+            return jsonify({"error": "Amount too small to buy 1 satoshi"}), 400
         if usd_in > usd + 1e-9:
             return jsonify({"error": "Not enough cash"}), 400
         db.execute("UPDATE portfolios SET cash = cash - ? WHERE user_id = ?", (usd_in, uid))
         db.execute("UPDATE users SET satoshi = satoshi + ? WHERE id = ?", (sats_gained, uid))
-        msg = f"Converted ${usd_in:.2f} → {sats_gained} satoshi"
+        msg = f"Converted ${usd_in:.2f} → {sats_gained:,} satoshi (BTC ${btc_price:,.2f})"
 
     else:
         return jsonify({"error": "Unknown direction"}), 400
