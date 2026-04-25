@@ -18,6 +18,51 @@ app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-change-me")
 DB_PATH = "portfolio.db"
 STARTING_CASH = 0.0          # admin must fund accounts
 
+# ── Fee model: platform is middleman between user and Gotrade ────────────────
+# User pays Gotrade fees AND a small platform markup on top of every trade.
+# A configurable share of the platform markup is set aside as a hidden "tax"
+# fund that only the owner can see.
+GOTRADE_COMMISSION_RATE  = 0.0025   # 0.25% — Gotrade trading commission
+REGULATORY_FEE_RATE      = 0.00008  # tiny per-notional regulatory rate
+REGULATORY_FEE_MIN_BUY   = 0.05     # $0.05 minimum on buys
+REGULATORY_FEE_MIN_SELL  = 0.07     # $0.07 minimum on sells
+PLATFORM_COMMISSION_RATE = 0.0010   # 0.10% — platform markup on top of Gotrade
+PLATFORM_TAX_SHARE       = 0.20     # 20% of platform markup → hidden tax fund
+
+
+def compute_fees(side, gross):
+    """Return a fee breakdown for a trade of gross notional `gross` ($).
+
+    side: 'buy' or 'sell'.
+    Returns: dict with subtotal, gotrade_fee, regulatory_fee, platform_fee,
+             tax (portion of platform_fee earmarked as hidden tax), total
+             (what user pays on buy / receives on sell), and a 'platform_net'
+             (platform_fee minus tax)."""
+    side = (side or "").lower()
+    gross = max(0.0, float(gross))
+    gotrade_fee = round(gross * GOTRADE_COMMISSION_RATE, 4)
+    reg_min = REGULATORY_FEE_MIN_SELL if side == "sell" else REGULATORY_FEE_MIN_BUY
+    regulatory_fee = round(max(reg_min, gross * REGULATORY_FEE_RATE), 4)
+    platform_fee = round(gross * PLATFORM_COMMISSION_RATE, 4)
+    tax = round(platform_fee * PLATFORM_TAX_SHARE, 4)
+    platform_net = round(platform_fee - tax, 4)
+    fees_total = round(gotrade_fee + regulatory_fee + platform_fee, 2)
+    if side == "sell":
+        total = round(gross - fees_total, 2)
+    else:
+        total = round(gross + fees_total, 2)
+    return {
+        "side":           side,
+        "subtotal":       round(gross, 2),
+        "gotrade_fee":    round(gotrade_fee, 2),
+        "regulatory_fee": round(regulatory_fee, 2),
+        "platform_fee":   round(platform_fee, 2),
+        "tax":            round(tax, 2),
+        "platform_net":   round(platform_net, 2),
+        "fees_total":     fees_total,
+        "total":          total,
+    }
+
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
@@ -231,12 +276,45 @@ def init_db():
             "ALTER TABLE users ADD COLUMN bon INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN satoshi INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN is_manager INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE mining_user_stats ADD COLUMN bon_found INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE trades ADD COLUMN subtotal REAL DEFAULT 0",
+            "ALTER TABLE trades ADD COLUMN gotrade_fee REAL DEFAULT 0",
+            "ALTER TABLE trades ADD COLUMN regulatory_fee REAL DEFAULT 0",
+            "ALTER TABLE trades ADD COLUMN platform_fee REAL DEFAULT 0",
+            "ALTER TABLE trades ADD COLUMN tax REAL DEFAULT 0",
         ):
             try:
                 db.execute(ddl)
             except sqlite3.OperationalError:
                 pass
+
+        # Platform/Gotrade ledger — every fee charged on every trade
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS platform_ledger (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind        TEXT    NOT NULL,
+                amount      REAL    NOT NULL,
+                user_id     INTEGER REFERENCES users(id),
+                ticker      TEXT,
+                side        TEXT,
+                trade_id    INTEGER REFERENCES trades(id),
+                timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_ledger_kind ON platform_ledger(kind)")
+
+        # Make sure exactly one owner exists. If none, promote the very first
+        # registered user (oldest id) and ensure they are also admin.
+        owner_row = db.execute("SELECT id FROM users WHERE is_owner = 1 LIMIT 1").fetchone()
+        if not owner_row:
+            first = db.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+            if first:
+                db.execute(
+                    "UPDATE users SET is_owner = 1, is_admin = 1 WHERE id = ?",
+                    (first[0],),
+                )
+
         db.commit()
 
 
@@ -281,12 +359,24 @@ def staff_required(f):
     return decorated
 
 
+def owner_required(f):
+    """Only the platform owner may call this endpoint."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user_id" not in session:
+            return jsonify({"error": "Not logged in"}), 401
+        if not session.get("is_owner"):
+            return jsonify({"error": "Owner only"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 @app.context_processor
 def _inject_role_flags():
-    """Make is_manager available in every template (is_admin already passed
-       explicitly by most pages, but expose both as a fallback)."""
+    """Make role flags available in every template."""
     return {
         "is_manager": session.get("is_manager", False),
+        "is_owner":   session.get("is_owner", False),
     }
 
 
@@ -375,6 +465,7 @@ def admin_page():
         "admin.html",
         username=session.get("username"),
         user_id=session.get("user_id"),
+        is_owner=session.get("is_owner", False),
     )
 
 
@@ -417,14 +508,15 @@ def register():
     if db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
         return jsonify({"error": "Username already taken"}), 400
 
-    # First user ever becomes admin
+    # First user ever becomes the platform owner (and admin)
     user_count = db.execute("SELECT COUNT(*) as n FROM users").fetchone()["n"]
-    is_admin = 1 if user_count == 0 else 0
+    is_owner = 1 if user_count == 0 else 0
+    is_admin = is_owner   # owner is always admin too
 
     pw_hash = generate_password_hash(password)
     cur = db.execute(
-        "INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)",
-        (username, pw_hash, is_admin),
+        "INSERT INTO users (username, password, is_admin, is_owner) VALUES (?, ?, ?, ?)",
+        (username, pw_hash, is_admin, is_owner),
     )
     user_id = cur.lastrowid
     db.execute("INSERT INTO portfolios (user_id, cash) VALUES (?, ?)", (user_id, STARTING_CASH))
@@ -433,9 +525,14 @@ def register():
     session["user_id"]  = user_id
     session["username"] = username
     session["is_admin"] = bool(is_admin)
+    session["is_owner"] = bool(is_owner)
     session["is_manager"] = False
     session["is_banned"] = False
-    return jsonify({"message": f"Welcome, {username}!", "is_admin": bool(is_admin)})
+    return jsonify({
+        "message":  f"Welcome, {username}!",
+        "is_admin": bool(is_admin),
+        "is_owner": bool(is_owner),
+    })
 
 
 @app.route("/api/login", methods=["POST"])
@@ -446,7 +543,11 @@ def login():
 
     db = get_db()
     user = db.execute(
-        "SELECT id, password, is_admin, COALESCE(is_manager,0) AS is_manager, is_banned FROM users WHERE username = ?",
+        """SELECT id, password, is_admin,
+                  COALESCE(is_manager,0) AS is_manager,
+                  COALESCE(is_owner,0)   AS is_owner,
+                  is_banned
+           FROM users WHERE username = ?""",
         (username,),
     ).fetchone()
     if not user or not check_password_hash(user["password"], password):
@@ -458,8 +559,13 @@ def login():
     session["username"] = username
     session["is_admin"] = bool(user["is_admin"])
     session["is_manager"] = bool(user["is_manager"])
+    session["is_owner"] = bool(user["is_owner"])
     session["is_banned"] = False
-    return jsonify({"message": f"Welcome back, {username}!", "is_admin": bool(user["is_admin"])})
+    return jsonify({
+        "message":  f"Welcome back, {username}!",
+        "is_admin": bool(user["is_admin"]),
+        "is_owner": bool(user["is_owner"]),
+    })
 
 
 @app.route("/api/logout", methods=["POST"])
@@ -677,6 +783,54 @@ def quote(ticker):
     return jsonify({"ticker": ticker.upper(), "price": price})
 
 
+def _record_fee_ledger(db, trade_id, uid, ticker, side, fees):
+    """Append every fee component for a trade into the platform_ledger.
+    Tax is split out of platform_fee so platform-net and tax are separate."""
+    rows = [
+        ("gotrade_commission", fees["gotrade_fee"]),
+        ("regulatory_fee",     fees["regulatory_fee"]),
+        ("platform_commission", fees["platform_net"]),
+        ("tax",                fees["tax"]),
+    ]
+    for kind, amount in rows:
+        if amount <= 0:
+            continue
+        db.execute(
+            """INSERT INTO platform_ledger (kind, amount, user_id, ticker, side, trade_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (kind, amount, uid, ticker, side, trade_id),
+        )
+
+
+@app.route("/api/fees/config")
+@login_required
+def fees_config():
+    """Public fee configuration so the client can preview costs.
+    The hidden tax share is intentionally NOT included here."""
+    return jsonify({
+        "gotrade_commission_rate":  GOTRADE_COMMISSION_RATE,
+        "regulatory_fee_rate":      REGULATORY_FEE_RATE,
+        "regulatory_fee_min_buy":   REGULATORY_FEE_MIN_BUY,
+        "regulatory_fee_min_sell":  REGULATORY_FEE_MIN_SELL,
+        "platform_commission_rate": PLATFORM_COMMISSION_RATE,
+    })
+
+
+@app.route("/api/fees/preview")
+@login_required
+def fees_preview():
+    side  = request.args.get("side", "buy")
+    try:
+        gross = float(request.args.get("gross", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid gross"}), 400
+    fees = compute_fees(side, gross)
+    # Strip the hidden tax/platform-net split before sending to the user
+    fees.pop("tax", None)
+    fees.pop("platform_net", None)
+    return jsonify(fees)
+
+
 @app.route("/api/buy", methods=["POST"])
 @login_required
 def buy():
@@ -695,12 +849,17 @@ def buy():
     if price is None:
         return jsonify({"error": "Ticker not found"}), 404
 
-    total = round(shares * price, 2)
+    gross = shares * price
+    fees  = compute_fees("buy", gross)
+    total = fees["total"]   # subtotal + all fees
+
     db    = get_db()
     cash  = db.execute("SELECT cash FROM portfolios WHERE user_id = ?", (uid,)).fetchone()["cash"]
 
     if total > cash:
-        return jsonify({"error": f"Insufficient funds. Need ${total:.2f}, have ${cash:.2f}"}), 400
+        return jsonify({
+            "error": f"Insufficient funds. Need ${total:.2f} (incl. ${fees['fees_total']:.2f} fees), have ${cash:.2f}"
+        }), 400
 
     new_cash = round(cash - total, 2)
     db.execute("UPDATE portfolios SET cash = ? WHERE user_id = ?", (new_cash, uid))
@@ -719,12 +878,25 @@ def buy():
             (uid, ticker, shares),
         )
 
-    db.execute(
-        "INSERT INTO trades (user_id, ticker, action, shares, price, total) VALUES (?, ?, 'BUY', ?, ?, ?)",
-        (uid, ticker, shares, price, total),
+    cur = db.execute(
+        """INSERT INTO trades
+                  (user_id, ticker, action, shares, price, total,
+                   subtotal, gotrade_fee, regulatory_fee, platform_fee, tax)
+           VALUES (?, ?, 'BUY', ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (uid, ticker, shares, price, total,
+         fees["subtotal"], fees["gotrade_fee"], fees["regulatory_fee"],
+         fees["platform_fee"], fees["tax"]),
     )
+    _record_fee_ledger(db, cur.lastrowid, uid, ticker, "buy", fees)
     db.commit()
-    return jsonify({"message": f"Bought {shares} shares of {ticker} at ${price:.2f}", "cash_remaining": new_cash})
+    return jsonify({
+        "message": f"Bought {shares} shares of {ticker} at ${price:.2f} "
+                   f"(total cost ${total:.2f} incl. ${fees['fees_total']:.2f} fees)",
+        "cash_remaining": new_cash,
+        "fees": {k: fees[k] for k in
+                 ("subtotal", "gotrade_fee", "regulatory_fee", "platform_fee",
+                  "fees_total", "total")},
+    })
 
 
 @app.route("/api/sell", methods=["POST"])
@@ -753,9 +925,11 @@ def sell():
     if price is None:
         return jsonify({"error": "Ticker not found"}), 404
 
-    total    = round(shares * price, 2)
+    gross    = shares * price
+    fees     = compute_fees("sell", gross)
+    proceeds = fees["total"]   # gross − all fees
     cash     = db.execute("SELECT cash FROM portfolios WHERE user_id = ?", (uid,)).fetchone()["cash"]
-    new_cash = round(cash + total, 2)
+    new_cash = round(cash + proceeds, 2)
 
     db.execute("UPDATE portfolios SET cash = ? WHERE user_id = ?", (new_cash, uid))
 
@@ -768,12 +942,25 @@ def sell():
             (new_shares, uid, ticker),
         )
 
-    db.execute(
-        "INSERT INTO trades (user_id, ticker, action, shares, price, total) VALUES (?, ?, 'SELL', ?, ?, ?)",
-        (uid, ticker, shares, price, total),
+    cur = db.execute(
+        """INSERT INTO trades
+                  (user_id, ticker, action, shares, price, total,
+                   subtotal, gotrade_fee, regulatory_fee, platform_fee, tax)
+           VALUES (?, ?, 'SELL', ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (uid, ticker, shares, price, proceeds,
+         fees["subtotal"], fees["gotrade_fee"], fees["regulatory_fee"],
+         fees["platform_fee"], fees["tax"]),
     )
+    _record_fee_ledger(db, cur.lastrowid, uid, ticker, "sell", fees)
     db.commit()
-    return jsonify({"message": f"Sold {shares} shares of {ticker} at ${price:.2f}", "cash_remaining": new_cash})
+    return jsonify({
+        "message": f"Sold {shares} shares of {ticker} at ${price:.2f} "
+                   f"(received ${proceeds:.2f} after ${fees['fees_total']:.2f} fees)",
+        "cash_remaining": new_cash,
+        "fees": {k: fees[k] for k in
+                 ("subtotal", "gotrade_fee", "regulatory_fee", "platform_fee",
+                  "fees_total", "total")},
+    })
 
 
 @app.route("/api/trades")
@@ -1579,6 +1766,7 @@ def admin_users():
     rows = db.execute(
         """SELECT u.id, u.username, u.is_admin,
                   COALESCE(u.is_manager, 0) AS is_manager,
+                  COALESCE(u.is_owner,   0) AS is_owner,
                   u.is_banned, u.created,
                   COALESCE(p.cash, 0) as cash,
                   COALESCE(u.bon, 0)     AS bon,
@@ -1598,6 +1786,7 @@ def admin_users():
             "username": r["username"],
             "is_admin": bool(r["is_admin"]),
             "is_manager": bool(r["is_manager"]),
+            "is_owner": bool(r["is_owner"]),
             "is_banned": bool(r["is_banned"]),
             "created":  r["created"],
             "cash":     round(r["cash"], 2),
@@ -1669,8 +1858,11 @@ def admin_clear_assets():
 
 
 @app.route("/api/admin/grant-admin", methods=["POST"])
-@admin_required
+@owner_required
 def admin_grant_admin():
+    """Owner-only: grant or revoke admin on another user.
+    The owner themselves cannot have their admin flag toggled — they are
+    permanently admin while they are owner."""
     data = request.get_json() or {}
     try:
         user_id = int(data.get("user_id"))
@@ -1679,22 +1871,84 @@ def admin_grant_admin():
     make_admin = 1 if data.get("admin") else 0
 
     db = get_db()
-    row = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+    row = db.execute(
+        "SELECT id, is_admin, COALESCE(is_owner,0) AS is_owner FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
     if not row:
         return jsonify({"error": "User not found"}), 404
-    if user_id == current_user_id() and not make_admin:
-        # Safety: don't let an admin demote themselves if they are the last admin
-        admin_count = db.execute(
-            "SELECT COUNT(*) AS n FROM users WHERE is_admin = 1"
-        ).fetchone()["n"]
-        if admin_count <= 1:
-            return jsonify({"error": "Cannot remove the last admin"}), 400
+    if row["is_owner"]:
+        return jsonify({"error": "Cannot change admin status of the owner"}), 400
 
     db.execute("UPDATE users SET is_admin = ? WHERE id = ?", (make_admin, user_id))
     db.commit()
-    if user_id == current_user_id():
-        session["is_admin"] = bool(make_admin)
     return jsonify({"message": ("Granted admin" if make_admin else "Revoked admin")})
+
+
+# ── Platform revenue (admin) and Tax fund (owner-only) ──────────────────────
+
+def _ledger_totals(db, where_extra="", params=()):
+    """Return totals grouped by ledger kind, plus an overall sum."""
+    rows = db.execute(
+        f"""SELECT kind, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS n
+            FROM platform_ledger {where_extra}
+            GROUP BY kind""",
+        params,
+    ).fetchall()
+    out = {r["kind"]: {"total": round(r["total"], 2), "count": r["n"]} for r in rows}
+    return out
+
+
+@app.route("/api/admin/revenue")
+@admin_required
+def admin_revenue():
+    """Aggregated fee revenue visible to admins (and the owner).
+    The hidden tax fund is NOT included here — that's owner-only."""
+    db = get_db()
+    totals = _ledger_totals(db)
+    visible_kinds = ("gotrade_commission", "regulatory_fee", "platform_commission")
+    breakdown = {k: totals.get(k, {"total": 0.0, "count": 0}) for k in visible_kinds}
+    return jsonify({
+        "gotrade_revenue":   breakdown["gotrade_commission"]["total"],
+        "regulatory_fees":   breakdown["regulatory_fee"]["total"],
+        "platform_revenue":  breakdown["platform_commission"]["total"],
+        "total_visible":     round(
+            breakdown["gotrade_commission"]["total"]
+            + breakdown["regulatory_fee"]["total"]
+            + breakdown["platform_commission"]["total"], 2),
+        "trade_count":       db.execute("SELECT COUNT(*) AS n FROM trades").fetchone()["n"],
+    })
+
+
+@app.route("/api/owner/tax")
+@owner_required
+def owner_tax():
+    """Hidden tax channel — owner only."""
+    db = get_db()
+    total = db.execute(
+        "SELECT COALESCE(SUM(amount),0) AS t, COUNT(*) AS n FROM platform_ledger WHERE kind = 'tax'"
+    ).fetchone()
+    recent = db.execute(
+        """SELECT pl.id, pl.amount, pl.user_id, pl.ticker, pl.side, pl.timestamp,
+                  u.username
+           FROM platform_ledger pl
+           LEFT JOIN users u ON u.id = pl.user_id
+           WHERE pl.kind = 'tax'
+           ORDER BY pl.id DESC LIMIT 50""",
+    ).fetchall()
+    return jsonify({
+        "tax_total":   round(total["t"], 2),
+        "tax_count":   total["n"],
+        "tax_share":   PLATFORM_TAX_SHARE,
+        "recent": [
+            {
+                "id": r["id"], "amount": round(r["amount"], 4),
+                "user_id": r["user_id"], "username": r["username"],
+                "ticker": r["ticker"], "side": r["side"],
+                "timestamp": r["timestamp"],
+            } for r in recent
+        ],
+    })
 
 
 @app.route("/api/admin/ban", methods=["POST"])

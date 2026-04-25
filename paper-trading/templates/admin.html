@@ -157,6 +157,47 @@
     <div class="stat"><div class="lbl">Sell Volume</div><div class="val red" id="st-sellvol">—</div></div>
   </div>
 
+  <!-- Revenue / fee channel -->
+  <div class="card">
+    <h2>💸 Fee Revenue (Middleman Channel)</h2>
+    <div class="stats-bar" id="revenue-bar">
+      <div class="stat"><div class="lbl">Gotrade Revenue (passed through)</div><div class="val amber" id="rv-gotrade">—</div></div>
+      <div class="stat"><div class="lbl">Regulatory Fees</div><div class="val" id="rv-reg">—</div></div>
+      <div class="stat"><div class="lbl">Platform Revenue (your share)</div><div class="val green" id="rv-platform">—</div></div>
+      <div class="stat"><div class="lbl">Total Fees Collected</div><div class="val" id="rv-total">—</div></div>
+      {% if is_owner %}
+      <div class="stat" style="border-color:#78350f;background:#1a120a">
+        <div class="lbl" style="color:#fcd34d">🔒 Tax Fund (owner only)</div>
+        <div class="val amber" id="rv-tax">—</div>
+      </div>
+      {% endif %}
+    </div>
+    <div style="font-size:.78rem;color:#64748b;margin-top:10px">
+      Every trade flows <strong style="color:#94a3b8">user → platform → Gotrade</strong>.
+      The platform takes a 0.10% markup on top of Gotrade's 0.25% commission.
+      A small share of the platform markup is set aside as a tax fund visible only to the owner.
+    </div>
+  </div>
+
+  {% if is_owner %}
+  <!-- Hidden tax channel (owner only) -->
+  <div class="card" style="border-color:#78350f">
+    <h2 style="color:#fcd34d">🔒 Tax Channel — Owner Only</h2>
+    <div style="font-size:.82rem;color:#94a3b8;margin-bottom:12px">
+      Recent tax accruals (20% of every platform fee goes here).
+      Hidden from admins and regular users.
+    </div>
+    <table>
+      <thead>
+        <tr><th>Time</th><th>User</th><th>Side</th><th>Ticker</th><th style="text-align:right">Tax</th></tr>
+      </thead>
+      <tbody id="tax-body">
+        <tr><td colspan="5" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   <!-- Users table -->
   <div class="card">
     <h2>All Users</h2>
@@ -357,20 +398,23 @@
 
     tb.innerHTML = rows.map(u => {
       const isAdmin = u.is_admin;
+      const isOwner = u.is_owner;
       // Always allow self & balance actions, even on admins (per request: admins can fund themselves)
       const balanceActions = `
         <button class="btn-add"    onclick="openBalance(${u.id},'${u.username}',${u.cash},'add')">+ Add</button>
         <button class="btn-remove" onclick="openBalance(${u.id},'${u.username}',${u.cash},'remove')">− Remove</button>
         <button class="btn-set"    onclick="openBalance(${u.id},'${u.username}',${u.cash},'set')">Set</button>
       `;
-      const grantBtn = isAdmin
-        ? `<button class="btn-revoke" onclick="confirmGrantAdmin(${u.id},'${u.username}',false)">Revoke Admin</button>`
-        : `<button class="btn-grant"  onclick="confirmGrantAdmin(${u.id},'${u.username}',true)">Make Admin</button>`;
-      const mgrBtn = u.is_manager
-        ? `<button class="btn-revoke" onclick="confirmGrantManager(${u.id},'${u.username}',false)">Revoke Manager</button>`
-        : `<button class="btn-grant"  onclick="confirmGrantManager(${u.id},'${u.username}',true)">Make Manager</button>`;
-      // Sensitive destructive actions still hidden for admins to avoid foot-guns
-      const destructive = !isAdmin ? `
+      // Only the owner sees the Make/Revoke Admin buttons, and never on the
+      // owner row itself (the owner is permanently admin while owner).
+      let grantBtn = '';
+      if (IS_OWNER && !isOwner) {
+        grantBtn = isAdmin
+          ? `<button class="btn-revoke" onclick="confirmGrantAdmin(${u.id},'${u.username}',false)">Revoke Admin</button>`
+          : `<button class="btn-grant"  onclick="confirmGrantAdmin(${u.id},'${u.username}',true)">Make Admin</button>`;
+      }
+      // Sensitive destructive actions still hidden for admins/owner to avoid foot-guns
+      const destructive = !isAdmin && !isOwner ? `
         <button class="btn-assets" onclick="confirmClearAssets(${u.id},'${u.username}')">Clear Assets</button>
         ${u.is_banned
           ? `<button class="btn-unban" onclick="confirmBan(${u.id},'${u.username}',false)">Unban</button>`
@@ -381,7 +425,8 @@
       <tr>
         <td style="color:#64748b">${u.id}</td>
         <td style="font-weight:700">${u.username}
-          ${isAdmin ? '<span class="badge admin" style="margin-left:6px">ADMIN</span>' : ''}
+          ${isOwner ? '<span class="badge" style="margin-left:6px;background:#3b0764;color:#e879f9">OWNER</span>' : ''}
+          ${isAdmin && !isOwner ? '<span class="badge admin" style="margin-left:6px">ADMIN</span>' : ''}
           ${u.is_manager ? '<span class="badge" style="margin-left:6px;background:#1e3a5c;color:#7dd3fc">MANAGER</span>' : ''}
         </td>
         <td>
@@ -621,9 +666,50 @@
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
+  // Server-injected role flag for the page
+  const IS_OWNER = {{ 'true' if is_owner else 'false' }};
+
+  async function loadRevenue() {
+    try {
+      const r = await fetch('/api/admin/revenue');
+      if (!r.ok) return;
+      const d = await r.json();
+      document.getElementById('rv-gotrade').textContent  = fmt(d.gotrade_revenue);
+      document.getElementById('rv-reg').textContent      = fmt(d.regulatory_fees);
+      document.getElementById('rv-platform').textContent = fmt(d.platform_revenue);
+      document.getElementById('rv-total').textContent    = fmt(d.total_visible);
+    } catch (_) {}
+  }
+
+  async function loadTax() {
+    if (!IS_OWNER) return;
+    try {
+      const r = await fetch('/api/owner/tax');
+      if (!r.ok) return;
+      const d = await r.json();
+      const taxEl = document.getElementById('rv-tax');
+      if (taxEl) taxEl.textContent = fmt(d.tax_total);
+      const tb = document.getElementById('tax-body');
+      if (!tb) return;
+      tb.innerHTML = d.recent.length === 0
+        ? '<tr><td colspan="5" class="empty">No tax accruals yet.</td></tr>'
+        : d.recent.map(r => `
+          <tr>
+            <td style="color:#64748b;font-size:.78rem">${(r.timestamp || '').slice(0,16)}</td>
+            <td>${escapeHtml(r.username || '—')}</td>
+            <td><span class="badge ${r.side === 'sell' ? 'sell' : 'buy'}">${(r.side || '').toUpperCase()}</span></td>
+            <td style="color:#7c85ff;font-weight:700">${escapeHtml(r.ticker || '—')}</td>
+            <td style="text-align:right;color:#fcd34d;font-weight:700">${fmt(r.amount)}</td>
+          </tr>`).join('');
+    } catch (_) {}
+  }
+
   loadUsers();
   loadTrades();
   loadItems();
+  loadRevenue();
+  loadTax();
+  setInterval(() => { loadRevenue(); loadTax(); }, 15000);
 </script>
 
 <style>

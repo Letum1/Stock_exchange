@@ -141,10 +141,17 @@
       font-size: 1.4rem; font-weight: 800; color: #f1f5f9;
     }
 
-    .cm-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+    .cm-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
     .cm-field { background: #13151f; border-radius: 8px; padding: 10px 8px; }
     .cm-lbl { font-size: 0.68rem; color: #64748b; margin-bottom: 4px; }
     .cm-val { font-size: 0.95rem; font-weight: 700; color: #f1f5f9; }
+    .fee-breakdown { background:#13151f; border:1px solid #2d3148; border-radius:8px;
+                     padding:10px 12px; margin-bottom:14px; }
+    .fee-row { display:flex; justify-content:space-between; align-items:center;
+               font-size:.78rem; color:#94a3b8; padding:3px 0; }
+    .fee-row.fee-total { border-top:1px solid #2d3148; margin-top:4px; padding-top:8px;
+                         font-size:.95rem; color:#f1f5f9; font-weight:700; }
+    .fee-row span:last-child { font-variant-numeric:tabular-nums; }
 
     .cm-expired {
       background: #450a0a; color: #f87171; border-radius: 7px;
@@ -289,7 +296,13 @@
     <div class="cm-fields">
       <div class="cm-field"><div class="cm-lbl">Live Price</div><div class="cm-val" id="cm-price">—</div></div>
       <div class="cm-field"><div class="cm-lbl">Shares</div><div class="cm-val" id="cm-shares">—</div></div>
-      <div class="cm-field"><div class="cm-lbl">Total</div><div class="cm-val" id="cm-total">—</div></div>
+      <div class="cm-field"><div class="cm-lbl">Subtotal</div><div class="cm-val" id="cm-subtotal">—</div></div>
+    </div>
+    <div class="fee-breakdown" id="fee-breakdown">
+      <div class="fee-row"><span>Gotrade commission (0.25%)</span><span id="fee-gotrade">—</span></div>
+      <div class="fee-row"><span>Regulatory fee</span><span id="fee-reg">—</span></div>
+      <div class="fee-row"><span>Platform fee (0.10%)</span><span id="fee-plat">—</span></div>
+      <div class="fee-row fee-total"><span id="fee-total-label">You pay</span><span id="cm-total">—</span></div>
     </div>
     <div class="cm-expired" id="cm-expired" style="display:none">⏰ Price expired — please retry</div>
     <div class="cm-footer">
@@ -311,12 +324,12 @@
 
   const CIRCUMFERENCE = 175.93;
 
-  function openConfirmModal(action, ticker, shares, livePrice) {
+  async function openConfirmModal(action, ticker, shares, livePrice) {
     pendingAction = action;
     pendingTicker = ticker;
     pendingShares = shares;
 
-    const total    = shares * livePrice;
+    const subtotal = shares * livePrice;
     const btn      = document.getElementById('cm-confirm-btn');
     const actionEl = document.getElementById('cm-action');
 
@@ -326,14 +339,37 @@
     btn.className        = `cm-confirm-btn ${action}`;
     btn.disabled         = false;
 
-    document.getElementById('cm-ticker').textContent = ticker;
-    document.getElementById('cm-price').textContent  = fmt(livePrice);
-    document.getElementById('cm-shares').textContent = shares.toFixed(6);
-    document.getElementById('cm-total').textContent  = fmt(total);
+    document.getElementById('cm-ticker').textContent   = ticker;
+    document.getElementById('cm-price').textContent    = fmt(livePrice);
+    document.getElementById('cm-shares').textContent   = shares.toFixed(6);
+    document.getElementById('cm-subtotal').textContent = fmt(subtotal);
+    document.getElementById('fee-total-label').textContent =
+      action === 'sell' ? 'You receive' : 'You pay';
+
+    // Fetch authoritative fee breakdown from server
+    document.getElementById('fee-gotrade').textContent = '…';
+    document.getElementById('fee-reg').textContent     = '…';
+    document.getElementById('fee-plat').textContent    = '…';
+    document.getElementById('cm-total').textContent    = '…';
+
     document.getElementById('cm-expired').style.display = 'none';
     document.getElementById('confirm-bg').classList.add('open');
-
     startCountdown(10);
+
+    try {
+      const r = await fetch(`/api/fees/preview?side=${action}&gross=${subtotal}`);
+      const f = await r.json();
+      if (r.ok) {
+        document.getElementById('fee-gotrade').textContent = '−' + fmt(f.gotrade_fee);
+        document.getElementById('fee-reg').textContent     = '−' + fmt(f.regulatory_fee);
+        document.getElementById('fee-plat').textContent    = '−' + fmt(f.platform_fee);
+        document.getElementById('cm-total').textContent    = fmt(f.total);
+      } else {
+        document.getElementById('cm-total').textContent = fmt(subtotal);
+      }
+    } catch (_) {
+      document.getElementById('cm-total').textContent = fmt(subtotal);
+    }
   }
 
   function startCountdown(seconds) {
