@@ -21,7 +21,12 @@
   --nav-w: 232px;
   --nav-w-collapsed: 76px;
   --bottom-h: 62px;
+  --ad-h: 0px;
 }
+
+/* Reserve space for the vertical scrollbar so page width doesn't jump
+   between pages that scroll and pages that don't. */
+html { scrollbar-gutter: stable; }
 
 /* ── Layout: fixed left sidebar; body padded to fit ────────── */
 body {

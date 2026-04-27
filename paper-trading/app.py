@@ -625,79 +625,200 @@ def owner_required(f):
 
 
 _BANNER_SNIPPET = """
-<div id="ad-banner-bar" style="position:fixed;left:0;right:0;bottom:0;z-index:99999;
-     display:none;justify-content:center;align-items:center;
-     background:rgba(15,17,23,.96);border-top:1px solid #2d3148;
-     padding:6px 8px;backdrop-filter:blur(6px);font-family:system-ui,sans-serif">
+<style>
+  /* Ad bar lives below the bottom nav. The nav rises by --ad-h when the bar
+     is visible so the ad never hides the navigation. */
+  #ad-banner-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    display: none; justify-content: center; align-items: center;
+    background: rgba(8,10,16,.98); border-top: 1px solid #2d3148;
+    padding: 6px 36px 6px 10px; backdrop-filter: blur(6px);
+    font-family: system-ui, sans-serif; height: 56px;
+  }
+  body.has-ad { --ad-h: 56px; }
+  /* Push the bottom nav up by the ad bar's height on mobile only.
+     On desktop the nav is a left sidebar so it doesn't conflict. */
+  @media (max-width: 880px) {
+    body.has-ad .app-nav { bottom: var(--ad-h) !important; }
+    body.has-ad { padding-bottom: calc(var(--bottom-h) + var(--ad-h)) !important; }
+  }
+  @media (min-width: 881px) {
+    body.has-ad { padding-bottom: var(--ad-h) !important; }
+  }
+</style>
+<div id="ad-banner-bar">
   <a id="ad-banner-link" href="#" target="_blank" rel="noopener nofollow"
      style="display:flex;align-items:center;gap:10px;text-decoration:none;
             color:#e2e8f0;max-width:100%;overflow:hidden">
-    <span id="ad-banner-tag" style="font-size:.62rem;font-weight:700;letter-spacing:.08em;
+    <span style="font-size:.62rem;font-weight:700;letter-spacing:.08em;
           padding:2px 6px;border-radius:4px;background:#7c85ff;color:#fff;text-transform:uppercase">
       Ad
     </span>
-    <span id="ad-banner-media" style="display:flex;align-items:center;height:48px"></span>
+    <span id="ad-banner-media" style="display:flex;align-items:center;height:44px"></span>
     <span id="ad-banner-caption" style="font-size:.82rem;color:#cbd5e1;white-space:nowrap;
-          overflow:hidden;text-overflow:ellipsis;max-width:40vw"></span>
+          overflow:hidden;text-overflow:ellipsis;max-width:55vw"></span>
   </a>
   <button id="ad-banner-close" aria-label="Hide ads"
-          style="position:absolute;right:6px;top:4px;background:transparent;border:none;
-                 color:#64748b;font-size:18px;cursor:pointer;line-height:1">×</button>
+          style="position:absolute;right:6px;top:50%;transform:translateY(-50%);
+                 background:rgba(45,49,72,.8);border:none;color:#cbd5e1;
+                 width:26px;height:26px;border-radius:50%;
+                 font-size:16px;cursor:pointer;line-height:1;
+                 display:flex;align-items:center;justify-content:center">×</button>
+</div>
+
+<!-- Welcome popup: shown once per session on the first page load -->
+<div id="ad-popup-bg" style="position:fixed;inset:0;background:rgba(0,0,0,.82);
+     z-index:9998;display:none;align-items:center;justify-content:center;
+     padding:18px;backdrop-filter:blur(6px);font-family:system-ui,sans-serif">
+  <div id="ad-popup" style="background:#13151f;border:1px solid #2d3148;border-radius:16px;
+       max-width:380px;width:100%;overflow:hidden;position:relative;
+       box-shadow:0 24px 70px rgba(0,0,0,.7);transform:scale(.95);opacity:0;
+       transition:transform .25s, opacity .25s">
+    <button id="ad-popup-close" aria-label="Close"
+            style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);
+                   color:#fff;border:none;width:34px;height:34px;border-radius:50%;
+                   font-size:18px;cursor:pointer;z-index:2;
+                   display:flex;align-items:center;justify-content:center;
+                   backdrop-filter:blur(4px)">×</button>
+    <a id="ad-popup-link" href="#" target="_blank" rel="noopener nofollow"
+       style="display:block;text-decoration:none;color:#e2e8f0">
+      <div id="ad-popup-media" style="width:100%;background:#0a0b10;display:flex;
+           align-items:center;justify-content:center;min-height:200px;max-height:340px;
+           overflow:hidden"></div>
+      <div style="padding:14px 18px 18px">
+        <span style="font-size:.6rem;font-weight:700;letter-spacing:.1em;
+              padding:3px 8px;border-radius:4px;background:#7c85ff;color:#fff;
+              text-transform:uppercase">Sponsored</span>
+        <div id="ad-popup-caption" style="margin-top:10px;font-size:.95rem;
+             color:#e7eaf3;font-weight:500;line-height:1.4;word-break:break-word"></div>
+      </div>
+    </a>
+  </div>
 </div>
 <script>
 (function(){
-  var bar = document.getElementById('ad-banner-bar');
-  if (!bar) return;
+  var bar     = document.getElementById('ad-banner-bar');
   var link    = document.getElementById('ad-banner-link');
   var media   = document.getElementById('ad-banner-media');
   var caption = document.getElementById('ad-banner-caption');
   var closeBtn= document.getElementById('ad-banner-close');
-  closeBtn.onclick = function(e){ e.preventDefault(); e.stopPropagation();
-                                  bar.style.display='none'; sessionStorage.setItem('hide_ad_banner','1'); };
-  if (sessionStorage.getItem('hide_ad_banner')==='1') return;
-
-  var ads = [], idx = 0, timer = null;
+  var popupBg = document.getElementById('ad-popup-bg');
+  var popup   = document.getElementById('ad-popup');
+  var pLink   = document.getElementById('ad-popup-link');
+  var pMedia  = document.getElementById('ad-popup-media');
+  var pCap    = document.getElementById('ad-popup-caption');
+  var pClose  = document.getElementById('ad-popup-close');
 
   function escapeAttr(s){ return String(s||'').replace(/"/g,'&quot;'); }
-  function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, function(c){
-    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
 
-  function renderMedia(ad){
+  function renderMedia(ad, opts){
+    opts = opts || {};
+    var h = opts.height || 44;
+    var style = opts.style || ('height:'+h+'px;border-radius:4px;background:#13151f');
     if (ad.kind === 'video') {
       return '<video src="'+escapeAttr(ad.media_url)+'" autoplay muted loop playsinline ' +
-             'style="height:46px;border-radius:4px;background:#13151f"></video>';
+             'style="'+style+'"></video>';
     }
-    return '<img src="'+escapeAttr(ad.media_url)+'" alt="" ' +
-           'style="height:46px;width:auto;border-radius:4px;background:#13151f;object-fit:contain"/>';
+    return '<img src="'+escapeAttr(ad.media_url)+'" alt="" style="'+style+'"/>';
   }
 
-  function show(i){
+  function trackClick(adId){
+    if (!adId) return;
+    fetch('/api/ads/'+adId+'/click', {method:'POST'}).catch(function(){});
+  }
+
+  // ── Bottom banner (cycles through all active ads) ─────────────
+  var ads = [], idx = 0;
+  function showBar(i){
     if (!ads.length) return;
     var ad = ads[i % ads.length];
-    media.innerHTML  = renderMedia(ad);
+    media.innerHTML = renderMedia(ad, { height: 44 });
     caption.textContent = ad.caption || '';
     link.href = ad.link_url || '#';
     link.dataset.adId = ad.id;
     bar.style.display = 'flex';
-    document.body.style.paddingBottom = '72px';
+    document.body.classList.add('has-ad');
+  }
+  function hideBar(){
+    bar.style.display = 'none';
+    document.body.classList.remove('has-ad');
   }
 
-  link.addEventListener('click', function(e){
-    var id = link.dataset.adId;
-    if (!id) return;
-    fetch('/api/ads/'+id+'/click', {method:'POST'}).catch(function(){});
-    // navigation continues normally via the <a target="_blank" href=...>
+  if (closeBtn) {
+    closeBtn.onclick = function(e){
+      e.preventDefault(); e.stopPropagation();
+      hideBar();
+      sessionStorage.setItem('hide_ad_banner','1');
+    };
+  }
+  if (link) {
+    link.addEventListener('click', function(){ trackClick(link.dataset.adId); });
+  }
+
+  // ── Welcome popup (shown once per session on first page load) ──
+  function closePopup(){
+    if (!popupBg) return;
+    popup.style.opacity = '0';
+    popup.style.transform = 'scale(.95)';
+    setTimeout(function(){ popupBg.style.display = 'none'; }, 200);
+    sessionStorage.setItem('hide_ad_popup','1');
+    var v = pMedia.querySelector('video'); if (v) { try{ v.pause(); }catch(e){} }
+  }
+  function showPopup(ad){
+    if (!popupBg || !ad) return;
+    pMedia.innerHTML = renderMedia(ad, {
+      style: 'width:100%;height:auto;max-height:340px;object-fit:contain;background:#0a0b10;display:block'
+    });
+    pCap.textContent = ad.caption || '';
+    pLink.href = ad.link_url || '#';
+    pLink.dataset.adId = ad.id;
+    popupBg.style.display = 'flex';
+    requestAnimationFrame(function(){
+      popup.style.opacity = '1';
+      popup.style.transform = 'scale(1)';
+    });
+  }
+
+  if (pClose) {
+    pClose.onclick = function(e){ e.preventDefault(); e.stopPropagation(); closePopup(); };
+  }
+  if (popupBg) {
+    popupBg.addEventListener('click', function(e){
+      if (e.target === popupBg) closePopup();
+    });
+  }
+  if (pLink) {
+    pLink.addEventListener('click', function(){
+      trackClick(pLink.dataset.adId);
+      closePopup();
+    });
+  }
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && popupBg && popupBg.style.display === 'flex') closePopup();
   });
 
-  function cycle(){ idx = (idx + 1) % Math.max(ads.length,1); show(idx); }
-
+  // ── Fetch active ads, then wire up bar + popup ─────────────────
   fetch('/api/ads/active', {credentials:'same-origin'})
     .then(function(r){ return r.ok ? r.json() : []; })
     .then(function(list){
       ads = (list || []).filter(function(a){ return a && a.media_url; });
       if (!ads.length) return;
-      show(0);
-      if (ads.length > 1) timer = setInterval(cycle, 8000);
+
+      // Bottom banner: skip if user dismissed it this session.
+      if (sessionStorage.getItem('hide_ad_banner') !== '1') {
+        showBar(0);
+        if (ads.length > 1) {
+          setInterval(function(){ idx = (idx + 1) % ads.length; showBar(idx); }, 8000);
+        }
+      }
+
+      // Popup: only on first page of the session.
+      if (sessionStorage.getItem('hide_ad_popup') !== '1') {
+        // Pick a random ad so repeat visits aren't always the same one.
+        var pick = ads[Math.floor(Math.random() * ads.length)];
+        // Small delay so the page paints first.
+        setTimeout(function(){ showPopup(pick); }, 600);
+      }
     })
     .catch(function(){});
 })();
