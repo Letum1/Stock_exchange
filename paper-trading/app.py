@@ -697,6 +697,9 @@ _BANNER_SNIPPET = """
 </div>
 <script>
 (function(){
+  // Reels is a full-screen video experience — no ads on it.
+  if (location.pathname.indexOf('/reels') === 0) return;
+
   var bar     = document.getElementById('ad-banner-bar');
   var link    = document.getElementById('ad-banner-link');
   var media   = document.getElementById('ad-banner-media');
@@ -841,6 +844,11 @@ def _inject_ad_banner(resp):
         if "</body>" not in body or "ad-banner-bar" in body:
             return resp
         body = body.replace("</body>", _BANNER_SNIPPET + "\n</body>", 1)
+        # Also inject the first-visit guided tour (auto-starts once per
+        # browser, can be re-launched via window.startPaperTour()).
+        if "pt-tour-bg" not in body:
+            tour_tag = '<script src="/static/tour.js" defer></script>\n</body>'
+            body = body.replace("</body>", tour_tag, 1)
         resp.set_data(body)
         # Recompute Content-Length so middleware doesn't truncate.
         resp.headers["Content-Length"] = str(len(resp.get_data()))

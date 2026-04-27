@@ -133,6 +133,17 @@ body {
     padding-left: 0;
     padding-bottom: var(--bottom-h);
   }
+  /* Unify horizontal padding across pages so widths don't jump when
+     navigating between Home, Market, Items, Wallet, etc. */
+  body > .container,
+  body > .wrap,
+  body > .feed-wrap,
+  body > .about-wrap,
+  body > main {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+    max-width: 100% !important;
+  }
   .app-nav {
     top: auto; bottom: 0; right: 0; left: 0; width: 100%;
     height: var(--bottom-h);

@@ -163,4 +163,21 @@
     setTimeout(tick, 1200);
     setInterval(tick, 20000);
   })();
+
+  // Mobile: scroll the active nav button into view so the user doesn't have
+  // to swipe horizontally to find where they are after every page change.
+  (function() {
+    if (!window.matchMedia('(max-width: 880px)').matches) return;
+    var nav = document.querySelector('.app-nav');
+    if (!nav) return;
+    var active = nav.querySelector('.nav-link.active');
+    if (!active) return;
+    requestAnimationFrame(function() {
+      var navRect = nav.getBoundingClientRect();
+      var aRect   = active.getBoundingClientRect();
+      var center  = aRect.left + aRect.width / 2 - navRect.left;
+      var target  = nav.scrollLeft + center - navRect.width / 2;
+      nav.scrollTo({ left: Math.max(0, target), behavior: 'auto' });
+    });
+  })();
 </script>

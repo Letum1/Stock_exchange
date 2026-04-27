@@ -354,7 +354,13 @@
     <h3>Ready to play?</h3>
     <p>Jump in — there's nothing to lose and plenty to learn.</p>
     {% if logged_in %}
-      <a href="/market" class="btn-primary">🚀 Find my first trade</a>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <a href="/market" class="btn-primary">🚀 Find my first trade</a>
+        <button type="button" class="btn-ghost"
+                onclick="if(window.startPaperTour){window.startPaperTour()}else{alert('Tour is loading, try again in a moment.')}">
+          🧭 Take the tour
+        </button>
+      </div>
     {% else %}
       <a href="/register" class="btn-primary">🚀 Create my free account</a>
     {% endif %}
