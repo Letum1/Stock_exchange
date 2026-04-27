@@ -155,11 +155,25 @@
 
   var state = { idx: 0, bg: null, spot: null, card: null, onResize: null };
 
+  function scrollNavToTarget(target, done) {
+    if (!target) { done(); return; }
+    var nav = document.querySelector('.app-nav');
+    if (!nav || !IS_MOBILE()) { done(); return; }
+    // Center the target horizontally in the bottom nav so the spotlight is
+    // always visible, then wait for the smooth-scroll to settle.
+    var navRect = nav.getBoundingClientRect();
+    var aRect   = target.getBoundingClientRect();
+    var center  = aRect.left + aRect.width / 2 - navRect.left;
+    var goal    = nav.scrollLeft + center - navRect.width / 2;
+    goal = Math.max(0, goal);
+    if (Math.abs(goal - nav.scrollLeft) < 2) { done(); return; }
+    nav.scrollTo({ left: goal, behavior: 'smooth' });
+    setTimeout(done, 320);
+  }
+
   function render() {
     var step = STEPS[state.idx];
     var target = findTarget(step.href);
-
-    placeSpotlight(state.spot, target);
     var stepNum = state.idx + 1;
     var total = STEPS.length;
     var dots = '';
@@ -179,13 +193,17 @@
           '<button class="pt-next">' + cta + '</button>' +
         '</div>' +
       '</div>';
-
     state.card.querySelector('.pt-close').onclick = end;
     state.card.querySelector('.pt-next').onclick = next;
     var skip = state.card.querySelector('.pt-skip');
     if (skip) skip.onclick = end;
 
-    placeCard(state.card, target);
+    // Bring the highlighted nav button on-screen first so the spotlight is
+    // never hidden behind the bottom nav's overflow scroll.
+    scrollNavToTarget(target, function () {
+      placeSpotlight(state.spot, target);
+      placeCard(state.card, target);
+    });
   }
 
   function next() {

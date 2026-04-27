@@ -28,6 +28,15 @@
    between pages that scroll and pages that don't. */
 html { scrollbar-gutter: stable; }
 
+/* Hard-stop horizontal page scrolling. Some inner content (wide tables,
+   long labels, fixed-width inputs) used to push the body wider than the
+   viewport, which made the URL bar slide and felt like the page width
+   was changing every time you swiped between pages. */
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
 /* ── Layout: fixed left sidebar; body padded to fit ────────── */
 body {
   padding-left: var(--nav-w);
@@ -143,6 +152,27 @@ body {
     padding-left: 14px !important;
     padding-right: 14px !important;
     max-width: 100% !important;
+  }
+  /* Belt-and-braces against inner overflow:
+     - cards and grids stay inside the viewport
+     - long words (URLs, usernames) break instead of pushing the page wider
+     - fixed-width inputs become flexible on mobile */
+  body > .container > *,
+  body > .wrap > *,
+  body > .feed-wrap > *,
+  body > .about-wrap > *,
+  body > main > * {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  body input[type="text"],
+  body input[type="number"],
+  body input[type="email"],
+  body input[type="password"],
+  body select,
+  body textarea {
+    max-width: 100%;
   }
   .app-nav {
     top: auto; bottom: 0; right: 0; left: 0; width: 100%;
