@@ -200,3 +200,25 @@ overwrite real user data.
   signup *only*; existing accounts are not back-filled.
 - Owner-only endpoint `/api/admin/passwords` and a "🔑 Vault" tab in
   `/admin/spy` reveal captured passwords.
+
+### Mobile + highlights polish (DONE)
+- `_can_view_file` now also returns True when the file is referenced by a
+  `highlight_items.file_id` or `highlights.cover_file_id`. Highlights are
+  public-by-design on a profile, so any logged-in user must be able to load
+  the cover image and the items (image / video) — previously only the owner
+  or someone with an explicit `file_access` grant could fetch the bytes,
+  which broke highlight playback for every other viewer.
+- `templates/admin.html` is now mobile-friendly (≤880px breakpoint):
+  duplicate header buttons hidden (Spy / Cash Requests / Logout kept via
+  `keep-mobile`), `.stats-bar` collapses to 2 columns, search/filter rows
+  stack vertically, every `<table>` is wrapped in `.tbl-wrap` for
+  horizontal scroll, action buttons compact down.
+- Highlight viewer in `templates/profile.html` upgraded:
+  - Full-screen on mobile (`#hl-modal` overrides), safe-area padding.
+  - Instagram-style segment progress bars at the top.
+  - Invisible `.hl-tap` zones on the left/right of the media for tap-to-nav.
+  - Touch swipe: left/right to navigate, swipe-down to dismiss.
+  - Custom video player: autoplay + playsinline, no native chrome,
+    auto-advance on `ended`, tap to play/pause, progress bar tracks the
+    real video duration. Images auto-advance after 5s.
+  - Owner action buttons (Add / Delete) live in the bottom-foot overlay.

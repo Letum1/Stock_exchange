@@ -118,22 +118,62 @@
     .sc .val.amber { color:#fbbf24; } .sc .val.green { color:#4ade80; } .sc .val.blue { color:#7dd3fc; }
 
     /* ── Modal (highlight viewer + post viewer) ── */
-    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:100;
+    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:100;
                 display:none; align-items:center; justify-content:center; padding:20px; }
     .modal-bg.show { display:flex; }
     .modal-card { background:#0a0a0a; border:1px solid #262626; border-radius:12px;
                   max-width:640px; width:100%; max-height:90vh; display:flex;
-                  flex-direction:column; overflow:hidden; }
+                  flex-direction:column; overflow:hidden; position:relative; }
     .modal-head { padding:14px 18px; border-bottom:1px solid #262626;
                   display:flex; align-items:center; justify-content:space-between; }
-    .modal-body { flex:1; overflow:auto; padding:0; min-height:0;
+    .modal-body { flex:1; overflow:hidden; padding:0; min-height:0;
                   display:flex; align-items:center; justify-content:center;
-                  background:#000; }
-    .modal-body img, .modal-body video { max-width:100%; max-height:70vh; display:block; }
+                  background:#000; position:relative; }
+    .modal-body img, .modal-body video { max-width:100%; max-height:70vh; display:block;
+                  width:auto; height:auto; }
     .modal-foot { padding:12px 18px; border-top:1px solid #262626; display:flex;
                   justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
     .modal-close { background:transparent; border:none; color:#fafafa;
-                   font-size:1.5rem; cursor:pointer; padding:0 8px; }
+                   font-size:1.5rem; cursor:pointer; padding:0 8px; z-index:5; }
+
+    /* ── Highlight viewer — Instagram-style overlays ── */
+    .hl-progress { position:absolute; top:8px; left:10px; right:10px;
+                   display:flex; gap:4px; z-index:4; pointer-events:none; }
+    .hl-progress .seg { flex:1; height:3px; background:rgba(255,255,255,.28);
+                        border-radius:2px; overflow:hidden; }
+    .hl-progress .seg.done { background:rgba(255,255,255,.85); }
+    .hl-progress .seg.active::after {
+      content:""; display:block; height:100%; width:var(--p, 0%);
+      background:#fafafa; transition:width .15s linear;
+    }
+    .hl-tap { position:absolute; top:0; bottom:0; width:35%; z-index:3;
+              background:transparent; border:0; cursor:pointer;
+              -webkit-tap-highlight-color:transparent; outline:none; }
+    .hl-tap.left  { left:0; }
+    .hl-tap.right { right:0; }
+
+    @media (max-width: 880px) {
+      /* Full-screen highlight viewer on phones, with safe-area aware padding. */
+      #hl-modal.modal-bg { padding:0; background:#000; }
+      #hl-modal .modal-card { max-width:100vw; max-height:100vh; height:100dvh;
+                              border-radius:0; border:none; }
+      #hl-modal .modal-head {
+        position:absolute; top:0; left:0; right:0; z-index:5;
+        background:linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0));
+        border:none; padding:24px 16px 12px;
+      }
+      #hl-modal .modal-body { padding:0; }
+      #hl-modal .modal-body img,
+      #hl-modal .modal-body video { max-height:100dvh; max-width:100vw;
+                                    width:100%; height:100%; object-fit:contain; }
+      #hl-modal .modal-foot {
+        position:absolute; bottom:0; left:0; right:0; z-index:5;
+        background:linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,0));
+        border:none;
+        padding:10px 14px calc(env(safe-area-inset-bottom,0px) + 14px);
+      }
+      .hl-tap { width:45%; }
+    }
 
     .not-found { background:#0a0a0a; border:1px solid #262626; border-radius:12px;
                  padding:60px 40px; text-align:center; }
@@ -263,15 +303,17 @@
   <div class="modal-card">
     <div class="modal-head">
       <div id="hl-modal-title" style="font-weight:700"></div>
-      <button class="modal-close" onclick="closeModal()">×</button>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close">×</button>
     </div>
-    <div class="modal-body" id="hl-modal-body"></div>
+    <div class="modal-body" id="hl-modal-body">
+      <div class="hl-progress" id="hl-progress"></div>
+      <button class="hl-tap left"  aria-label="Previous" onclick="hlPrev()"></button>
+      <button class="hl-tap right" aria-label="Next"     onclick="hlNext()"></button>
+      <div id="hl-media-slot" style="width:100%;height:100%;display:flex;
+           align-items:center;justify-content:center"></div>
+    </div>
     <div class="modal-foot">
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn-sm" onclick="hlPrev()">◀</button>
-        <span id="hl-counter" style="color:#737373;font-size:.82rem"></span>
-        <button class="btn-sm" onclick="hlNext()">▶</button>
-      </div>
+      <span id="hl-counter" style="color:#a3a3a3;font-size:.82rem"></span>
       <div style="display:flex;gap:8px;align-items:center" id="hl-owner-actions"></div>
     </div>
   </div>
@@ -463,31 +505,90 @@
     document.getElementById('hl-modal').classList.add('show');
   }
 
+  let _hlTimer = null;       // image auto-advance timer
+  let _hlRaf   = null;       // progress-fill animation id
+  const HL_IMG_MS = 5000;    // image hold duration
+
+  function _hlClearTimers(){
+    if (_hlTimer) { clearTimeout(_hlTimer); _hlTimer = null; }
+    if (_hlRaf)   { cancelAnimationFrame(_hlRaf); _hlRaf = null; }
+  }
+
+  function _hlBuildSegments(){
+    const bar = document.getElementById('hl-progress');
+    if (!bar || !_hlOpen) return;
+    const { items, idx } = _hlOpen;
+    bar.innerHTML = items.map((_, i) => {
+      const cls = i < idx ? 'seg done' : (i === idx ? 'seg active' : 'seg');
+      return `<div class="${cls}" data-i="${i}"></div>`;
+    }).join('');
+  }
+
+  function _hlAnimateProgress(durationMs){
+    const seg = document.querySelector('#hl-progress .seg.active');
+    if (!seg) return;
+    const start = performance.now();
+    const tick = (now) => {
+      const pct = Math.min(100, ((now - start) / durationMs) * 100);
+      seg.style.setProperty('--p', pct + '%');
+      if (pct < 100 && _hlOpen) _hlRaf = requestAnimationFrame(tick);
+    };
+    _hlRaf = requestAnimationFrame(tick);
+  }
+
   function renderHl(){
     if (!_hlOpen) return;
+    _hlClearTimers();
     const { items, idx, user_id } = _hlOpen;
+    const slot = document.getElementById('hl-media-slot');
     const it = items[idx];
-    const body = document.getElementById('hl-modal-body');
     if (!it) {
-      body.innerHTML = '<div style="padding:40px;color:#737373">Empty highlight.</div>';
+      slot.innerHTML = '<div style="padding:40px;color:#737373">Empty highlight.</div>';
     } else if (it.kind === 'video') {
-      body.innerHTML = `<video src="${it.url}" controls autoplay></video>`;
+      // Custom-controlled video: autoplay, no native chrome, advance on end.
+      slot.innerHTML = `<video id="hl-video" src="${it.url}" autoplay playsinline
+                              style="width:100%;height:100%;object-fit:contain;background:#000"></video>`;
+      const v = document.getElementById('hl-video');
+      v.addEventListener('loadedmetadata', () => {
+        _hlBuildSegments();
+        _hlAnimateProgress((v.duration || 8) * 1000);
+      });
+      v.addEventListener('ended',  hlNext);
+      v.addEventListener('click',  () => { v.paused ? v.play() : v.pause(); });
     } else {
-      body.innerHTML = `<img src="${it.url}" alt=""/>`;
+      slot.innerHTML = `<img src="${it.url}" alt=""
+                             style="max-width:100%;max-height:100%;object-fit:contain"/>`;
+      _hlBuildSegments();
+      _hlAnimateProgress(HL_IMG_MS);
+      _hlTimer = setTimeout(hlNext, HL_IMG_MS);
     }
-    document.getElementById('hl-counter').textContent = items.length ? `${idx+1} / ${items.length}` : '';
+    _hlBuildSegments();
+    document.getElementById('hl-counter').textContent =
+      items.length ? `${idx+1} / ${items.length}` : '';
     const foot = document.getElementById('hl-owner-actions');
     if (user_id === ME_ID) {
       foot.innerHTML = `
-        <button class="btn-sm" onclick="document.getElementById('hl-add-picker').click()">＋ Add media</button>
-        <button class="btn-sm" style="color:#f87171" onclick="deleteHighlight()">🗑 Delete highlight</button>`;
+        <button class="btn-sm" onclick="document.getElementById('hl-add-picker').click()">＋ Add</button>
+        <button class="btn-sm" style="color:#f87171" onclick="deleteHighlight()">🗑 Delete</button>`;
     } else {
       foot.innerHTML = '';
     }
   }
 
-  function hlPrev(){ if (!_hlOpen) return; _hlOpen.idx = (_hlOpen.idx - 1 + _hlOpen.items.length) % _hlOpen.items.length; renderHl(); }
-  function hlNext(){ if (!_hlOpen) return; _hlOpen.idx = (_hlOpen.idx + 1) % _hlOpen.items.length; renderHl(); }
+  function hlPrev(){
+    if (!_hlOpen) return;
+    if (_hlOpen.items.length === 0) return;
+    if (_hlOpen.idx === 0) { closeModal(); return; }
+    _hlOpen.idx = (_hlOpen.idx - 1 + _hlOpen.items.length) % _hlOpen.items.length;
+    renderHl();
+  }
+  function hlNext(){
+    if (!_hlOpen) return;
+    if (_hlOpen.items.length === 0) return;
+    if (_hlOpen.idx >= _hlOpen.items.length - 1) { closeModal(); return; }
+    _hlOpen.idx = _hlOpen.idx + 1;
+    renderHl();
+  }
 
   async function appendToHighlight(e){
     if (!_hlOpen) return;
@@ -510,11 +611,38 @@
   }
 
   function closeModal(){
+    _hlClearTimers();
     document.getElementById('hl-modal').classList.remove('show');
-    document.getElementById('hl-modal-body').innerHTML = '';
+    const slot = document.getElementById('hl-media-slot');
+    if (slot) slot.innerHTML = '';
+    const bar = document.getElementById('hl-progress');
+    if (bar) bar.innerHTML = '';
     _hlOpen = null;
   }
   function closeModalIfBg(e){ if (e.target.id === 'hl-modal') closeModal(); }
+
+  // ── Swipe gestures for the highlight viewer ─────────────────────
+  (function () {
+    const body = document.getElementById('hl-modal-body');
+    if (!body) return;
+    let startX = 0, startY = 0, tracking = false;
+    body.addEventListener('touchstart', (e) => {
+      if (!_hlOpen) return;
+      const t = e.changedTouches[0];
+      startX = t.clientX; startY = t.clientY; tracking = true;
+    }, { passive: true });
+    body.addEventListener('touchend', (e) => {
+      if (!tracking || !_hlOpen) return;
+      tracking = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - startX, dy = t.clientY - startY;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+        if (dx < 0) hlNext(); else hlPrev();
+      } else if (dy > 80 && Math.abs(dy) > Math.abs(dx)) {
+        closeModal();   // swipe down to dismiss
+      }
+    }, { passive: true });
+  })();
 
   // ── Tabs ──────────────────────────────────────────────────────────
   function switchTab(name){

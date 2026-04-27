@@ -124,6 +124,46 @@
     .badge.sell { background: #450a0a; color: #f87171; }
     .trade-total.buy  { color: #4ade80; font-weight: 700; }
     .trade-total.sell { color: #f87171; font-weight: 700; }
+
+    /* ── Wrap every table so it scrolls horizontally on small screens
+          instead of breaking the page layout. ── */
+    .tbl-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .tbl-wrap table { min-width: 560px; }
+
+    @media (max-width: 880px) {
+      header { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+      header h1 { font-size: 1rem; }
+      /* Bottom nav already has Home / Markets / Wallet / Mine / Items / Chat etc.
+         Hide the duplicate header buttons on mobile, keep Spy + Cash Requests +
+         Logout (privileged shortcuts not on the bottom nav). */
+      header .hdr-right .btn-sm:not(.keep-mobile) { display: none; }
+      header .hdr-right > a:has(button:not(.keep-mobile)) { display: none; }
+      header .hdr-right > span { font-size: .72rem; }
+
+      .container { padding: 14px 10px; gap: 14px; }
+      .card { padding: 14px 12px; }
+      .card h2 { margin-bottom: 10px; }
+
+      .stats-bar { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+      .stat { padding: 10px 12px; }
+      .stat .val { font-size: 1.05rem; }
+
+      /* Stack the search + filter rows vertically so inputs aren't squeezed. */
+      .search-bar, .filter-bar {
+        flex-direction: column; align-items: stretch; gap: 8px;
+      }
+      .search-bar input, .filter-bar input,
+      .search-bar select, .filter-bar select { width: 100%; min-width: 0; flex: 1; }
+      .filter-bar > .pill-group { justify-content: flex-start; flex-wrap: wrap; }
+
+      table { font-size: .8rem; }
+      th, td { padding: 7px 8px; white-space: nowrap; }
+      .actions { gap: 4px; }
+      .actions button { padding: 5px 8px; font-size: .72rem; }
+
+      .modal { padding: 18px 16px; max-width: 92vw; border-radius: 10px; }
+      .toast { left: 14px; right: 14px; bottom: calc(var(--bottom-h, 62px) + 14px); max-width: none; }
+    }
   </style>
 </head>
 <body>
@@ -138,13 +178,13 @@
     <a href="/"><button class="btn-sm btn-go">Trading App</button></a>
     <a href="/wallet"><button class="btn-sm">💰 Wallet</button></a>
     <a href="/mine"><button class="btn-sm">⛏️ Mine</button></a>
-    <a href="/cash-requests"><button class="btn-sm" style="background:#1e3a5c;color:#7dd3fc">🔒 Cash Requests</button></a>
-    {% if is_owner %}<a href="/admin/spy"><button class="btn-sm" style="background:#3b0764;color:#e879f9">👁 Spy</button></a>{% endif %}
+    <a href="/cash-requests"><button class="btn-sm keep-mobile" style="background:#1e3a5c;color:#7dd3fc">🔒 Cash Requests</button></a>
+    {% if is_owner %}<a href="/admin/spy"><button class="btn-sm keep-mobile" style="background:#3b0764;color:#e879f9">👁 Spy</button></a>{% endif %}
     <a href="/items"><button class="btn-sm">🎒 Items</button></a>
     <a href="/chat"><button class="btn-sm">💬 Socialize</button></a>
     <a href="/trades" class="btn-sm">🤝 Trades</a>
     <a href="/profile/{{ user_id }}"><button class="btn-sm">Profile</button></a>
-    <button class="btn-sm" onclick="logout()">Logout</button>
+    <button class="btn-sm keep-mobile" onclick="logout()">Logout</button>
   </div>
 </header>
 
@@ -191,6 +231,7 @@
       Recent tax accruals (20% of every platform fee goes here).
       Hidden from admins and regular users.
     </div>
+    <div class="tbl-wrap">
     <table>
       <thead>
         <tr><th>Time</th><th>User</th><th>Side</th><th>Ticker</th><th style="text-align:right">Tax</th></tr>
@@ -199,6 +240,7 @@
         <tr><td colspan="5" class="empty">Loading…</td></tr>
       </tbody>
     </table>
+    </div>
   </div>
   {% endif %}
 
@@ -209,6 +251,7 @@
       <input type="text" class="wide" id="search" placeholder="Search by ID or username…" oninput="renderTable()"/>
       <button class="btn-sm" onclick="loadUsers()" style="background:#2d3148;color:#94a3b8">↻ Refresh</button>
     </div>
+    <div class="tbl-wrap">
     <table>
       <thead>
         <tr>
@@ -220,6 +263,7 @@
         <tr><td colspan="7" class="empty">Loading…</td></tr>
       </tbody>
     </table>
+    </div>
   </div>
 
   <!-- Trading Activity -->
@@ -234,6 +278,7 @@
       </div>
       <button class="btn-sm" onclick="loadTrades()" style="background:#2d3148;color:#94a3b8">↻ Refresh</button>
     </div>
+    <div class="tbl-wrap">
     <table>
       <thead>
         <tr>
@@ -245,6 +290,7 @@
         <tr><td colspan="7" class="empty">Loading…</td></tr>
       </tbody>
     </table>
+    </div>
   </div>
 
   <!-- Game Settings -->
@@ -302,6 +348,7 @@
         </div>
       </details>
     </div>
+    <div class="tbl-wrap">
     <table>
       <thead><tr>
         <th>ID</th><th>Preview</th><th>Caption</th><th>Link</th>
@@ -309,6 +356,7 @@
       </tr></thead>
       <tbody id="ads-body"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
     </table>
+    </div>
     <div id="ads-msg" style="font-size:.82rem;color:#86efac;margin-top:8px"></div>
   </div>
 
@@ -328,10 +376,12 @@
       <button class="btn-sm btn-add" onclick="createItem()">+ Create Item</button>
     </div>
     <input type="text" id="new-item-desc" placeholder="Description (optional)" style="width:100%;margin-bottom:14px"/>
+    <div class="tbl-wrap">
     <table>
       <thead><tr><th>ID</th><th>Item</th><th>Rarity</th><th>Description</th><th>Actions</th></tr></thead>
       <tbody id="items-body"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
     </table>
+    </div>
   </div>
 
   <!-- Grant Item -->

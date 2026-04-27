@@ -832,9 +832,11 @@ def _file_kind_for_mime(mime):
 
 
 def _can_view_file(db, file_id, user_id):
-    """A user may view a file iff they currently own it OR they have an explicit
-    access grant (e.g. they were sent the file in a chat). The marketplace
-    listing flow does NOT grant view access — only a successful purchase does."""
+    """A user may view a file iff they currently own it, have an explicit
+    access grant (e.g. they were sent the file in a chat), OR the file is
+    referenced by something inherently public (a profile highlight or its
+    cover). Marketplace listings still do NOT grant view access — only a
+    successful purchase does."""
     if not file_id or not user_id:
         return False
     own = db.execute(
@@ -847,7 +849,21 @@ def _can_view_file(db, file_id, user_id):
         "SELECT 1 FROM file_access WHERE file_id = ? AND user_id = ?",
         (file_id, user_id),
     ).fetchone()
-    return bool(grant)
+    if grant:
+        return True
+    # Public-by-design surfaces: profile highlights are visible to everyone.
+    public_hl = db.execute(
+        """SELECT 1
+             FROM highlight_items
+            WHERE file_id = ?
+            UNION
+           SELECT 1
+             FROM highlights
+            WHERE cover_file_id = ?
+            LIMIT 1""",
+        (file_id, file_id),
+    ).fetchone()
+    return bool(public_hl)
 
 
 def _grant_file_access(db, file_id, user_id):
