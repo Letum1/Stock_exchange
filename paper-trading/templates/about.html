@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>About · Paper Trading</title>
+  <link rel="stylesheet" href="/static/responsive.css"/>
+  <link rel="stylesheet" href="/static/shell.css"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,system-ui,sans-serif;background:#0a0b10;color:#e7eaf3;min-height:100vh}
+
+    .about-wrap{max-width:760px;margin:0 auto;padding:22px 16px 80px}
+
+    /* ── Hero ── */
+    .hero{
+      position:relative;overflow:hidden;border-radius:22px;
+      background:
+        radial-gradient(1200px 360px at 80% -20%, rgba(168,85,247,.35), transparent 60%),
+        radial-gradient(900px 320px at 0% 110%, rgba(124,133,255,.32), transparent 55%),
+        linear-gradient(135deg,#171a2c,#11131c);
+      border:1px solid #2a2e40;padding:32px 24px 28px;margin-bottom:22px;
+    }
+    .hero .pill{
+      display:inline-flex;align-items:center;gap:6px;
+      background:rgba(124,133,255,.18);color:#c7cdff;
+      font-size:.7rem;font-weight:700;letter-spacing:.08em;
+      padding:5px 11px;border-radius:30px;text-transform:uppercase;
+      border:1px solid rgba(124,133,255,.35);
+    }
+    .hero h1{
+      font-size:1.9rem;font-weight:800;letter-spacing:-.02em;
+      margin:14px 0 10px;line-height:1.15;
+    }
+    .hero h1 .grad{
+      background:linear-gradient(135deg,#7c85ff,#ec4899,#f59e0b);
+      -webkit-background-clip:text;background-clip:text;color:transparent;
+    }
+    .hero p{color:#cbd5e1;font-size:1rem;line-height:1.55;max-width:560px}
+    .hero .cta-row{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+    .btn-primary,.btn-ghost{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:10px 16px;border-radius:11px;font-weight:700;font-size:.9rem;
+      text-decoration:none;cursor:pointer;border:none;transition:transform .12s, background .15s;
+    }
+    .btn-primary{
+      background:linear-gradient(135deg,#7c85ff,#a855f7);color:#fff;
+      box-shadow:0 8px 24px rgba(124,133,255,.35);
+    }
+    .btn-primary:hover{transform:translateY(-1px)}
+    .btn-ghost{background:#181b27;color:#e7eaf3;border:1px solid #2a2e40}
+    .btn-ghost:hover{background:#232735}
+
+    /* ── Section heading ── */
+    .sec-title{
+      display:flex;align-items:center;gap:10px;
+      margin:26px 4px 14px;font-size:1.1rem;font-weight:800;letter-spacing:-.01em;
+    }
+    .sec-title .dot{
+      width:8px;height:8px;border-radius:50%;
+      background:linear-gradient(135deg,#7c85ff,#ec4899);
+    }
+
+    /* ── Feature card grid ── */
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+    .card{
+      background:#11131c;border:1px solid #2a2e40;border-radius:16px;
+      padding:18px;display:flex;flex-direction:column;gap:8px;
+      transition:border-color .15s, transform .12s;
+      position:relative;overflow:hidden;
+    }
+    .card:hover{border-color:#3a3f5a;transform:translateY(-1px)}
+    .card .emoji{font-size:1.6rem;line-height:1}
+    .card h3{font-size:1rem;font-weight:800;letter-spacing:-.01em}
+    .card p{font-size:.85rem;color:#94a3b8;line-height:1.5}
+    .card a.go{
+      margin-top:6px;font-size:.78rem;font-weight:700;color:#7c85ff;
+      text-decoration:none;display:inline-flex;align-items:center;gap:4px;
+    }
+    .card a.go:hover{color:#a8b0ff}
+
+    /* ── Steps (how it works) ── */
+    .steps{display:flex;flex-direction:column;gap:12px}
+    .step{
+      display:flex;gap:14px;align-items:flex-start;
+      background:#11131c;border:1px solid #2a2e40;border-radius:14px;padding:16px;
+    }
+    .step .num{
+      flex-shrink:0;width:34px;height:34px;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,#7c85ff,#a855f7);color:#fff;
+      font-weight:800;font-size:.95rem;
+    }
+    .step h4{font-size:.95rem;font-weight:700;margin-bottom:3px}
+    .step p{font-size:.84rem;color:#94a3b8;line-height:1.5}
+
+    /* ── Wallet pill diagram ── */
+    .wallet-row{
+      display:grid;grid-template-columns:1fr 1fr;gap:12px;
+      background:#11131c;border:1px solid #2a2e40;border-radius:16px;padding:16px;
+    }
+    .wallet-pill{
+      background:#181b27;border:1px solid #2a2e40;border-radius:12px;
+      padding:14px;display:flex;flex-direction:column;gap:4px;
+    }
+    .wallet-pill .lbl{font-size:.7rem;color:#64748b;text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+    .wallet-pill .val{font-size:1.1rem;font-weight:800;display:flex;align-items:center;gap:6px}
+    .wallet-pill .desc{font-size:.78rem;color:#94a3b8;line-height:1.4;margin-top:4px}
+    .wallet-pill.cash .val{color:#4ade80}
+    .wallet-pill.bon  .val{color:#fcd34d}
+    @media (max-width:520px){ .wallet-row{grid-template-columns:1fr} }
+
+    /* ── FAQ ── */
+    .faq{display:flex;flex-direction:column;gap:8px}
+    .faq details{
+      background:#11131c;border:1px solid #2a2e40;border-radius:12px;
+      padding:14px 16px;cursor:pointer;
+    }
+    .faq details[open]{border-color:#3a3f5a}
+    .faq summary{
+      list-style:none;font-weight:700;font-size:.92rem;
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+    }
+    .faq summary::-webkit-details-marker{display:none}
+    .faq summary::after{
+      content:'+';color:#7c85ff;font-size:1.2rem;font-weight:800;line-height:1;
+      transition:transform .15s;
+    }
+    .faq details[open] summary::after{content:'−'}
+    .faq p{margin-top:10px;font-size:.85rem;color:#94a3b8;line-height:1.55}
+
+    /* ── Closing CTA ── */
+    .closer{
+      margin-top:26px;text-align:center;padding:26px 18px;
+      background:
+        radial-gradient(600px 200px at 50% 0%, rgba(124,133,255,.25), transparent 60%),
+        #11131c;
+      border:1px solid #2a2e40;border-radius:18px;
+    }
+    .closer h3{font-size:1.2rem;font-weight:800;margin-bottom:6px}
+    .closer p{color:#94a3b8;font-size:.9rem;margin-bottom:14px}
+
+    @media (max-width:520px){
+      .hero{padding:24px 18px 22px}
+      .hero h1{font-size:1.55rem}
+      .hero p{font-size:.92rem}
+    }
+  </style>
+</head>
+<body>
+{% include "_nav.html" %}
+
+<main class="about-wrap">
+
+  <!-- ── HERO ─────────────────────────────────────────── -->
+  <section class="hero">
+    <span class="pill">📖 What is this?</span>
+    <h1>Welcome to <span class="grad">PaperTrade</span> — practice the markets without the risk.</h1>
+    <p>
+      PaperTrade is a playful, social way to learn how trading works. You start with
+      virtual cash, buy real-world stocks &amp; crypto at live prices, collect items,
+      mine for treasure, and trade with other players — all without putting a real
+      dollar on the line. Mess up? Try again tomorrow. 🚀
+    </p>
+    <div class="cta-row">
+      {% if logged_in %}
+        <a href="/trading" class="btn-primary">📈 Open my Portfolio</a>
+        <a href="/market"  class="btn-ghost">📊 Browse the Market</a>
+      {% else %}
+        <a href="/register" class="btn-primary">🎉 Create a free account</a>
+        <a href="/login"    class="btn-ghost">Sign in</a>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- ── HOW IT WORKS (5 steps) ───────────────────────── -->
+  <h2 class="sec-title"><span class="dot"></span> How it works in 5 steps</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="num">1</div>
+      <div>
+        <h4>Sign up &amp; get free starter cash</h4>
+        <p>Every new account gets virtual money to play with. No deposits, no card details — it's pretend money for practice. 💸</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <div>
+        <h4>Pick a stock or coin to buy</h4>
+        <p>Head to the <b>Market</b> tab, search for something you like (Apple, Tesla, Bitcoin, …) and tap <b>Buy</b>. Prices update live. 📊</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <div>
+        <h4>Watch your Portfolio</h4>
+        <p>Your <b>Portfolio</b> tab shows everything you own and how much you've gained or lost. Green is good, red means it's sale time. 📈</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">4</div>
+      <div>
+        <h4>Sell when you're ready</h4>
+        <p>Tap any holding and hit <b>Sell</b>. The cash goes back into your wallet so you can try a new pick. No fees panic — small spread only. 💰</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="num">5</div>
+      <div>
+        <h4>Have fun with the rest 🎮</h4>
+        <p>Open packs in the Shop, swap items with friends, mine for tokens, post to Reels, and climb the leaderboards. It's a market <i>and</i> a hangout.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── EVERY TAB EXPLAINED ──────────────────────────── -->
+  <h2 class="sec-title"><span class="dot"></span> What's in each tab?</h2>
+  <div class="grid">
+
+    <div class="card">
+      <span class="emoji">📊</span>
+      <h3>Market</h3>
+      <p>Live stocks &amp; crypto. Search anything, see a chart, and buy with one tap.</p>
+      <a href="/market" class="go">Open Market →</a>
+    </div>
+
+    <div class="card">
+      <span class="emoji">📈</span>
+      <h3>Portfolio</h3>
+      <p>Everything you own in one place — holdings, profit/loss, and your trade history.</p>
+      <a href="/trading" class="go">Open Portfolio →</a>
+    </div>
+
+    <div class="card">
+      <span class="emoji">💰</span>
+      <h3>Wallet</h3>
+      <p>Your cash &amp; tokens. See balances, convert between them, and review activity.</p>
+      <a href="/wallet" class="go">Open Wallet →</a>
+    </div>
+
+    <div class="card">
+      <span class="emoji">🎒</span>
+      <h3>Shop</h3>
+      <p>The item marketplace. Browse, buy, list your own items for other players to grab.</p>
+      <a href="/items" class="go">Open Shop →</a>
+    </div>
+
+    <div class="card">
+      <span class="emoji">🔄</span>
+      <h3>Swap</h3>
+      <p>Trade items, cash and shares directly with other players. Both sides confirm — totally fair.</p>
+      <a href="/trades" class="go">Open Swap →</a>
+    </div>
+
+    <div class="card">
+      <span class="emoji">⛏️</span>
+      <h3>Mine</h3>
+      <p>A little mining minigame that drops tokens. Tap to mine, invite friends to your world.</p>
+      <a href="/mine" class="go">Open Mine →</a>
+    </div>
+
+    <div class="card">
+      <span class="emoji">💵</span>
+      <h3>Cash In</h3>
+      <p>Sell tokens or items back into virtual cash. The fast way to refill your buying power.</p>
+      <a href="/cashin" class="go">Open Cash In →</a>
+    </div>
+
+    <div class="card">
+      <span class="emoji">🎬</span>
+      <h3>Reels</h3>
+      <p>Short videos from the community. Wins, fails, tips — swipe up for more.</p>
+      <a href="/reels" class="go">Open Reels →</a>
+    </div>
+
+    <div class="card">
+      <span class="emoji">💬</span>
+      <h3>Messages</h3>
+      <p>Chat with other traders, send tips, even gift cash or items inside a DM.</p>
+      <a href="/chat" class="go">Open Messages →</a>
+    </div>
+
+  </div>
+
+  <!-- ── WALLET DEEP DIVE ─────────────────────────────── -->
+  <h2 class="sec-title"><span class="dot"></span> Your Wallet, explained</h2>
+  <p style="color:#94a3b8;font-size:.88rem;margin:0 4px 12px;line-height:1.55">
+    Your wallet holds two things. Think of it like having dollars in one pocket and
+    arcade tokens in the other.
+  </p>
+  <div class="wallet-row">
+    <div class="wallet-pill cash">
+      <div class="lbl">Pocket 1</div>
+      <div class="val">💵 Virtual Cash</div>
+      <div class="desc">
+        Used to buy stocks, crypto and items. You earn it by selling things,
+        completing activities or topping up via Cash In.
+      </div>
+    </div>
+    <div class="wallet-pill bon">
+      <div class="lbl">Pocket 2</div>
+      <div class="val">🪙 Tokens</div>
+      <div class="desc">
+        A bonus currency from mining and special drops. Convert tokens to cash
+        any time from the Wallet tab — no penalty.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PORTFOLIO DEEP DIVE ──────────────────────────── -->
+  <h2 class="sec-title"><span class="dot"></span> What's a Portfolio?</h2>
+  <div class="card" style="padding:20px">
+    <p style="color:#cbd5e1;font-size:.92rem;line-height:1.6">
+      A portfolio is just a fancy word for <b>everything you currently own</b>.
+      When you buy 1 share of Apple, it shows up in your portfolio with the
+      price you paid. As Apple's price moves, your portfolio shows the
+      <b style="color:#4ade80">profit</b> or <b style="color:#f87171">loss</b> in
+      real time. Sell, and the money returns to your wallet. That's it — no
+      hidden complexity. 🎯
+    </p>
+  </div>
+
+  <!-- ── FAQ ──────────────────────────────────────────── -->
+  <h2 class="sec-title"><span class="dot"></span> Quick questions</h2>
+  <div class="faq">
+    <details>
+      <summary>Is this real money?</summary>
+      <p>Nope! Every dollar in PaperTrade is virtual. You can't lose real cash, and you can't withdraw real cash either. It's a sandbox to practice and have fun.</p>
+    </details>
+    <details>
+      <summary>Where do the prices come from?</summary>
+      <p>Stocks and crypto pull from live market data, so what you see is close to what real traders see. Items and tokens are priced by other players in the Shop and Swap tabs.</p>
+    </details>
+    <details>
+      <summary>I ran out of cash. Now what?</summary>
+      <p>Sell something! Open your Portfolio, tap a holding, and hit Sell. Or visit Cash In to convert your tokens. You can also mine for new tokens.</p>
+    </details>
+    <details>
+      <summary>How does Swap differ from the Shop?</summary>
+      <p>The Shop is a public list of things for sale at a fixed price. Swap is a back-and-forth trade with one specific person — both sides add what they're offering, and both have to confirm.</p>
+    </details>
+    <details>
+      <summary>Can I message other players?</summary>
+      <p>Yes — open Messages, search a username, and start chatting. You can even gift cash or items right inside the conversation.</p>
+    </details>
+    <details>
+      <summary>What are Reels?</summary>
+      <p>A short-video feed for the community. Post your big wins, ask questions, share memes — same idea as the swipe-up videos you already know.</p>
+    </details>
+  </div>
+
+  <!-- ── CLOSING CTA ──────────────────────────────────── -->
+  <div class="closer">
+    <h3>Ready to play?</h3>
+    <p>Jump in — there's nothing to lose and plenty to learn.</p>
+    {% if logged_in %}
+      <a href="/market" class="btn-primary">🚀 Find my first trade</a>
+    {% else %}
+      <a href="/register" class="btn-primary">🚀 Create my free account</a>
+    {% endif %}
+  </div>
+
+</main>
+
+<script>
+  // Tag the nav so the About link is highlighted.
+  (function(){
+    var link = document.querySelector('.app-nav a[href="/about"]');
+    if (link) link.classList.add('active');
+  })();
+</script>
+</body>
+</html>
