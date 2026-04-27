@@ -21,7 +21,7 @@ button, .btn, .btn-sm {
     padding: 10px 12px !important;
   }
   header h1 { font-size: 1rem !important; }
-  .hdr-right, .hdr-nav, .nav, nav {
+  .hdr-right, .hdr-nav, .nav, nav:not(.app-nav) {
     flex-wrap: wrap !important;
     gap: 6px !important;
   }
