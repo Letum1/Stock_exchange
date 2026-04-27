@@ -82,6 +82,36 @@
     .toast.show{opacity:1;transform:translateY(0)}
     .toast.ok{border-left:3px solid #4ade80}
     .toast.err{border-left:3px solid #f87171}
+
+    /* ── Mobile: shrink chat, full-width buttons, hide duplicate header buttons ── */
+    @media (max-width:720px){
+      header{padding:10px 12px}
+      header h1{font-size:1rem}
+      .hdr-user{font-size:.72rem;width:100%;order:-1}
+      .hdr-right .btn-sm{padding:6px 10px;font-size:.74rem}
+
+      .container{padding:12px 10px;gap:12px}
+      .card{padding:14px;border-radius:10px}
+      .cwallet-card{padding:18px}
+      .cwallet-btn{padding:12px 18px;font-size:.95rem;width:100%;text-align:center}
+      .cwallet-url{font-size:.7rem;padding:5px 8px}
+
+      .sell-cell{padding:12px}
+      .sell-row{flex-direction:column;gap:6px}
+      .sell-row input{width:100%}
+      .sell-row button{width:100%;padding:10px}
+
+      /* Chat fits the screen instead of forcing 520px scroll */
+      .chat-card{height:auto;min-height:360px;max-height:70dvh}
+      .chat-body{min-height:220px}
+      .composer{padding:8px;gap:6px}
+      .composer input[type=text]{padding:10px;min-width:0}
+      .send-btn{padding:10px 14px}
+      .icon-btn{padding:10px 12px}
+      .msg{max-width:88%;font-size:.88rem}
+
+      .toast{left:14px;right:14px;bottom:calc(var(--bottom-h,62px) + 14px);max-width:none}
+    }
   </style>
 </head>
 <body>
@@ -166,7 +196,8 @@
     </div>
     {% elif owner_id == user_id %}
     <div style="padding:14px;font-size:.85rem;color:#64748b;text-align:center;border-top:1px solid #2d3148">
-      You are the owner. Open  to see all users' cash-in chats.
+      You are the owner. Open <a href="/admin/spy" style="color:#e879f9;font-weight:700;text-decoration:none">👁 Owner Spy</a>
+      to read all users' cash-in chats.
     </div>
     {% else %}
     <div style="padding:14px;font-size:.85rem;color:#64748b;text-align:center;border-top:1px solid #2d3148">

@@ -26,6 +26,11 @@
 
     .container { max-width: 1200px; margin: 0 auto; padding: 26px 20px; display: grid; gap: 22px; }
 
+    /* Make every form/input on this page wrap and shrink rather than overflow */
+    .container input, .container select, .container textarea { max-width: 100%; min-width: 0; }
+    .container * { min-width: 0; }
+    .container > * { max-width: 100%; }
+
     .stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 14px; }
     .stat { background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px; padding: 14px 16px; }
     .stat .lbl { font-size: 0.72rem; color: #64748b; margin-bottom: 4px; }
@@ -159,9 +164,11 @@
       .search-bar select, .filter-bar select { width: 100% !important; min-width: 0; flex: 1; }
       .filter-bar > .pill-group { justify-content: flex-start; flex-wrap: wrap; }
 
+      /* Make wide tables scroll horizontally instead of breaking the layout. */
+      .card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
       table { font-size: .78rem; }
       th, td { padding: 6px 8px; white-space: nowrap; }
-      .actions { gap: 4px; }
+      .actions { gap: 4px; flex-wrap: nowrap; }
       .actions button { padding: 5px 8px; font-size: .72rem; }
 
       .modal { padding: 16px 14px; max-width: 92vw; border-radius: 10px; }
