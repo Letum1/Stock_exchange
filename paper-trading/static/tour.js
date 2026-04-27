@@ -60,12 +60,23 @@
     if (styleTag) return;
     styleTag = document.createElement('style');
     styleTag.textContent = [
-      '#pt-tour-bg{position:fixed;inset:0;z-index:99000;background:rgba(0,0,0,.72);',
-      '  backdrop-filter:blur(3px);display:none;font-family:-apple-system,system-ui,sans-serif}',
+      '#pt-tour-bg{position:fixed;inset:0;z-index:99000;background:transparent;',
+      '  display:none;font-family:-apple-system,system-ui,sans-serif}',
       '#pt-tour-bg.open{display:block}',
       '#pt-tour-spot{position:fixed;border-radius:14px;pointer-events:none;',
-      '  box-shadow:0 0 0 4px #7c85ff, 0 0 0 9999px rgba(0,0,0,.72);',
-      '  transition:all .28s cubic-bezier(.2,.8,.2,1);z-index:99001}',
+      '  background:rgba(124,133,255,.12);',
+      '  box-shadow:0 0 0 3px #a5b4fc, 0 0 22px 6px rgba(124,133,255,.85),',
+      '    0 0 0 9999px rgba(0,0,0,.55);',
+      '  animation:pt-pulse 1.6s ease-in-out infinite;',
+      '  transition:top .28s cubic-bezier(.2,.8,.2,1), left .28s cubic-bezier(.2,.8,.2,1),',
+      '    width .28s cubic-bezier(.2,.8,.2,1), height .28s cubic-bezier(.2,.8,.2,1);',
+      '  z-index:99001}',
+      '@keyframes pt-pulse{',
+      '  0%,100%{box-shadow:0 0 0 3px #a5b4fc, 0 0 18px 4px rgba(124,133,255,.7),',
+      '    0 0 0 9999px rgba(0,0,0,.55)}',
+      '  50%{box-shadow:0 0 0 3px #c7d2fe, 0 0 28px 10px rgba(124,133,255,1),',
+      '    0 0 0 9999px rgba(0,0,0,.55)}',
+      '}',
       '#pt-tour-card{position:fixed;left:50%;transform:translateX(-50%);',
       '  width:min(360px,calc(100vw - 28px));background:#13151f;color:#e7eaf3;',
       '  border:1px solid #2d3148;border-radius:16px;padding:18px 18px 16px;',
@@ -91,7 +102,16 @@
       '#pt-tour-card .pt-close{position:absolute;top:8px;right:8px;background:transparent;',
       '  color:#64748b;font-size:18px;width:28px;height:28px;display:flex;',
       '  align-items:center;justify-content:center;border-radius:50%}',
-      '#pt-tour-card .pt-close:hover{background:#1c1f2c;color:#e7eaf3}'
+      '#pt-tour-card .pt-close:hover{background:#1c1f2c;color:#e7eaf3}',
+      /* Lift the highlighted nav button above the dim overlay and brighten
+         its icon + label so the user can clearly see what is being pointed at. */
+      '.pt-highlight{position:relative;z-index:99001 !important;color:#fff !important;',
+      '  background:rgba(124,133,255,.18) !important;border-radius:12px !important;',
+      '  filter:brightness(1.35) saturate(1.15);transform:scale(1.04);',
+      '  transition:transform .25s ease, filter .25s ease}',
+      '.pt-highlight .nav-icon{color:#fff !important;font-size:1.5rem !important;',
+      '  filter:drop-shadow(0 0 6px rgba(124,133,255,.9))}',
+      '.pt-highlight > span:not(.nav-icon):not(.nav-badge){color:#fff !important;font-weight:700 !important}'
     ].join('\n');
     document.head.appendChild(styleTag);
   }
@@ -101,14 +121,23 @@
     return document.querySelector('.app-nav a[href="' + href + '"]');
   }
 
+  function clearHighlight() {
+    var prev = document.querySelectorAll('.pt-highlight');
+    for (var i = 0; i < prev.length; i++) prev[i].classList.remove('pt-highlight');
+  }
+
   function placeSpotlight(spot, target) {
+    clearHighlight();
     if (!target) {
       spot.style.display = 'none';
       return;
     }
+    target.classList.add('pt-highlight');
     spot.style.display = 'block';
+    // Re-measure after the highlight class scales the target slightly so
+    // the spotlight ring lines up exactly with the brightened button.
     var r = target.getBoundingClientRect();
-    var pad = 4;
+    var pad = 6;
     spot.style.top    = (r.top - pad) + 'px';
     spot.style.left   = (r.left - pad) + 'px';
     spot.style.width  = (r.width + pad * 2) + 'px';
@@ -214,6 +243,7 @@
 
   function end() {
     try { localStorage.setItem(KEY, '1'); } catch (e) {}
+    clearHighlight();
     if (state.bg) state.bg.classList.remove('open');
     if (state.onResize) {
       window.removeEventListener('resize', state.onResize);
