@@ -131,7 +131,7 @@
     .tbl-wrap table { min-width: 560px; }
 
     @media (max-width: 880px) {
-      header { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+      header { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
       header h1 { font-size: 1rem; }
       /* Bottom nav already has Home / Markets / Wallet / Mine / Items / Chat etc.
          Hide the duplicate header buttons on mobile, keep Spy + Cash Requests +
@@ -142,29 +142,63 @@
       header .hdr-right > span { font-size: .72rem; }
       header .hdr-right { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
-      .container { padding: 14px 10px; gap: 14px; }
-      .card { padding: 14px 12px; }
-      .card h2 { margin-bottom: 10px; }
+      .container { padding: 12px 10px; gap: 12px; }
+      .card { padding: 12px 12px; border-radius: 10px; }
+      .card h2 { margin-bottom: 10px; font-size: .72rem; }
 
       .stats-bar { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
-      .stat { padding: 10px 12px; }
-      .stat .val { font-size: 1.05rem; }
+      .stat { padding: 10px 12px; border-radius: 8px; }
+      .stat .lbl { font-size: .65rem; }
+      .stat .val { font-size: 1rem; }
 
       /* Stack the search + filter rows vertically so inputs aren't squeezed. */
       .search-bar, .filter-bar {
         flex-direction: column; align-items: stretch; gap: 8px;
       }
       .search-bar input, .filter-bar input,
-      .search-bar select, .filter-bar select { width: 100%; min-width: 0; flex: 1; }
+      .search-bar select, .filter-bar select { width: 100% !important; min-width: 0; flex: 1; }
       .filter-bar > .pill-group { justify-content: flex-start; flex-wrap: wrap; }
 
-      table { font-size: .8rem; }
-      th, td { padding: 7px 8px; white-space: nowrap; }
+      table { font-size: .78rem; }
+      th, td { padding: 6px 8px; white-space: nowrap; }
       .actions { gap: 4px; }
       .actions button { padding: 5px 8px; font-size: .72rem; }
 
-      .modal { padding: 18px 16px; max-width: 92vw; border-radius: 10px; }
+      .modal { padding: 16px 14px; max-width: 92vw; border-radius: 10px; }
+      .modal h3 { font-size: .95rem; }
+      .modal p { font-size: .78rem; }
+      .modal-footer { flex-direction: column-reverse; gap: 8px; }
+      .modal-footer button { width: 100%; }
       .toast { left: 14px; right: 14px; bottom: calc(var(--bottom-h, 62px) + 14px); max-width: none; }
+    }
+
+    /* Extra-small phones: single-column stats, smaller paddings */
+    @media (max-width: 480px) {
+      header h1 { font-size: .95rem; }
+      header .hdr-right .btn-sm.keep-mobile,
+      header .hdr-right > a:has(.keep-mobile) > .btn-sm { padding: 5px 9px; font-size: .72rem; }
+      header .tag { font-size: .62rem; padding: 2px 7px; }
+
+      .container { padding: 10px 8px; gap: 10px; }
+      .card { padding: 10px; }
+
+      .stats-bar { grid-template-columns: 1fr 1fr; gap: 6px; }
+      .stat { padding: 8px 10px; }
+      .stat .val { font-size: .92rem; }
+      .stat .lbl { font-size: .6rem; }
+
+      .pill { padding: 4px 10px; font-size: .7rem; }
+      .badge { font-size: .65rem; padding: 1px 6px; }
+
+      table { font-size: .72rem; }
+      th { font-size: .62rem; padding: 5px 7px; }
+      td { padding: 6px 7px; }
+      .actions button { padding: 4px 7px; font-size: .68rem; }
+      .holdings-list { font-size: .7rem; }
+
+      /* Inline emojis & paragraphs sized down so the page doesn't feel huge */
+      .card p { font-size: .74rem !important; }
+      .card details summary { font-size: .76rem; }
     }
   </style>
 </head>
