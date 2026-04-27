@@ -28,13 +28,12 @@
    between pages that scroll and pages that don't. */
 html { scrollbar-gutter: stable; }
 
-/* Hard-stop horizontal page scrolling. Some inner content (wide tables,
-   long labels, fixed-width inputs) used to push the body wider than the
-   viewport, which made the URL bar slide and felt like the page width
-   was changing every time you swiped between pages. */
-html, body {
-  max-width: 100vw;
-  overflow-x: hidden;
+/* Hard-stop horizontal page scrolling without breaking vertical scroll
+   on iOS Safari. We clip at the <html> element only — `overflow-x: hidden`
+   on <body> prevents the page from scrolling vertically on iOS. */
+html { max-width: 100vw; overflow-x: clip; }
+@supports not (overflow-x: clip) {
+  html { overflow-x: hidden; }
 }
 
 /* ── Layout: fixed left sidebar; body padded to fit ────────── */
