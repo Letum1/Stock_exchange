@@ -25,17 +25,49 @@
     .post-body{padding:0 18px 14px;font-size:1rem;color:#e7eaf3;white-space:pre-wrap;word-break:break-word}
     .post-link{display:block;margin:0 18px 14px;padding:10px 12px;background:#0a0b10;border:1px solid #2a2e40;
                border-radius:8px;color:#7dd3fc;font-size:.86rem;text-decoration:none;word-break:break-all}
-    .post-media{width:100%;display:block;background:#000}
+    .post-media{width:100%;display:block;background:#000;max-height:80vh;object-fit:contain}
     .post-media-file{margin:0 18px 14px;padding:12px;background:#0a0b10;border:1px solid #2a2e40;
                      border-radius:8px;color:#cbd5e1}
     .post-media-file a{color:#7dd3fc;text-decoration:none;font-weight:600}
-    .post-foot{padding:10px 14px;border-top:1px solid #2a2e40;display:flex;gap:6px;align-items:center}
+    .post-foot{padding:10px 14px;border-top:1px solid #2a2e40;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
     .post-foot button{flex:1;background:transparent;border:none;color:#94a3b8;font-size:.88rem;
-                      font-weight:600;cursor:pointer;padding:9px;border-radius:7px}
+                      font-weight:600;cursor:pointer;padding:9px;border-radius:7px;min-width:90px}
     .post-foot button:hover{background:#0a0b10;color:#e7eaf3}
     .post-foot .liked{color:#ec4899}
+
+    /* Comments */
+    .card{background:#11131c;border:1px solid #2a2e40;border-radius:14px;margin-top:14px;overflow:hidden}
+    .card h3{padding:14px 18px;font-size:.95rem;color:#e7eaf3;border-bottom:1px solid #2a2e40}
+    .card .body{padding:6px 0}
+    .c-row{display:flex;gap:10px;padding:10px 16px;border-bottom:1px solid #1a1d27}
+    .c-row:last-child{border-bottom:none}
+    .c-row .ava{width:34px;height:34px;border-radius:50%;background:#2a2e40;
+                display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;
+                overflow:hidden;flex-shrink:0}
+    .c-row .ava img{width:100%;height:100%;object-fit:cover}
+    .c-row .who{font-weight:700;font-size:.82rem;color:#e7eaf3}
+    .c-row .who a{color:inherit;text-decoration:none}
+    .c-row .txt{color:#cbd5e1;font-size:.92rem;word-break:break-word}
+    .c-row .when{color:#64748b;font-size:.7rem;margin-top:2px}
+    .c-row .del{background:transparent;border:none;color:#64748b;cursor:pointer;font-size:1.05rem;align-self:flex-start}
+    .c-row .del:hover{color:#ef4444}
+    .composer{display:flex;gap:8px;padding:12px;border-top:1px solid #2a2e40;background:#0a0b10}
+    .composer input{flex:1;background:#1a1d27;color:#fff;border:1px solid #2a2e40;
+                    padding:10px 14px;border-radius:24px;outline:none;font-size:.92rem}
+    .composer button{background:#7c85ff;color:#fff;border:none;padding:10px 18px;
+                     border-radius:24px;font-weight:700;cursor:pointer}
     .empty{color:#64748b;text-align:center;padding:32px;font-size:.95rem;background:#11131c;
            border:1px solid #2a2e40;border-radius:14px}
+    .v-row{display:flex;gap:10px;padding:8px 16px;align-items:center;border-bottom:1px solid #1a1d27}
+    .v-row:last-child{border-bottom:none}
+    .v-row .ava{width:30px;height:30px}
+    .v-row a{color:#e7eaf3;text-decoration:none;font-size:.86rem;font-weight:600;flex:1;
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .v-row .when{color:#64748b;font-size:.7rem}
+    @media (max-width:640px){
+      .wrap{padding:16px 10px}
+      .post-foot button{min-width:0;flex:1 1 30%;font-size:.82rem}
+    }
   </style>
 </head>
 <body>
@@ -44,6 +76,20 @@
 <div class="wrap">
   <div class="crumb"><a href="/">← Back to home</a></div>
   <div id="root"><div class="empty">Loading…</div></div>
+
+  <div class="card" id="comments-card" style="display:none">
+    <h3 id="comments-title">Comments</h3>
+    <div class="body" id="comments-body"></div>
+    <div class="composer">
+      <input id="c-input" placeholder="Add a comment…" maxlength="1000"/>
+      <button onclick="postComment()">Post</button>
+    </div>
+  </div>
+
+  <div class="card" id="viewers-card" style="display:none">
+    <h3 id="viewers-title">Seen by</h3>
+    <div class="body" id="viewers-body"></div>
+  </div>
 </div>
 
 <div class="app-toast" id="toast"></div>
@@ -57,6 +103,8 @@ function shortTime(ts){if(!ts)return'';try{const d=new Date(ts.replace(' ','T')+
   return d.toLocaleDateString();}catch(e){return ts;}}
 function toast(msg, ok){const t=document.getElementById('toast');t.textContent=msg;t.className='app-toast show '+(ok?'ok':'err');setTimeout(()=>t.classList.remove('show'),2400);}
 
+let CURRENT_POST = null;
+
 async function load() {
   try {
     const r = await fetch('/api/posts/' + PID);
@@ -66,10 +114,11 @@ async function load() {
       return;
     }
     const p = await r.json();
+    CURRENT_POST = p;
     let media = '';
     if (p.file) {
       if (p.file.kind === 'image') media = `<img class="post-media" src="/api/files/${p.file.id}/download"/>`;
-      else if (p.file.kind === 'video') media = `<video class="post-media" src="/api/files/${p.file.id}/download" controls></video>`;
+      else if (p.file.kind === 'video') media = `<video class="post-media" src="/api/files/${p.file.id}/download" controls playsinline></video>`;
       else media = `<div class="post-media-file">📎 <a href="/api/files/${p.file.id}/download" target="_blank">${escapeHtml(p.file.display_name)}</a></div>`;
     }
     const ava = p.avatar_url ? `<img src="${escapeHtml(p.avatar_url)}"/>` : escapeHtml((p.username||'?')[0].toUpperCase());
@@ -86,9 +135,15 @@ async function load() {
       ${link}${media}
       <div class="post-foot">
         <button class="${p.liked?'liked':''}" id="like-btn">${p.liked?'♥':'♡'} <span id="likes">${p.likes}</span></button>
-        <button onclick="location='/profile/${p.user_id}'">👤 Visit profile</button>
+        <button onclick="document.getElementById('c-input').focus()">💬 <span id="cnt">${p.comments||0}</span></button>
+        ${p.mine ? `<button onclick="loadViewers()">👁 <span id="vcnt">${p.views||0}</span> seen by</button>` : ''}
+        <button onclick="location='/profile/${p.user_id}'">👤 Profile</button>
       </div>
     </div>`;
+    // Mark as seen.
+    if (p.user_id !== ME) {
+      fetch(`/api/posts/${PID}/view`, { method:'POST' }).catch(()=>{});
+    }
     document.getElementById('like-btn').onclick = async () => {
       const liked = document.getElementById('like-btn').classList.contains('liked');
       try {
@@ -99,10 +154,110 @@ async function load() {
         document.getElementById('like-btn').innerHTML = (j.liked?'♥':'♡')+' <span id="likes">'+j.likes+'</span>';
       } catch(e){ toast('Like failed', false); }
     };
+    loadComments();
+    if (p.mine && location.hash === '#viewers') loadViewers();
+    if (location.hash === '#comments') {
+      setTimeout(() => document.getElementById('c-input').focus(), 200);
+    }
   } catch(e) {
     document.getElementById('root').innerHTML = '<div class="empty">Could not load post.</div>';
   }
 }
+
+async function loadComments() {
+  const card = document.getElementById('comments-card');
+  card.style.display = '';
+  const body = document.getElementById('comments-body');
+  body.innerHTML = '<div style="color:#64748b;padding:14px 18px">Loading…</div>';
+  try {
+    const r = await fetch(`/api/posts/${PID}/comments`);
+    const arr = r.ok ? await r.json() : [];
+    document.getElementById('comments-title').textContent =
+      'Comments' + (arr.length ? ' (' + arr.length + ')' : '');
+    const cnt = document.getElementById('cnt');
+    if (cnt) cnt.textContent = arr.length;
+    if (!arr.length) {
+      body.innerHTML = '<div style="color:#64748b;padding:18px;text-align:center">No comments yet. Be the first.</div>';
+      return;
+    }
+    body.innerHTML = arr.map(c => `
+      <div class="c-row" data-cid="${c.id}">
+        <a href="/profile/${c.user_id}" class="ava">
+          ${c.avatar_url ? `<img src="${escapeHtml(c.avatar_url)}">`
+                         : escapeHtml((c.username||'?')[0].toUpperCase())}
+        </a>
+        <div style="flex:1;min-width:0">
+          <div class="who"><a href="/profile/${c.user_id}">@${escapeHtml(c.username)}</a></div>
+          <div class="txt">${escapeHtml(c.content)}</div>
+          <div class="when">${shortTime(c.created_at)}</div>
+        </div>
+        ${c.can_delete ? `<button class="del" onclick="delComment(${c.id})" title="Delete">×</button>` : ''}
+      </div>`).join('');
+  } catch (e) {
+    body.innerHTML = '<div style="color:#ef4444;padding:14px 18px">Could not load comments.</div>';
+  }
+}
+
+async function postComment() {
+  const inp = document.getElementById('c-input');
+  const v = inp.value.trim();
+  if (!v) return;
+  inp.disabled = true;
+  try {
+    const r = await fetch(`/api/posts/${PID}/comments`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ content: v }),
+    });
+    if (r.ok) { inp.value = ''; loadComments(); }
+    else {
+      const d = await r.json().catch(()=>({}));
+      toast(d.error || 'Failed to post', false);
+    }
+  } finally { inp.disabled = false; inp.focus(); }
+}
+
+async function delComment(cid) {
+  if (!confirm('Delete this comment?')) return;
+  const r = await fetch(`/api/comments/${cid}`, { method:'DELETE' });
+  if (r.ok) loadComments();
+}
+
+async function loadViewers() {
+  const card = document.getElementById('viewers-card');
+  card.style.display = '';
+  const body = document.getElementById('viewers-body');
+  body.innerHTML = '<div style="color:#64748b;padding:14px 18px">Loading…</div>';
+  card.scrollIntoView({ behavior:'smooth', block:'start' });
+  try {
+    const r = await fetch(`/api/posts/${PID}/viewers`);
+    if (!r.ok) {
+      body.innerHTML = '<div style="color:#ef4444;padding:14px 18px">Could not load.</div>';
+      return;
+    }
+    const arr = await r.json();
+    document.getElementById('viewers-title').textContent = 'Seen by ' + arr.length;
+    if (!arr.length) {
+      body.innerHTML = '<div style="color:#64748b;padding:18px;text-align:center">Nobody has seen this yet.</div>';
+      return;
+    }
+    body.innerHTML = arr.map(v => `
+      <div class="v-row">
+        <div class="ava avatar">
+          ${v.avatar_url ? `<img src="${escapeHtml(v.avatar_url)}">`
+                         : escapeHtml((v.username||'?')[0].toUpperCase())}
+        </div>
+        <a href="/profile/${v.user_id}">@${escapeHtml(v.username)}</a>
+        <span class="when">${shortTime(v.viewed_at)}</span>
+      </div>`).join('');
+  } catch (e) {
+    body.innerHTML = '<div style="color:#ef4444;padding:14px 18px">Could not load.</div>';
+  }
+}
+
+document.getElementById('c-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); postComment(); }
+});
+
 load();
 </script>
 </body>

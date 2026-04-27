@@ -424,6 +424,7 @@ async function loadFeed(){
     const el = document.getElementById('feed');
     if (!posts.length){el.innerHTML='<div class="empty">No posts yet — be the first to share something!</div>'; return;}
     el.innerHTML = posts.map(renderPost).join('');
+    observePostsForViews();
   } catch(e){
     document.getElementById('feed').innerHTML = '<div class="empty">'+escapeHtml(e.message)+'</div>';
   }
@@ -465,13 +466,42 @@ function renderPost(p){
     ${media}
     <div class="post-actions">
       <button class="pa-btn ${p.liked?'liked':''}" data-like="${p.id}" onclick="toggleLike(${p.id}, this)" title="Like">${p.liked?'♥':'♡'}</button>
-      <button class="pa-btn" onclick="location='/post/${p.id}'" title="Open">💬</button>
+      <button class="pa-btn" onclick="location='/post/${p.id}#comments'" title="Comments">
+        💬 <span data-comments="${p.id}">${p.comments||0}</span>
+      </button>
       <button class="pa-btn" onclick="openShare(${p.id})" title="Share to DM">📤</button>
       <div class="pa-spacer"></div>
+      ${p.mine ? `<button class="pa-btn" onclick="location='/post/${p.id}#viewers'" title="Who's seen this" style="font-size:.85rem">👁 ${p.views||0}</button>` : ''}
       <button class="pa-btn" onclick="copyPostLink(${p.id})" title="Copy link" style="font-size:1.05rem">🔗</button>
     </div>
     <div class="post-likes" data-likes-count="${p.id}">${p.likes ? p.likes + (p.likes===1?' like':' likes') : ''}</div>
   </div>`;
+}
+
+// Mark posts as "seen" once they enter the viewport for ≥800ms.
+let __viewIO = null;
+const __viewedIds = new Set();
+function observePostsForViews() {
+  if (!__viewIO) {
+    __viewIO = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        const id = +e.target.id.replace('post-','');
+        if (!id || __viewedIds.has(id)) return;
+        if (e.isIntersecting && e.intersectionRatio > 0.5) {
+          e.target._viewT = setTimeout(() => {
+            if (__viewedIds.has(id)) return;
+            __viewedIds.add(id);
+            fetch(`/api/posts/${id}/view`, { method:'POST' }).catch(()=>{});
+          }, 800);
+        } else if (e.target._viewT) {
+          clearTimeout(e.target._viewT); e.target._viewT = null;
+        }
+      });
+    }, { threshold: [0, 0.5, 1] });
+  }
+  document.querySelectorAll('.post[id^="post-"]').forEach(el => {
+    if (!el._viewObs) { __viewIO.observe(el); el._viewObs = true; }
+  });
 }
 
 async function toggleLike(pid, btn){

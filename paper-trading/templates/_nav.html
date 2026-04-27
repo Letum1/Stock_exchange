@@ -15,6 +15,9 @@
   <a href="/" class="nav-link {% if nav_active=='home' %}active{% endif %}">
     <span class="nav-icon">🏠</span><span>Home</span>
   </a>
+  <a href="/reels" class="nav-link {% if nav_active=='reels' %}active{% endif %}">
+    <span class="nav-icon">🎬</span><span>Reels</span>
+  </a>
   <a href="/chat" class="nav-link {% if nav_active=='chat' %}active{% endif %}">
     <span class="nav-icon">💬</span><span>Messages</span>
     {% if unread %}<span class="nav-badge" id="nav-unread-badge">{{ unread }}</span>{% endif %}
@@ -47,6 +50,10 @@
     <span class="nav-icon">👤</span><span>Profile</span>
   </a>
   {% endif %}
+  <a href="/follow_requests" class="nav-link {% if nav_active=='follow_requests' %}active{% endif %}">
+    <span class="nav-icon">📨</span><span>Requests</span>
+    <span class="nav-badge" id="nav-fr-badge" style="display:none">0</span>
+  </a>
   <a href="/account" class="nav-link {% if nav_active=='account' %}active{% endif %}">
     <span class="nav-icon">⚙️</span><span>Settings</span>
   </a>
@@ -114,4 +121,22 @@
     setTimeout(tick, 1500);
     setInterval(tick, 20000);
   })();
+  // Follow-request badge.
+  (function() {
+    var fr = document.getElementById('nav-fr-badge');
+    if (!fr) return;
+    async function tick() {
+      try {
+        var r = await fetch('/api/follow_requests/count');
+        if (!r.ok) return;
+        var d = await r.json();
+        var n = (d && d.count) || 0;
+        if (n > 0) { fr.textContent = n > 99 ? '99+' : n; fr.style.display = ''; }
+        else { fr.style.display = 'none'; }
+      } catch (e) {}
+    }
+    setTimeout(tick, 1800);
+    setInterval(tick, 30000);
+  })();
 </script>
+<script src="/static/swipe-nav.js" defer></script>

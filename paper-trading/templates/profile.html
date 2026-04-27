@@ -273,6 +273,8 @@
 
   <!-- ── Tab panels ── -->
   <div id="panel-posts">
+    <div id="private-hint" style="display:none;background:#1f2937;border:1px solid #334155;
+         color:#fcd34d;padding:14px 16px;border-radius:10px;margin:12px 0;font-size:.92rem;text-align:center"></div>
     <div class="grid" id="posts-grid"><div class="empty">Loading…</div></div>
   </div>
 
@@ -375,19 +377,39 @@
     }
   }
 
+  let LAST_FOLLOW_STATE = null;
   async function loadFollowStats() {
     try {
       const r = await fetch('/api/follow/' + TARGET_ID + '/status');
       if (!r.ok) return;
       const j = await r.json();
+      LAST_FOLLOW_STATE = j;
       document.getElementById('ff-followers').textContent = j.followers;
       document.getElementById('ff-following').textContent = j.following_count;
       const btn = document.getElementById('follow-btn');
       if (btn) {
-        btn.textContent = j.is_friend ? '⭐ Friends' : (j.following ? '✓ Following' : '＋ Follow');
-        btn.className = 'btn ' + (j.is_friend ? 'btn-primary' : (j.following ? 'btn-following' : 'btn-primary'));
-        if (j.is_friend) btn.style.background = '#16a34a';
+        let label, klass;
+        if (j.is_friend)        { label = '⭐ Friends';   klass = 'btn-primary'; }
+        else if (j.following)   { label = '✓ Following'; klass = 'btn-following'; }
+        else if (j.requested)   { label = '⏳ Requested'; klass = 'btn-following'; }
+        else                    { label = (j.is_private ? '＋ Request to follow' : '＋ Follow'); klass = 'btn-primary'; }
+        btn.textContent = label;
+        btn.className = 'btn ' + klass;
+        if (j.is_friend) btn.style.background = '#16a34a'; else btn.style.background = '';
         btn.dataset.following = j.following ? '1' : '0';
+        btn.dataset.requested = j.requested ? '1' : '0';
+      }
+      // Show a private-account hint above the posts grid.
+      const hint = document.getElementById('private-hint');
+      if (hint) {
+        if (j.is_private && !j.following && TARGET_ID !== ME_ID) {
+          hint.style.display = '';
+          hint.innerHTML = j.requested
+            ? '🔒 This account is private. Your follow request is pending — posts and highlights will appear once approved.'
+            : '🔒 This account is private. Follow to see their posts and highlights.';
+        } else {
+          hint.style.display = 'none';
+        }
       }
     } catch(e){}
   }
@@ -395,8 +417,10 @@
   async function toggleFollow(){
     const btn = document.getElementById('follow-btn');
     const wasFollowing = btn.dataset.following === '1';
+    const wasRequested = btn.dataset.requested === '1';
+    const remove = wasFollowing || wasRequested;
     try {
-      const r = await fetch('/api/follow/' + TARGET_ID, {method: wasFollowing ? 'DELETE' : 'POST'});
+      const r = await fetch('/api/follow/' + TARGET_ID, {method: remove ? 'DELETE' : 'POST'});
       const j = await r.json();
       if (!r.ok) { alert(j.error || 'Could not update'); return; }
       loadFollowStats();

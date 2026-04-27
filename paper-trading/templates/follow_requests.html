@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Follow Requests — PaperTrade</title>
+  <link rel="stylesheet" href="/static/shell.css">
+  <style>
+    body { background:#0b1220; color:#e2e8f0; margin:0;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+    .wrap { max-width:680px; margin:24px auto; padding:0 16px; }
+    h1 { font-size:1.4rem; margin:0 0 4px; }
+    .sub { color:#94a3b8; margin-bottom:18px; font-size:.9rem; }
+    .req-list { background:#0f172a; border:1px solid #1e293b; border-radius:14px; overflow:hidden; }
+    .req {
+      display:flex; align-items:center; gap:12px; padding:14px 16px;
+      border-bottom:1px solid #1e293b;
+    }
+    .req:last-child { border-bottom:none; }
+    .req .ava {
+      width:46px; height:46px; border-radius:50%; background:#1e293b;
+      display:flex; align-items:center; justify-content:center; font-weight:700;
+      overflow:hidden; flex-shrink:0;
+    }
+    .req .ava img { width:100%; height:100%; object-fit:cover; }
+    .req a.who {
+      color:#e2e8f0; text-decoration:none; font-weight:700;
+      flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .req .when { color:#64748b; font-size:.78rem; margin-right:8px; }
+    .req .btns { display:flex; gap:6px; }
+    .req button {
+      border:none; padding:8px 14px; border-radius:8px; font-weight:700;
+      cursor:pointer; font-size:.85rem;
+    }
+    .req .accept { background:#3b82f6; color:#fff; }
+    .req .decline { background:#1e293b; color:#cbd5e1; }
+    .empty { color:#64748b; text-align:center; padding:48px 16px; }
+    .empty .big { font-size:48px; margin-bottom:8px; }
+    @media (max-width:640px) {
+      .req { flex-wrap:wrap; }
+      .req .when { display:none; }
+      .req .btns { width:100%; margin-left:58px; }
+      .req .btns button { flex:1; }
+    }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+  {% include "_nav.html" %}
+  <main class="app-main">
+    <div class="wrap">
+      <h1>Follow Requests</h1>
+      <div class="sub">People asking to follow your private account.</div>
+      <div id="list" class="req-list">
+        <div class="empty">Loading…</div>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+function escapeHtml(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function load() {
+  const r = await fetch('/api/follow_requests');
+  const list = document.getElementById('list');
+  if (!r.ok) { list.innerHTML = '<div class="empty">Could not load.</div>'; return; }
+  const arr = await r.json();
+  if (!arr.length) {
+    list.innerHTML = `
+      <div class="empty">
+        <div class="big">📨</div>
+        No pending requests.
+      </div>`;
+    return;
+  }
+  list.innerHTML = arr.map(r => `
+    <div class="req" data-id="${r.id}">
+      <a href="/profile/${r.requester_id}" class="ava">
+        ${r.avatar_url ? `<img src="${escapeHtml(r.avatar_url)}">`
+                       : escapeHtml((r.username||'?')[0].toUpperCase())}
+      </a>
+      <a href="/profile/${r.requester_id}" class="who">@${escapeHtml(r.username)}</a>
+      <span class="when">${escapeHtml(r.created_at || '')}</span>
+      <div class="btns">
+        <button class="accept"  onclick="act(${r.id},'accept')">Accept</button>
+        <button class="decline" onclick="act(${r.id},'decline')">Decline</button>
+      </div>
+    </div>`).join('');
+}
+async function act(id, kind) {
+  const url = '/api/follow_requests/' + id + (kind==='accept' ? '/accept' : '');
+  const opts = kind === 'accept' ? { method:'POST' } : { method:'DELETE' };
+  const r = await fetch(url, opts);
+  if (r.ok) {
+    const row = document.querySelector(`.req[data-id="${id}"]`);
+    if (row) row.remove();
+    if (!document.querySelectorAll('.req').length) load();
+  }
+}
+load();
+</script>
+</body>
+</html>

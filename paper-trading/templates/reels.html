@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Reels — PaperTrade</title>
+  <link rel="stylesheet" href="/static/shell.css">
+  <style>
+    html, body {
+      margin:0; padding:0; height:100%;
+      background:#000; color:#fff; overflow:hidden;
+      font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .app-shell { display:flex; height:100vh; }
+    .app-main  { flex:1; padding:0; min-width:0; height:100vh; }
+
+    .reels-stage {
+      position:relative; height:100vh; width:100%;
+      overflow-y:scroll; overflow-x:hidden;
+      scroll-snap-type:y mandatory;
+      scrollbar-width:none;
+    }
+    .reels-stage::-webkit-scrollbar { display:none; }
+
+    .reel {
+      position:relative; height:100vh; width:100%;
+      scroll-snap-align:start; scroll-snap-stop:always;
+      display:flex; align-items:center; justify-content:center;
+      background:#000;
+    }
+    .reel video {
+      max-height:100vh; max-width:100%; height:100vh; width:100%;
+      object-fit:contain; background:#000;
+    }
+    .reel .meta {
+      position:absolute; left:14px; right:90px; bottom:88px;
+      color:#fff; text-shadow:0 1px 6px rgba(0,0,0,.7);
+      pointer-events:none;
+    }
+    .reel .meta a { color:#fff; pointer-events:auto; text-decoration:none; font-weight:700; }
+    .reel .meta .caption { font-size:.95rem; margin-top:6px; opacity:.95;
+      display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+    .reel .meta .author-row { display:flex; align-items:center; gap:10px; }
+    .reel .meta .ava {
+      width:38px; height:38px; border-radius:50%; overflow:hidden;
+      background:#1e293b; display:flex; align-items:center; justify-content:center;
+      font-weight:700; border:2px solid #fff;
+    }
+    .reel .meta .ava img { width:100%; height:100%; object-fit:cover; }
+
+    .reel .actions {
+      position:absolute; right:10px; bottom:96px; display:flex;
+      flex-direction:column; gap:18px; align-items:center; color:#fff;
+    }
+    .reel .actions button {
+      background:rgba(0,0,0,.35); border:none; color:#fff;
+      width:48px; height:48px; border-radius:50%; font-size:22px;
+      cursor:pointer; display:flex; align-items:center; justify-content:center;
+      backdrop-filter:blur(6px);
+    }
+    .reel .actions .lbl { font-size:.72rem; margin-top:-12px; opacity:.95; }
+    .reel.liked .heart { color:#ef4444; }
+
+    .reel .play-overlay {
+      position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      pointer-events:none; opacity:0; transition:opacity .15s;
+      font-size:64px; text-shadow:0 2px 12px rgba(0,0,0,.6);
+    }
+    .reel.paused .play-overlay { opacity:.85; }
+
+    .reel .progress {
+      position:absolute; left:0; right:0; bottom:0; height:3px;
+      background:rgba(255,255,255,.18);
+    }
+    .reel .progress > i {
+      display:block; height:100%; width:0%; background:#fff;
+    }
+
+    .reels-empty {
+      height:100vh; display:flex; flex-direction:column;
+      align-items:center; justify-content:center; gap:12px; color:#94a3b8;
+      text-align:center; padding:0 24px;
+    }
+    .reels-empty .big { font-size:54px; }
+    .reels-empty a { color:#60a5fa; }
+
+    /* Comment sheet */
+    .sheet {
+      position:fixed; left:0; right:0; bottom:0; max-height:75vh;
+      background:#0f172a; border-top-left-radius:18px; border-top-right-radius:18px;
+      transform:translateY(100%); transition:transform .25s ease-out;
+      z-index:30; display:flex; flex-direction:column;
+      box-shadow:0 -8px 30px rgba(0,0,0,.45);
+    }
+    .sheet.open { transform:translateY(0); }
+    .sheet header {
+      padding:14px 18px; border-bottom:1px solid #1e293b;
+      display:flex; align-items:center; justify-content:space-between;
+      font-weight:700;
+    }
+    .sheet header button {
+      background:transparent; color:#94a3b8; border:none; font-size:22px; cursor:pointer;
+    }
+    .sheet .body { padding:8px 14px; overflow-y:auto; flex:1; }
+    .sheet .row {
+      display:flex; gap:10px; padding:8px 0;
+      border-bottom:1px solid #1e293b;
+    }
+    .sheet .row .ava { width:32px; height:32px; border-radius:50%;
+      background:#1e293b; display:flex; align-items:center; justify-content:center;
+      font-weight:700; flex-shrink:0; overflow:hidden; }
+    .sheet .row .ava img { width:100%; height:100%; object-fit:cover; }
+    .sheet .row .who { font-weight:700; font-size:.85rem; color:#e2e8f0; }
+    .sheet .row .txt { color:#cbd5e1; font-size:.9rem; word-break:break-word; }
+    .sheet .composer {
+      display:flex; gap:8px; padding:10px 12px;
+      border-top:1px solid #1e293b; background:#0f172a;
+    }
+    .sheet .composer input {
+      flex:1; background:#1e293b; color:#fff; border:1px solid #334155;
+      padding:10px 12px; border-radius:24px; outline:none;
+    }
+    .sheet .composer button {
+      background:#3b82f6; color:#fff; border:none; padding:10px 16px;
+      border-radius:24px; font-weight:700; cursor:pointer;
+    }
+
+    @media (max-width: 880px) {
+      .reel .meta  { bottom:86px; }
+      .reel .actions { bottom:96px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+  {% include "_nav.html" %}
+
+  <main class="app-main">
+    <div class="reels-stage" id="stage" data-no-swipe="1"></div>
+  </main>
+</div>
+
+<!-- Comment sheet -->
+<div class="sheet" id="sheet" data-no-swipe="1">
+  <header>
+    <span id="sheet-title">Comments</span>
+    <button onclick="closeSheet()" aria-label="Close">×</button>
+  </header>
+  <div class="body" id="sheet-body"></div>
+  <div class="composer">
+    <input id="sheet-input" placeholder="Add a comment…" maxlength="1000"/>
+    <button onclick="sendComment()">Post</button>
+  </div>
+</div>
+
+<script>
+const ME_ID = {{ user_id|tojson }};
+let oldestId = null;
+let loading = false;
+let exhausted = false;
+let activeReelId = null;
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function reelHtml(p) {
+  const ava = p.avatar_url
+    ? `<img src="${escapeHtml(p.avatar_url)}" alt="">`
+    : escapeHtml((p.username || '?')[0].toUpperCase());
+  return `
+    <article class="reel ${p.liked ? 'liked' : ''}" data-id="${p.id}" data-uid="${p.user_id}">
+      <video src="${escapeHtml(p.media_url)}" loop playsinline preload="metadata"></video>
+      <div class="play-overlay">▶</div>
+      <div class="meta">
+        <div class="author-row">
+          <a href="/profile/${p.user_id}" class="ava">${ava}</a>
+          <a href="/profile/${p.user_id}">@${escapeHtml(p.username)}</a>
+        </div>
+        ${p.caption ? `<div class="caption">${escapeHtml(p.caption)}</div>` : ''}
+      </div>
+      <div class="actions">
+        <button onclick="toggleLike(${p.id})" title="Like" class="heart">♥</button>
+        <span class="lbl" data-likes="${p.id}">${p.likes||0}</span>
+        <button onclick="openComments(${p.id})" title="Comments">💬</button>
+        <span class="lbl" data-comments="${p.id}">${p.comments||0}</span>
+        <button onclick="sharePost(${p.id})" title="Share">↗</button>
+      </div>
+      <div class="progress"><i></i></div>
+    </article>`;
+}
+
+async function loadMore() {
+  if (loading || exhausted) return;
+  loading = true;
+  try {
+    const url = oldestId ? `/api/reels?before_id=${oldestId}` : '/api/reels';
+    const r = await fetch(url);
+    if (!r.ok) { loading = false; return; }
+    const arr = await r.json();
+    const stage = document.getElementById('stage');
+    if (arr.length === 0 && !oldestId) {
+      stage.innerHTML = `
+        <div class="reels-empty">
+          <div class="big">🎬</div>
+          <div>No reels yet. Post a video to start the feed.</div>
+          <a href="/">Back to home</a>
+        </div>`;
+      exhausted = true;
+      return;
+    }
+    if (arr.length === 0) { exhausted = true; return; }
+    arr.forEach(p => stage.insertAdjacentHTML('beforeend', reelHtml(p)));
+    oldestId = arr[arr.length - 1].id;
+    if (arr.length < 10) exhausted = true;
+    observeReels();
+  } finally { loading = false; }
+}
+
+let io = null;
+function observeReels() {
+  if (!io) {
+    io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        const v = e.target.querySelector('video');
+        if (!v) return;
+        if (e.isIntersecting && e.intersectionRatio > 0.6) {
+          activeReelId = +e.target.dataset.id;
+          v.play().catch(()=>{});
+          // Mark seen.
+          fetch(`/api/posts/${activeReelId}/view`, { method:'POST' }).catch(()=>{});
+          // Load more when nearing the bottom.
+          const stage = document.getElementById('stage');
+          const reels = stage.querySelectorAll('.reel');
+          if (reels[reels.length - 2] === e.target) loadMore();
+        } else {
+          v.pause();
+        }
+      });
+    }, { threshold: [0, 0.6, 1] });
+  }
+  document.querySelectorAll('.reel').forEach(el => {
+    if (!el._seen) { io.observe(el); el._seen = true; bindReel(el); }
+  });
+}
+
+function bindReel(el) {
+  const v = el.querySelector('video');
+  v.addEventListener('timeupdate', () => {
+    if (!v.duration) return;
+    const bar = el.querySelector('.progress > i');
+    bar.style.width = (v.currentTime / v.duration * 100).toFixed(1) + '%';
+  });
+  // Tap to pause/resume.
+  el.addEventListener('click', (ev) => {
+    if (ev.target.closest('.actions') || ev.target.closest('.meta')) return;
+    if (v.paused) { v.play(); el.classList.remove('paused'); }
+    else          { v.pause(); el.classList.add('paused'); }
+  });
+}
+
+async function toggleLike(pid) {
+  const el = document.querySelector(`.reel[data-id="${pid}"]`);
+  const liked = el.classList.toggle('liked');
+  try {
+    const r = await fetch(`/api/posts/${pid}/like`,
+      { method: liked ? 'POST' : 'DELETE' });
+    if (r.ok) {
+      const d = await r.json();
+      el.querySelector(`[data-likes="${pid}"]`).textContent = d.likes ?? '';
+    } else {
+      el.classList.toggle('liked'); // revert
+    }
+  } catch (_) { el.classList.toggle('liked'); }
+}
+
+function sharePost(pid) {
+  const url = location.origin + '/post/' + pid;
+  if (navigator.share) navigator.share({ url }).catch(()=>{});
+  else { navigator.clipboard?.writeText(url); alert('Link copied: ' + url); }
+}
+
+let sheetPostId = null;
+async function openComments(pid) {
+  sheetPostId = pid;
+  const sheet = document.getElementById('sheet');
+  const body  = document.getElementById('sheet-body');
+  body.innerHTML = '<div style="color:#94a3b8;padding:14px">Loading…</div>';
+  sheet.classList.add('open');
+  try {
+    const r = await fetch(`/api/posts/${pid}/comments`);
+    const arr = r.ok ? await r.json() : [];
+    renderComments(arr);
+  } catch (_) {
+    body.innerHTML = '<div style="color:#ef4444;padding:14px">Could not load comments</div>';
+  }
+}
+function renderComments(arr) {
+  const body = document.getElementById('sheet-body');
+  if (!arr.length) {
+    body.innerHTML = '<div style="color:#94a3b8;padding:24px;text-align:center">No comments yet. Be the first.</div>';
+    return;
+  }
+  body.innerHTML = arr.map(c => `
+    <div class="row" data-cid="${c.id}">
+      <a href="/profile/${c.user_id}" class="ava">
+        ${c.avatar_url ? `<img src="${escapeHtml(c.avatar_url)}">`
+                       : escapeHtml((c.username||'?')[0].toUpperCase())}
+      </a>
+      <div style="flex:1;min-width:0">
+        <div class="who">@${escapeHtml(c.username)}</div>
+        <div class="txt">${escapeHtml(c.content)}</div>
+      </div>
+      ${c.can_delete
+        ? `<button onclick="deleteComment(${c.id})" style="background:transparent;border:none;color:#64748b;cursor:pointer">×</button>`
+        : ''}
+    </div>`).join('');
+}
+function closeSheet() {
+  document.getElementById('sheet').classList.remove('open');
+  sheetPostId = null;
+}
+async function sendComment() {
+  if (!sheetPostId) return;
+  const inp = document.getElementById('sheet-input');
+  const v = inp.value.trim();
+  if (!v) return;
+  inp.disabled = true;
+  try {
+    const r = await fetch(`/api/posts/${sheetPostId}/comments`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ content: v }),
+    });
+    if (r.ok) {
+      inp.value = '';
+      const d = await r.json();
+      // Refresh and bump count.
+      const cur = await fetch(`/api/posts/${sheetPostId}/comments`);
+      if (cur.ok) renderComments(await cur.json());
+      const cnt = document.querySelector(`[data-comments="${sheetPostId}"]`);
+      if (cnt) cnt.textContent = (parseInt(cnt.textContent || '0', 10) + 1);
+    } else {
+      const d = await r.json().catch(()=>({}));
+      alert(d.error || 'Failed to post');
+    }
+  } finally { inp.disabled = false; inp.focus(); }
+}
+async function deleteComment(cid) {
+  if (!confirm('Delete this comment?')) return;
+  const r = await fetch(`/api/comments/${cid}`, { method:'DELETE' });
+  if (r.ok && sheetPostId) {
+    const cur = await fetch(`/api/posts/${sheetPostId}/comments`);
+    if (cur.ok) renderComments(await cur.json());
+    const cnt = document.querySelector(`[data-comments="${sheetPostId}"]`);
+    if (cnt) cnt.textContent = Math.max(0, parseInt(cnt.textContent || '1', 10) - 1);
+  }
+}
+
+document.getElementById('sheet-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); sendComment(); }
+});
+
+loadMore();
+</script>
+</body>
+</html>

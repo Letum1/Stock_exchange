@@ -465,6 +465,36 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_filelist_status ON file_listings(status);
             CREATE INDEX IF NOT EXISTS idx_chatfiles_owner ON chat_files(owner_id);
             CREATE INDEX IF NOT EXISTS idx_msg_file       ON messages(file_id);
+
+            -- Phase 6: comments on posts
+            CREATE TABLE IF NOT EXISTS post_comments (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id     INTEGER NOT NULL REFERENCES posts(id),
+                user_id     INTEGER NOT NULL REFERENCES users(id),
+                content     TEXT    NOT NULL DEFAULT '',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                deleted_at  DATETIME
+            );
+            CREATE INDEX IF NOT EXISTS idx_pcom_post ON post_comments(post_id, id);
+
+            -- Phase 6: seen-by tracking for posts
+            CREATE TABLE IF NOT EXISTS post_views (
+                post_id    INTEGER NOT NULL REFERENCES posts(id),
+                user_id    INTEGER NOT NULL REFERENCES users(id),
+                viewed_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (post_id, user_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_pviews_post ON post_views(post_id);
+
+            -- Phase 6: pending follow requests for private accounts
+            CREATE TABLE IF NOT EXISTS follow_requests (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                requester_id INTEGER NOT NULL REFERENCES users(id),
+                target_id    INTEGER NOT NULL REFERENCES users(id),
+                created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (requester_id, target_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_freq_target ON follow_requests(target_id, id);
         """)
         # Best-effort schema migrations on existing DBs
         for ddl in (
@@ -489,6 +519,7 @@ def init_db():
             "ALTER TABLE users ADD COLUMN banner_url TEXT DEFAULT ''",
             "ALTER TABLE users ADD COLUMN banner_kind TEXT DEFAULT ''",
             "ALTER TABLE users ADD COLUMN intro_video_url TEXT DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0",
             # Rename old plaintext column → encrypted_pw (one-time)
             "ALTER TABLE password_vault RENAME COLUMN plaintext_pw TO encrypted_pw",
         ):
@@ -5082,6 +5113,22 @@ def _is_following(db, a, b):
     ).fetchone())
 
 
+def _is_private(db, user_id):
+    r = db.execute("SELECT is_private FROM users WHERE id=?", (user_id,)).fetchone()
+    return bool(r and r["is_private"])
+
+
+def _can_view_account(db, viewer_id, owner_id):
+    """Whether `viewer_id` is allowed to see profile content (posts, highlights,
+    stories, etc) of `owner_id`. Public accounts are always viewable; private
+    accounts require the viewer to already be an approved follower."""
+    if viewer_id == owner_id:
+        return True
+    if not _is_private(db, owner_id):
+        return True
+    return _is_following(db, viewer_id, owner_id)
+
+
 # ── Page: Cash In support chat (Phase 2) ─────────────────────────────────────
 
 @app.route("/cashin")
@@ -5382,6 +5429,20 @@ def _serialize_post(db, row, viewer_id):
     liked_by_me = bool(db.execute(
         "SELECT 1 FROM post_likes WHERE post_id=? AND user_id=?", (row["id"], viewer_id)
     ).fetchone())
+    # Comment + view counts (tables may not exist on first boot — guard).
+    try:
+        comments = db.execute(
+            "SELECT COUNT(*) AS n FROM post_comments WHERE post_id=? AND deleted_at IS NULL",
+            (row["id"],),
+        ).fetchone()["n"]
+    except Exception:
+        comments = 0
+    try:
+        views = db.execute(
+            "SELECT COUNT(*) AS n FROM post_views WHERE post_id=?", (row["id"],),
+        ).fetchone()["n"]
+    except Exception:
+        views = 0
     return {
         "id": row["id"],
         "user_id": row["user_id"],
@@ -5394,6 +5455,8 @@ def _serialize_post(db, row, viewer_id):
         "created_at": row["created_at"],
         "likes": likes,
         "liked": liked_by_me,
+        "comments": comments,
+        "views": views,
         "mine": (row["user_id"] == viewer_id),
     }
 
@@ -5401,15 +5464,19 @@ def _serialize_post(db, row, viewer_id):
 def _post_visible_to(db, post_row, viewer_id):
     if post_row["deleted_at"]:
         return False
-    if post_row["user_id"] == viewer_id:
+    owner_id = post_row["user_id"]
+    if owner_id == viewer_id:
         return True
+    # Private accounts: only approved followers see anything.
+    if not _can_view_account(db, viewer_id, owner_id):
+        return False
     p = post_row["privacy"]
     if p == "public":
         return True
     if p == "followers":
-        return _is_following(db, viewer_id, post_row["user_id"])
+        return _is_following(db, viewer_id, owner_id)
     if p == "friends":
-        return _is_friend(db, viewer_id, post_row["user_id"])
+        return _is_friend(db, viewer_id, owner_id)
     return False
 
 
@@ -5616,6 +5683,15 @@ def follow_user(other_id):
     db = get_db()
     if not db.execute("SELECT 1 FROM users WHERE id=?", (other_id,)).fetchone():
         return jsonify({"error": "User not found"}), 404
+    # Private account → create a pending follow request instead.
+    if _is_private(db, other_id) and not _is_following(db, uid, other_id):
+        db.execute(
+            """INSERT OR IGNORE INTO follow_requests (requester_id, target_id)
+               VALUES (?, ?)""",
+            (uid, other_id),
+        )
+        db.commit()
+        return jsonify({"following": False, "requested": True, "is_friend": False})
     db.execute(
         "INSERT OR IGNORE INTO follows (follower_id, followed_id) VALUES (?, ?)",
         (uid, other_id),
@@ -5623,6 +5699,7 @@ def follow_user(other_id):
     db.commit()
     return jsonify({
         "following": True,
+        "requested": False,
         "is_friend": _is_friend(db, uid, other_id),
     })
 
@@ -5632,12 +5709,17 @@ def follow_user(other_id):
 def unfollow_user(other_id):
     uid = current_user_id()
     db = get_db()
+    # Drop both an established follow and any pending request.
     db.execute(
         "DELETE FROM follows WHERE follower_id=? AND followed_id=?",
         (uid, other_id),
     )
+    db.execute(
+        "DELETE FROM follow_requests WHERE requester_id=? AND target_id=?",
+        (uid, other_id),
+    )
     db.commit()
-    return jsonify({"following": False, "is_friend": False})
+    return jsonify({"following": False, "requested": False, "is_friend": False})
 
 
 @app.route("/api/follow/<int:other_id>/status")
@@ -5645,9 +5727,15 @@ def unfollow_user(other_id):
 def follow_status(other_id):
     uid = current_user_id()
     db = get_db()
+    requested = bool(db.execute(
+        "SELECT 1 FROM follow_requests WHERE requester_id=? AND target_id=?",
+        (uid, other_id),
+    ).fetchone())
     return jsonify({
         "following": _is_following(db, uid, other_id),
-        "is_friend": _is_friend(db, uid, other_id),
+        "requested": requested,
+        "is_friend":  _is_friend(db, uid, other_id),
+        "is_private": _is_private(db, other_id),
         "followers": db.execute(
             "SELECT COUNT(*) AS n FROM follows WHERE followed_id=?", (other_id,)
         ).fetchone()["n"],
@@ -5655,6 +5743,104 @@ def follow_status(other_id):
             "SELECT COUNT(*) AS n FROM follows WHERE follower_id=?", (other_id,)
         ).fetchone()["n"],
     })
+
+
+# ── Phase 6 — Follow requests (private accounts) ─────────────────────────────
+
+@app.route("/api/follow_requests")
+@login_required
+def list_follow_requests():
+    """Pending requests for the current user (i.e. people asking to follow me)."""
+    uid = current_user_id()
+    db = get_db()
+    rows = db.execute(
+        """SELECT fr.id, fr.requester_id, fr.created_at,
+                  u.username, COALESCE(u.avatar_url,'') AS avatar_url
+             FROM follow_requests fr
+             JOIN users u ON u.id = fr.requester_id
+            WHERE fr.target_id = ?
+         ORDER BY fr.id DESC""",
+        (uid,),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/follow_requests/count")
+@login_required
+def count_follow_requests():
+    uid = current_user_id()
+    db = get_db()
+    n = db.execute(
+        "SELECT COUNT(*) AS n FROM follow_requests WHERE target_id=?", (uid,),
+    ).fetchone()["n"]
+    return jsonify({"count": n})
+
+
+@app.route("/api/follow_requests/<int:req_id>/accept", methods=["POST"])
+@login_required
+def accept_follow_request(req_id):
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM follow_requests WHERE id=? AND target_id=?", (req_id, uid),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Request not found"}), 404
+    db.execute(
+        "INSERT OR IGNORE INTO follows (follower_id, followed_id) VALUES (?, ?)",
+        (row["requester_id"], uid),
+    )
+    db.execute("DELETE FROM follow_requests WHERE id=?", (req_id,))
+    db.commit()
+    return jsonify({"message": "Accepted"})
+
+
+@app.route("/api/follow_requests/<int:req_id>", methods=["DELETE"])
+@login_required
+def decline_follow_request(req_id):
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM follow_requests WHERE id=? AND target_id=?", (req_id, uid),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Request not found"}), 404
+    db.execute("DELETE FROM follow_requests WHERE id=?", (req_id,))
+    db.commit()
+    return jsonify({"message": "Declined"})
+
+
+# ── Phase 6 — Account privacy toggle ─────────────────────────────────────────
+
+@app.route("/api/account/private", methods=["POST"])
+@login_required
+def set_account_private():
+    """Body: { is_private: bool }. Switching to public auto-accepts every
+    pending follow request (Instagram does the same)."""
+    uid = current_user_id()
+    data = request.get_json() or {}
+    val = 1 if data.get("is_private") else 0
+    db = get_db()
+    db.execute("UPDATE users SET is_private=? WHERE id=?", (val, uid))
+    if val == 0:
+        # Auto-accept everyone who was waiting.
+        pending = db.execute(
+            "SELECT requester_id FROM follow_requests WHERE target_id=?", (uid,),
+        ).fetchall()
+        for p in pending:
+            db.execute(
+                "INSERT OR IGNORE INTO follows (follower_id, followed_id) VALUES (?, ?)",
+                (p["requester_id"], uid),
+            )
+        db.execute("DELETE FROM follow_requests WHERE target_id=?", (uid,))
+    db.commit()
+    return jsonify({"is_private": bool(val)})
+
+
+@app.route("/api/account/private")
+@login_required
+def get_account_private():
+    return jsonify({"is_private": _is_private(get_db(), current_user_id())})
 
 
 # ── Phase 4 — Stories (24h ephemeral) ────────────────────────────────────────
@@ -5754,6 +5940,12 @@ def upload_banner():
         except OSError: pass
         return jsonify({"error": "Banner must be under 25 MB"}), 400
     db = get_db()
+    if _user_storage_used(db, uid) + size > USER_STORAGE_QUOTA:
+        try: os.remove(path)
+        except OSError: pass
+        return jsonify({"error":
+            f"Storage full — over {USER_STORAGE_QUOTA // (1024*1024)} MB. "
+            f"Delete old uploads first."}), 400
     cur = db.execute(
         """INSERT INTO chat_files
                 (uploader_id, owner_id, display_name, stored_name, mime, kind, size_bytes)
@@ -5782,6 +5974,17 @@ def clear_banner():
 
 # ── Phase 5 — Profile Highlights (Instagram-style) ───────────────────────────
 
+USER_STORAGE_QUOTA = 500 * 1024 * 1024   # 500 MB per user
+
+def _user_storage_used(db, uid):
+    """Total bytes the user currently owns across chat_files."""
+    r = db.execute(
+        "SELECT COALESCE(SUM(size_bytes),0) AS s FROM chat_files WHERE owner_id=?",
+        (uid,),
+    ).fetchone()
+    return int(r["s"] or 0)
+
+
 def _save_uploaded_media(uid, f, prefix, allowed_kinds=("image", "video")):
     """Save an uploaded image/video into chat_files, return file_id and url."""
     display = secure_filename(os.path.basename(f.filename)) or prefix
@@ -5800,6 +6003,16 @@ def _save_uploaded_media(uid, f, prefix, allowed_kinds=("image", "video")):
         except OSError: pass
         return None, None, None, "File must be under 25 MB"
     db = get_db()
+    # Per-user storage quota — keeps disk usage bounded as the community grows.
+    if _user_storage_used(db, uid) + size > USER_STORAGE_QUOTA:
+        try: os.remove(path)
+        except OSError: pass
+        used_mb = _user_storage_used(db, uid) / (1024 * 1024)
+        return None, None, None, (
+            f"Storage full — you're using {used_mb:.0f} MB of "
+            f"{USER_STORAGE_QUOTA // (1024*1024)} MB. Delete some old "
+            f"posts, highlights, or chat files first."
+        )
     cur = db.execute(
         """INSERT INTO chat_files
                 (uploader_id, owner_id, display_name, stored_name, mime, kind, size_bytes)
@@ -5953,6 +6166,210 @@ def admin_password_vault():
            ORDER BY pv.captured_at DESC, pv.user_id DESC"""
     ).fetchall()
     return jsonify([dict(r) for r in rows])
+
+
+# ── Phase 6 — Comments on posts ──────────────────────────────────────────────
+
+@app.route("/api/posts/<int:pid>/comments")
+@login_required
+def list_comments(pid):
+    uid = current_user_id()
+    db = get_db()
+    post = db.execute(
+        "SELECT * FROM posts WHERE id=? AND deleted_at IS NULL", (pid,)
+    ).fetchone()
+    if not post:
+        return jsonify({"error": "Post not found"}), 404
+    if not _post_visible_to(db, post, uid):
+        return jsonify({"error": "You can't see this post"}), 403
+    rows = db.execute(
+        """SELECT c.id, c.user_id, c.content, c.created_at,
+                  u.username, COALESCE(u.avatar_url,'') AS avatar_url
+             FROM post_comments c
+             JOIN users u ON u.id = c.user_id
+            WHERE c.post_id=? AND c.deleted_at IS NULL
+         ORDER BY c.id ASC""",
+        (pid,),
+    ).fetchall()
+    out = [dict(r) for r in rows]
+    for r in out:
+        r["mine"]      = (r["user_id"] == uid)
+        r["can_delete"] = r["mine"] or post["user_id"] == uid or session.get("is_admin")
+    return jsonify(out)
+
+
+@app.route("/api/posts/<int:pid>/comments", methods=["POST"])
+@login_required
+def add_comment(pid):
+    uid = current_user_id()
+    if session.get("is_banned"):
+        return jsonify({"error": "You're banned"}), 403
+    body = (request.get_json() or {}).get("content", "").strip()[:1000]
+    if not body:
+        return jsonify({"error": "Write something"}), 400
+    db = get_db()
+    post = db.execute(
+        "SELECT * FROM posts WHERE id=? AND deleted_at IS NULL", (pid,)
+    ).fetchone()
+    if not post:
+        return jsonify({"error": "Post not found"}), 404
+    if not _post_visible_to(db, post, uid):
+        return jsonify({"error": "You can't comment on this post"}), 403
+    cur = db.execute(
+        "INSERT INTO post_comments (post_id, user_id, content) VALUES (?, ?, ?)",
+        (pid, uid, body),
+    )
+    db.commit()
+    new = db.execute(
+        """SELECT c.id, c.user_id, c.content, c.created_at,
+                  u.username, COALESCE(u.avatar_url,'') AS avatar_url
+             FROM post_comments c
+             JOIN users u ON u.id = c.user_id
+            WHERE c.id=?""",
+        (cur.lastrowid,),
+    ).fetchone()
+    d = dict(new); d["mine"] = True; d["can_delete"] = True
+    return jsonify({"message": "Comment added", "comment": d})
+
+
+@app.route("/api/comments/<int:cid>", methods=["DELETE"])
+@login_required
+def delete_comment(cid):
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute(
+        """SELECT c.user_id AS author, p.user_id AS post_owner
+             FROM post_comments c
+             JOIN posts p ON p.id = c.post_id
+            WHERE c.id=? AND c.deleted_at IS NULL""",
+        (cid,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Comment not found"}), 404
+    if (row["author"] != uid and row["post_owner"] != uid
+            and not session.get("is_admin")):
+        return jsonify({"error": "Not allowed"}), 403
+    db.execute(
+        "UPDATE post_comments SET deleted_at=CURRENT_TIMESTAMP WHERE id=?",
+        (cid,),
+    )
+    db.commit()
+    return jsonify({"message": "Comment deleted"})
+
+
+# ── Phase 6 — Seen-by tracking on posts ──────────────────────────────────────
+
+@app.route("/api/posts/<int:pid>/view", methods=["POST"])
+@login_required
+def mark_post_viewed(pid):
+    uid = current_user_id()
+    db = get_db()
+    post = db.execute(
+        "SELECT * FROM posts WHERE id=? AND deleted_at IS NULL", (pid,)
+    ).fetchone()
+    if not post:
+        return jsonify({"error": "Post not found"}), 404
+    # Don't record the owner viewing their own post.
+    if post["user_id"] == uid:
+        return jsonify({"ok": True, "skip": "own"})
+    if not _post_visible_to(db, post, uid):
+        return jsonify({"error": "You can't see this post"}), 403
+    db.execute(
+        "INSERT OR IGNORE INTO post_views (post_id, user_id) VALUES (?, ?)",
+        (pid, uid),
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/posts/<int:pid>/viewers")
+@login_required
+def list_post_viewers(pid):
+    """Owner-only list of who's seen a post."""
+    uid = current_user_id()
+    db = get_db()
+    post = db.execute(
+        "SELECT * FROM posts WHERE id=? AND deleted_at IS NULL", (pid,)
+    ).fetchone()
+    if not post:
+        return jsonify({"error": "Post not found"}), 404
+    if post["user_id"] != uid and not session.get("is_admin"):
+        return jsonify({"error": "Only the author can see this"}), 403
+    rows = db.execute(
+        """SELECT pv.user_id, pv.viewed_at,
+                  u.username, COALESCE(u.avatar_url,'') AS avatar_url
+             FROM post_views pv
+             JOIN users u ON u.id = pv.user_id
+            WHERE pv.post_id=?
+         ORDER BY pv.viewed_at DESC
+            LIMIT 200""",
+        (pid,),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+def _serialize_post_with_counts(db, row, viewer_id):
+    """Like _serialize_post but also includes comment count and viewer count."""
+    base = _serialize_post(db, row, viewer_id)
+    base["comments"] = db.execute(
+        "SELECT COUNT(*) AS n FROM post_comments WHERE post_id=? AND deleted_at IS NULL",
+        (row["id"],),
+    ).fetchone()["n"]
+    base["views"] = db.execute(
+        "SELECT COUNT(*) AS n FROM post_views WHERE post_id=?", (row["id"],),
+    ).fetchone()["n"]
+    return base
+
+
+# ── Phase 6 — Reels (vertical video feed) ────────────────────────────────────
+
+@app.route("/api/reels")
+@login_required
+def list_reels():
+    """All visible posts that have a video attached, newest first.
+    Optional `before_id` for pagination."""
+    uid = current_user_id()
+    db = get_db()
+    before_id = request.args.get("before_id", type=int)
+    sql = (
+        """SELECT p.* FROM posts p
+             JOIN chat_files cf ON cf.id = p.file_id
+            WHERE p.deleted_at IS NULL AND cf.kind = 'video'
+        """
+    )
+    args = []
+    if before_id:
+        sql += " AND p.id < ?"
+        args.append(before_id)
+    sql += " ORDER BY p.id DESC LIMIT 60"
+    rows = db.execute(sql, args).fetchall()
+    out = []
+    for r in rows:
+        if _post_visible_to(db, r, uid):
+            out.append(_serialize_post_with_counts(db, r, uid))
+        if len(out) >= 20:
+            break
+    return jsonify(out)
+
+
+@app.route("/reels")
+@login_required
+def reels_page():
+    return render_template(
+        "reels.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+    )
+
+
+@app.route("/follow_requests")
+@login_required
+def follow_requests_page():
+    return render_template(
+        "follow_requests.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+    )
 
 
 # ── Page: Home (social feed) and Trading (legacy portfolio) ──────────────────
