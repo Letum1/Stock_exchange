@@ -63,20 +63,35 @@
     .spy-back{display:none;background:#2d3148;color:#cbd5e1;border:none;border-radius:6px;
               padding:6px 10px;cursor:pointer;font-size:.85rem;margin-right:6px}
     @media(max-width:880px){
-      header{padding:10px 14px}
-      header h1{font-size:.95rem}
-      .ghost-banner{padding:8px 12px;font-size:.7rem}
-      /* Stack vertically and let each pane scroll inside the viewport. */
+      header{padding:10px 14px;gap:8px}
+      header h1{font-size:.95rem;flex:1 1 auto;min-width:0}
+      header h1 .badge{font-size:.55rem;padding:2px 6px;margin-left:4px}
+      .ghost-banner{padding:7px 10px;font-size:.68rem;line-height:1.35}
+      /* Stack vertically and let each pane scroll inside the viewport.
+         Use flex:1 + min-height:0 so the wrap fills whatever space the
+         (possibly multi-row) header leaves, instead of guessing pixel
+         heights that overflow when the header or banner wrap. */
       .wrap{grid-template-columns:1fr;padding:10px;gap:10px;
-            height:calc(100dvh - 52px - 36px - var(--bottom-h,62px))}
-      .col{min-height:0}
-      .col.right{min-height:0}
+            height:auto;flex:1;min-height:0}
+      .col{min-height:0;max-height:100%}
+      /* On mobile the list pane is taller than the empty hint, so cap it
+         to roughly half the screen so both panes are visible at once. */
+      .col:not(.right){max-height:42dvh}
+      .col.right{min-height:0;flex:1}
       /* When a conversation is open, hide the list and let the panel take the screen. */
       body.spy-open .col:not(.right){display:none}
-      body.spy-open .col.right{min-height:0}
+      body.spy-open .col.right{min-height:0;flex:1;max-height:none}
       body.spy-open .spy-back{display:inline-block}
       .panel-header{padding:10px 14px;gap:8px}
       .panel-header .btn-sm{padding:5px 9px;font-size:.72rem}
+      .col h2{padding:10px 12px 6px;font-size:.7rem;flex-wrap:wrap;gap:6px}
+      .col h2 .filter-tabs{flex-wrap:wrap}
+      .convo{padding:10px 12px;gap:9px}
+      .convo .pair{font-size:.82rem}
+      .convo .preview{font-size:.74rem}
+      .convo .meta{font-size:.66rem}
+      .messages{padding:12px 14px}
+      .ghost-row .body{max-width:88%;font-size:.85rem}
     }
   </style>
 </head>

@@ -138,7 +138,9 @@
          Logout (privileged shortcuts not on the bottom nav). */
       header .hdr-right .btn-sm:not(.keep-mobile) { display: none; }
       header .hdr-right > a:has(button:not(.keep-mobile)) { display: none; }
+      header .hdr-right > a.btn-sm:not(.keep-mobile) { display: none; }
       header .hdr-right > span { font-size: .72rem; }
+      header .hdr-right { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
       .container { padding: 14px 10px; gap: 14px; }
       .card { padding: 14px 12px; }
