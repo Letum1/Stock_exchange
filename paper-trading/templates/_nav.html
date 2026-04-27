@@ -22,6 +22,10 @@
     <span class="nav-icon">💬</span><span>Messages</span>
     {% if unread %}<span class="nav-badge" id="nav-unread-badge">{{ unread }}</span>{% endif %}
   </a>
+  <a href="/notifications" class="nav-link {% if nav_active=='notifications' %}active{% endif %}">
+    <span class="nav-icon">🔔</span><span>Alerts</span>
+    <span class="nav-badge" id="nav-notif-badge" style="display:none">0</span>
+  </a>
   <a href="/market" class="nav-link {% if nav_active=='market' %}active{% endif %}">
     <span class="nav-icon">📊</span><span>Market</span>
   </a>
@@ -137,5 +141,22 @@
     }
     setTimeout(tick, 1800);
     setInterval(tick, 30000);
+  })();
+  // Notification badge.
+  (function() {
+    var nb = document.getElementById('nav-notif-badge');
+    if (!nb) return;
+    async function tick() {
+      try {
+        var r = await fetch('/api/notifications/count');
+        if (!r.ok) return;
+        var d = await r.json();
+        var n = (d && d.count) || 0;
+        if (n > 0) { nb.textContent = n > 99 ? '99+' : n; nb.style.display = ''; }
+        else { nb.style.display = 'none'; }
+      } catch (e) {}
+    }
+    setTimeout(tick, 1200);
+    setInterval(tick, 20000);
   })();
 </script>

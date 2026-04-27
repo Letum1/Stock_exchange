@@ -495,6 +495,20 @@ def init_db():
                 UNIQUE (requester_id, target_id)
             );
             CREATE INDEX IF NOT EXISTS idx_freq_target ON follow_requests(target_id, id);
+
+            -- Phase 7: in-app notifications (likes, comments, follows, requests)
+            CREATE TABLE IF NOT EXISTS notifications (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL REFERENCES users(id),  -- recipient
+                actor_id    INTEGER NOT NULL REFERENCES users(id),  -- who did it
+                kind        TEXT    NOT NULL,                       -- like|comment|follow|follow_request|follow_accepted
+                post_id     INTEGER REFERENCES posts(id),
+                comment_id  INTEGER REFERENCES post_comments(id),
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                read_at     DATETIME
+            );
+            CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_notif_unread ON notifications(user_id, read_at);
         """)
         # Best-effort schema migrations on existing DBs
         for ddl in (
@@ -5118,6 +5132,24 @@ def _is_private(db, user_id):
     return bool(r and r["is_private"])
 
 
+# ── Phase 7 — Notification helper (best-effort, never breaks the request) ────
+
+def _notify(db, *, user_id, actor_id, kind, post_id=None, comment_id=None):
+    """Insert a notification row. Skips self-actions and is wrapped in
+    try/except so a notification failure never breaks the user action."""
+    if not user_id or not actor_id or user_id == actor_id:
+        return
+    try:
+        db.execute(
+            """INSERT INTO notifications
+                   (user_id, actor_id, kind, post_id, comment_id)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, actor_id, kind, post_id, comment_id),
+        )
+    except Exception:
+        pass  # never crash a like/comment/follow because of notifications
+
+
 def _can_view_account(db, viewer_id, owner_id):
     """Whether `viewer_id` is allowed to see profile content (posts, highlights,
     stories, etc) of `owner_id`. Public accounts are always viewable; private
@@ -5541,10 +5573,12 @@ def like_post(pid):
         return jsonify({"error": "Post not found"}), 404
     if not _post_visible_to(db, row, uid):
         return jsonify({"error": "Can't see this post"}), 403
-    db.execute(
+    cur = db.execute(
         "INSERT OR IGNORE INTO post_likes (post_id, user_id) VALUES (?, ?)",
         (pid, uid),
     )
+    if cur.rowcount > 0:                       # only notify on a new like
+        _notify(db, user_id=row["user_id"], actor_id=uid, kind="like", post_id=pid)
     db.commit()
     n = db.execute("SELECT COUNT(*) AS n FROM post_likes WHERE post_id=?", (pid,)).fetchone()["n"]
     return jsonify({"liked": True, "likes": n})
@@ -5685,17 +5719,21 @@ def follow_user(other_id):
         return jsonify({"error": "User not found"}), 404
     # Private account → create a pending follow request instead.
     if _is_private(db, other_id) and not _is_following(db, uid, other_id):
-        db.execute(
+        cur = db.execute(
             """INSERT OR IGNORE INTO follow_requests (requester_id, target_id)
                VALUES (?, ?)""",
             (uid, other_id),
         )
+        if cur.rowcount > 0:
+            _notify(db, user_id=other_id, actor_id=uid, kind="follow_request")
         db.commit()
         return jsonify({"following": False, "requested": True, "is_friend": False})
-    db.execute(
+    cur = db.execute(
         "INSERT OR IGNORE INTO follows (follower_id, followed_id) VALUES (?, ?)",
         (uid, other_id),
     )
+    if cur.rowcount > 0:
+        _notify(db, user_id=other_id, actor_id=uid, kind="follow")
     db.commit()
     return jsonify({
         "following": True,
@@ -5791,6 +5829,8 @@ def accept_follow_request(req_id):
         (row["requester_id"], uid),
     )
     db.execute("DELETE FROM follow_requests WHERE id=?", (req_id,))
+    # Tell the requester their request was accepted.
+    _notify(db, user_id=row["requester_id"], actor_id=uid, kind="follow_accepted")
     db.commit()
     return jsonify({"message": "Accepted"})
 
@@ -5832,6 +5872,7 @@ def set_account_private():
                 "INSERT OR IGNORE INTO follows (follower_id, followed_id) VALUES (?, ?)",
                 (p["requester_id"], uid),
             )
+            _notify(db, user_id=p["requester_id"], actor_id=uid, kind="follow_accepted")
         db.execute("DELETE FROM follow_requests WHERE target_id=?", (uid,))
     db.commit()
     return jsonify({"is_private": bool(val)})
@@ -6219,6 +6260,9 @@ def add_comment(pid):
         "INSERT INTO post_comments (post_id, user_id, content) VALUES (?, ?, ?)",
         (pid, uid, body),
     )
+    cid = cur.lastrowid
+    _notify(db, user_id=post["user_id"], actor_id=uid,
+            kind="comment", post_id=pid, comment_id=cid)
     db.commit()
     new = db.execute(
         """SELECT c.id, c.user_id, c.content, c.created_at,
@@ -6367,6 +6411,90 @@ def reels_page():
 def follow_requests_page():
     return render_template(
         "follow_requests.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+    )
+
+
+# ── Phase 7 — Notifications API + page ───────────────────────────────────────
+
+@app.route("/api/notifications")
+@login_required
+def list_notifications():
+    """Latest 80 notifications for the current user, newest first."""
+    uid = current_user_id()
+    db = get_db()
+    rows = db.execute(
+        """SELECT n.id, n.kind, n.post_id, n.comment_id, n.created_at, n.read_at,
+                  n.actor_id,
+                  u.username AS actor_name,
+                  COALESCE(u.avatar_url,'') AS actor_avatar
+             FROM notifications n
+             JOIN users u ON u.id = n.actor_id
+            WHERE n.user_id = ?
+         ORDER BY n.id DESC
+            LIMIT 80""",
+        (uid,),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/notifications/count")
+@login_required
+def count_unread_notifications():
+    uid = current_user_id()
+    db = get_db()
+    n = db.execute(
+        "SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND read_at IS NULL",
+        (uid,),
+    ).fetchone()["n"]
+    return jsonify({"count": n})
+
+
+@app.route("/api/notifications/read", methods=["POST"])
+@login_required
+def mark_all_notifications_read():
+    uid = current_user_id()
+    db = get_db()
+    db.execute(
+        "UPDATE notifications SET read_at = CURRENT_TIMESTAMP "
+        "WHERE user_id = ? AND read_at IS NULL",
+        (uid,),
+    )
+    db.commit()
+    return jsonify({"message": "All marked as read"})
+
+
+@app.route("/api/notifications/<int:nid>/read", methods=["POST"])
+@login_required
+def mark_one_notification_read(nid):
+    uid = current_user_id()
+    db = get_db()
+    db.execute(
+        "UPDATE notifications SET read_at = CURRENT_TIMESTAMP "
+        "WHERE id = ? AND user_id = ? AND read_at IS NULL",
+        (nid, uid),
+    )
+    db.commit()
+    return jsonify({"message": "Marked as read"})
+
+
+@app.route("/api/notifications/clear", methods=["POST"])
+@login_required
+def clear_notifications():
+    """Delete all notifications for the current user."""
+    uid = current_user_id()
+    db = get_db()
+    db.execute("DELETE FROM notifications WHERE user_id=?", (uid,))
+    db.commit()
+    return jsonify({"message": "Cleared"})
+
+
+@app.route("/notifications")
+@login_required
+def notifications_page():
+    return render_template(
+        "notifications.html",
         username=session.get("username"),
         user_id=session.get("user_id"),
     )

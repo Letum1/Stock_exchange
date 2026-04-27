@@ -169,16 +169,17 @@ function reelHtml(p) {
   const ava = p.avatar_url
     ? `<img src="${escapeHtml(p.avatar_url)}" alt="">`
     : escapeHtml((p.username || '?')[0].toUpperCase());
+  const src = p.file ? `/api/files/${p.file.id}/download` : '';
   return `
     <article class="reel ${p.liked ? 'liked' : ''}" data-id="${p.id}" data-uid="${p.user_id}">
-      <video src="${escapeHtml(p.media_url)}" loop playsinline preload="metadata"></video>
+      <video src="${escapeHtml(src)}" loop playsinline preload="metadata" muted></video>
       <div class="play-overlay">▶</div>
       <div class="meta">
         <div class="author-row">
           <a href="/profile/${p.user_id}" class="ava">${ava}</a>
           <a href="/profile/${p.user_id}">@${escapeHtml(p.username)}</a>
         </div>
-        ${p.caption ? `<div class="caption">${escapeHtml(p.caption)}</div>` : ''}
+        ${p.content ? `<div class="caption">${escapeHtml(p.content)}</div>` : ''}
       </div>
       <div class="actions">
         <button onclick="toggleLike(${p.id})" title="Like" class="heart">♥</button>
@@ -252,11 +253,15 @@ function bindReel(el) {
     const bar = el.querySelector('.progress > i');
     bar.style.width = (v.currentTime / v.duration * 100).toFixed(1) + '%';
   });
-  // Tap to pause/resume.
+  // Tap to pause/resume — also unmute on first user tap.
   el.addEventListener('click', (ev) => {
     if (ev.target.closest('.actions') || ev.target.closest('.meta')) return;
+    if (v.muted) { v.muted = false; }
     if (v.paused) { v.play(); el.classList.remove('paused'); }
     else          { v.pause(); el.classList.add('paused'); }
+  });
+  v.addEventListener('error', () => {
+    el.querySelector('.play-overlay').textContent = '⚠️';
   });
 }
 
