@@ -5,7 +5,17 @@
 (function () {
   'use strict';
 
-  var KEY = 'pt_tour_v1_done';
+  // Per-account flag: each user on the same browser still gets their own
+  // first-visit tour. The user id is injected by the server via a <meta>
+  // tag in `_inject_ad_banner`; if it's missing or 0 (unauth), we fall
+  // back to the legacy global key so guests don't see it twice in a row.
+  var META_UID = (function () {
+    var m = document.querySelector('meta[name="pt-uid"]');
+    return m ? (m.getAttribute('content') || '0') : '0';
+  })();
+  var KEY = (META_UID && META_UID !== '0')
+    ? ('pt_tour_v1_done_u' + META_UID)
+    : 'pt_tour_v1_done';
 
   // Only show on small screens? No — beginners on desktop benefit too.
   // But we tailor copy & target the bottom nav on mobile, the sidebar on desktop.

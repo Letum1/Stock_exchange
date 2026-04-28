@@ -915,10 +915,15 @@ def _inject_ad_banner(resp):
         if "</body>" not in body or "ad-banner-bar" in body:
             return resp
         body = body.replace("</body>", _BANNER_SNIPPET + "\n</body>", 1)
-        # Also inject the first-visit guided tour (auto-starts once per
-        # browser, can be re-launched via window.startPaperTour()).
+        # Also inject the first-visit guided tour. The tour stores its
+        # "I've seen it" flag in localStorage keyed by user id, so each new
+        # account on the same browser still gets its own first-visit tour.
         if "pt-tour-bg" not in body:
-            tour_tag = '<script src="/static/tour.js" defer></script>\n</body>'
+            uid = session.get("user_id") or 0
+            tour_tag = (
+                '<meta name="pt-uid" content="{}">'
+                '<script src="/static/tour.js" defer></script>\n</body>'
+            ).format(int(uid))
             body = body.replace("</body>", tour_tag, 1)
         resp.set_data(body)
         # Recompute Content-Length so middleware doesn't truncate.
@@ -1096,19 +1101,44 @@ def _can_view_file(db, file_id, user_id):
     ).fetchone()
     if grant:
         return True
-    # Public-by-design surfaces: profile highlights are visible to everyone.
+    # Public-by-design surfaces — anyone can see these:
+    #   - Profile highlights and their covers
+    #   - Public social-feed posts (not soft-deleted)
+    #   - Stories on the home feed
+    #   - Profile banners and intro videos
     public_hl = db.execute(
-        """SELECT 1
-             FROM highlight_items
-            WHERE file_id = ?
-            UNION
-           SELECT 1
-             FROM highlights
-            WHERE cover_file_id = ?
-            LIMIT 1""",
-        (file_id, file_id),
+        """SELECT 1 FROM highlight_items WHERE file_id = ?
+           UNION
+           SELECT 1 FROM highlights      WHERE cover_file_id = ?
+           UNION
+           SELECT 1 FROM posts
+              WHERE file_id = ?
+                AND COALESCE(privacy,'public') = 'public'
+                AND deleted_at IS NULL
+           UNION
+           SELECT 1 FROM stories WHERE file_id = ?
+           LIMIT 1""",
+        (file_id, file_id, file_id, file_id),
     ).fetchone()
-    return bool(public_hl)
+    if public_hl:
+        return True
+    # Profile banner / intro video columns on users store the rendered URL
+    # `/api/files/<id>/download`, so match on substring. Best-effort —
+    # swallow errors on fresh DBs that haven't run the column migration.
+    try:
+        url_frag = "/api/files/{}/download".format(int(file_id))
+        prof = db.execute(
+            """SELECT 1 FROM users
+                WHERE banner_url      LIKE ?
+                   OR intro_video_url LIKE ?
+                LIMIT 1""",
+            (f"%{url_frag}%", f"%{url_frag}%"),
+        ).fetchone()
+        if prof:
+            return True
+    except sqlite3.OperationalError:
+        pass
+    return False
 
 
 def _grant_file_access(db, file_id, user_id):
