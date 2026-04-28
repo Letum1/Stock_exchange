@@ -104,28 +104,62 @@ const ME = {{ user_id }};
 function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
 function escapeAttr(s){return String(s||'').replace(/["'<>&]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
 
-/* Auto-embed YouTube/Vimeo/raw-video links inside posts. Mirrors the
-   helper in templates/home.html — keep them in sync. */
+/* Auto-embed any recognised video URL inside a post. Kept in sync with the
+   detectors in templates/home.html and templates/reels.html. */
 function detectVideoEmbed(url){
   if (!url) return null;
   let u; try { u = new URL(url); } catch (e) { return null; }
   const host = u.hostname.replace(/^www\./, '').toLowerCase();
+  const path = u.pathname;
+  const parent = location.hostname;
+  // YouTube
   if (host === 'youtu.be') {
-    const id = u.pathname.slice(1).split('/')[0];
+    const id = path.slice(1).split('/')[0];
     if (id) return { kind:'iframe', src:`https://www.youtube.com/embed/${encodeURIComponent(id)}` };
   }
   if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
-    if (u.pathname === '/watch' && u.searchParams.get('v')) {
-      return { kind:'iframe', src:`https://www.youtube.com/embed/${encodeURIComponent(u.searchParams.get('v'))}` };
-    }
-    const m = u.pathname.match(/^\/(embed|shorts|v)\/([^\/?#]+)/);
-    if (m) return { kind:'iframe', src:`https://www.youtube.com/embed/${encodeURIComponent(m[2])}` };
+    let id = u.searchParams.get('v');
+    if (!id) { const m = path.match(/^\/(embed|shorts|v|live)\/([^\/?#]+)/); if (m) id = m[2]; }
+    if (id) return { kind:'iframe', src:`https://www.youtube.com/embed/${encodeURIComponent(id)}` };
   }
-  if (host === 'vimeo.com') {
-    const m = u.pathname.match(/^\/(\d+)/);
+  // Vimeo
+  if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+    const m = path.match(/(\d+)/);
     if (m) return { kind:'iframe', src:`https://player.vimeo.com/video/${m[1]}` };
   }
-  if (/\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i.test(u.pathname + u.search)) {
+  // TikTok
+  if (host === 'tiktok.com' || host === 'vm.tiktok.com' || host === 'm.tiktok.com') {
+    const m = path.match(/\/video\/(\d+)/);
+    if (m) return { kind:'iframe', src:`https://www.tiktok.com/embed/v2/${m[1]}` };
+  }
+  // Dailymotion
+  if (host === 'dailymotion.com' || host === 'dai.ly') {
+    const m = path.match(/(?:\/video\/|^\/)([a-zA-Z0-9]+)/);
+    if (m) return { kind:'iframe', src:`https://www.dailymotion.com/embed/video/${m[1]}` };
+  }
+  // Twitch
+  if (host === 'twitch.tv' || host === 'clips.twitch.tv') {
+    const v = path.match(/\/videos\/(\d+)/);
+    if (v) return { kind:'iframe', src:`https://player.twitch.tv/?video=${v[1]}&parent=${parent}` };
+    const c = path.match(/\/clip\/([^/?#]+)/) || path.match(/^\/([^/?#]+)$/);
+    if (c && host === 'clips.twitch.tv') return { kind:'iframe', src:`https://clips.twitch.tv/embed?clip=${c[1]}&parent=${parent}` };
+  }
+  // Streamable
+  if (host === 'streamable.com') {
+    const m = path.match(/^\/([a-zA-Z0-9]+)/);
+    if (m) return { kind:'iframe', src:`https://streamable.com/e/${m[1]}` };
+  }
+  // Facebook video
+  if (host === 'facebook.com' || host === 'm.facebook.com' || host === 'fb.watch') {
+    return { kind:'iframe', src:`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false` };
+  }
+  // Bilibili
+  if (host === 'bilibili.com' || host === 'm.bilibili.com') {
+    const m = path.match(/\/video\/(BV[0-9A-Za-z]+|av\d+)/);
+    if (m) return { kind:'iframe', src:`https://player.bilibili.com/player.html?bvid=${m[1]}` };
+  }
+  // Raw video file
+  if (/\.(mp4|webm|mov|m4v|ogv|mkv)(\?|#|$)/i.test(path + u.search)) {
     return { kind:'video', src:url };
   }
   return null;
