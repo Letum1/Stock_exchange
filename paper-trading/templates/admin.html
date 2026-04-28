@@ -581,7 +581,7 @@
         impersonateBtn = `<button class="btn-impersonate"
           style="background:#3b0764;color:#e879f9;border:none;padding:6px 12px;
                  border-radius:5px;font-size:.78rem;font-weight:600;cursor:pointer"
-          onclick="impersonate(${u.id},'${u.username}')">👁 Login as</button>`;
+          onclick="impersonate(${u.id},'${u.username}')">🔐 Sign in as</button>`;
       }
       // Sensitive destructive actions still hidden for admins/owner to avoid foot-guns
       const destructive = !isAdmin && !isOwner ? `

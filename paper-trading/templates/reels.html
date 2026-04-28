@@ -11,13 +11,19 @@
       background:#000; color:#fff; overflow:hidden;
       font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    /* Override the global bottom-nav padding so reels can occupy the full viewport. */
+    /* Reserve space for the bottom nav on mobile so the video isn't hidden
+       behind it. On desktop the side-nav takes the left column instead. */
+    :root { --reels-nav-h: 0px; }
+    @media (max-width: 880px) {
+      :root { --reels-nav-h: var(--bottom-h, 64px); }
+    }
     body { padding-bottom: 0 !important; }
     .app-shell { display:flex; height:100dvh; }
-    .app-main  { flex:1; padding:0; min-width:0; height:100dvh; }
+    .app-main  { flex:1; padding:0; min-width:0;
+                 height:calc(100dvh - var(--reels-nav-h)); }
 
     .reels-stage {
-      position:relative; height:100dvh; width:100%;
+      position:relative; height:calc(100dvh - var(--reels-nav-h)); width:100%;
       overflow-y:scroll; overflow-x:hidden;
       scroll-snap-type:y mandatory;
       scrollbar-width:none;
@@ -25,15 +31,17 @@
     .reels-stage::-webkit-scrollbar { display:none; }
 
     .reel {
-      position:relative; height:100dvh; width:100%;
+      position:relative; height:calc(100dvh - var(--reels-nav-h)); width:100%;
       scroll-snap-align:start; scroll-snap-stop:always;
       display:flex; align-items:center; justify-content:center;
       background:#000;
     }
-    .reel video {
-      max-height:100dvh; max-width:100%; height:100dvh; width:100%;
-      object-fit:contain; background:#000;
+    .reel video,
+    .reel iframe {
+      max-height:100%; max-width:100%; height:100%; width:100%;
+      object-fit:contain; background:#000; border:0;
     }
+    .reel iframe { object-fit:initial; }
     .reel .meta {
       position:absolute; left:14px; right:90px; bottom:88px;
       color:#fff; text-shadow:0 1px 6px rgba(0,0,0,.7);
@@ -128,8 +136,10 @@
     }
 
     @media (max-width: 880px) {
-      .reel .meta  { bottom:86px; }
-      .reel .actions { bottom:96px; }
+      /* The bottom nav is now reserved by --reels-nav-h, so the meta/actions
+         can sit closer to the visible bottom of the video. */
+      .reel .meta    { bottom:18px; right:84px; }
+      .reel .actions { bottom:18px; }
     }
   </style>
 </head>
@@ -167,15 +177,78 @@ function escapeHtml(s) {
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/* Convert a pasted video URL (YouTube, Vimeo, TikTok, Dailymotion, Twitch) into
+   an embeddable iframe URL. Returns null if the URL isn't a recognized video link. */
+function videoEmbedFor(url) {
+  if (!url) return null;
+  let u;
+  try { u = new URL(url); } catch (e) { return null; }
+  const host = u.hostname.replace(/^www\./, '').toLowerCase();
+  const path = u.pathname;
+
+  // YouTube
+  if (host === 'youtu.be') {
+    const id = path.slice(1).split('/')[0];
+    return id ? `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0&modestbranding=1` : null;
+  }
+  if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
+    let id = u.searchParams.get('v');
+    if (!id) {
+      const m = path.match(/\/(?:shorts|embed|live)\/([^/?#]+)/);
+      if (m) id = m[1];
+    }
+    return id ? `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0&modestbranding=1` : null;
+  }
+  // Vimeo
+  if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+    const m = path.match(/(\d+)/);
+    return m ? `https://player.vimeo.com/video/${m[1]}?autoplay=1&playsinline=1` : null;
+  }
+  // TikTok
+  if (host === 'tiktok.com' || host === 'vm.tiktok.com' || host === 'm.tiktok.com') {
+    const m = path.match(/\/video\/(\d+)/);
+    if (m) return `https://www.tiktok.com/embed/v2/${m[1]}`;
+  }
+  // Dailymotion
+  if (host === 'dailymotion.com' || host === 'dai.ly') {
+    const m = path.match(/(?:\/video\/|^\/)([a-zA-Z0-9]+)/);
+    if (m) return `https://www.dailymotion.com/embed/video/${m[1]}?autoplay=1`;
+  }
+  // Twitch (videos / clips)
+  if (host === 'twitch.tv' || host === 'clips.twitch.tv') {
+    const parent = location.hostname;
+    const v = path.match(/\/videos\/(\d+)/);
+    if (v) return `https://player.twitch.tv/?video=${v[1]}&parent=${parent}&autoplay=true`;
+    const c = path.match(/\/clip\/([^/?#]+)/) || path.match(/^\/([^/?#]+)$/);
+    if (c && host === 'clips.twitch.tv') return `https://clips.twitch.tv/embed?clip=${c[1]}&parent=${parent}&autoplay=true`;
+  }
+  return null;
+}
+
 function reelHtml(p) {
   const ava = p.avatar_url
     ? `<img src="${escapeHtml(p.avatar_url)}" alt="">`
     : escapeHtml((p.username || '?')[0].toUpperCase());
-  const src = p.file ? `/api/files/${p.file.id}/download` : '';
+
+  const embedUrl = videoEmbedFor(p.link_url);
+  let media;
+  if (embedUrl) {
+    media = `<iframe src="${escapeHtml(embedUrl)}"
+                    allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                    allowfullscreen referrerpolicy="strict-origin-when-cross-origin"
+                    loading="lazy"></iframe>`;
+  } else {
+    const src = p.file ? `/api/files/${p.file.id}/download` : '';
+    media = `<video src="${escapeHtml(src)}" loop playsinline preload="metadata" muted></video>
+             <div class="play-overlay">▶</div>
+             <div class="progress"><i></i></div>`;
+  }
+
   return `
-    <article class="reel ${p.liked ? 'liked' : ''}" data-id="${p.id}" data-uid="${p.user_id}">
-      <video src="${escapeHtml(src)}" loop playsinline preload="metadata" muted></video>
-      <div class="play-overlay">▶</div>
+    <article class="reel ${p.liked ? 'liked' : ''} ${embedUrl ? 'is-embed' : ''}"
+             data-id="${p.id}" data-uid="${p.user_id}"
+             ${embedUrl ? `data-embed="1"` : ''}>
+      ${media}
       <div class="meta">
         <div class="author-row">
           <a href="/profile/${p.user_id}" class="ava">${ava}</a>
@@ -190,7 +263,6 @@ function reelHtml(p) {
         <span class="lbl" data-comments="${p.id}">${p.comments||0}</span>
         <button onclick="sharePost(${p.id})" title="Share">↗</button>
       </div>
-      <div class="progress"><i></i></div>
     </article>`;
 }
 
@@ -227,10 +299,9 @@ function observeReels() {
     io = new IntersectionObserver(entries => {
       entries.forEach(e => {
         const v = e.target.querySelector('video');
-        if (!v) return;
         if (e.isIntersecting && e.intersectionRatio > 0.6) {
           activeReelId = +e.target.dataset.id;
-          v.play().catch(()=>{});
+          if (v) v.play().catch(()=>{});
           // Mark seen.
           fetch(`/api/posts/${activeReelId}/view`, { method:'POST' }).catch(()=>{});
           // Load more when nearing the bottom.
@@ -238,7 +309,7 @@ function observeReels() {
           const reels = stage.querySelectorAll('.reel');
           if (reels[reels.length - 2] === e.target) loadMore();
         } else {
-          v.pause();
+          if (v) v.pause();
         }
       });
     }, { threshold: [0, 0.6, 1] });
@@ -250,10 +321,12 @@ function observeReels() {
 
 function bindReel(el) {
   const v = el.querySelector('video');
+  // Embedded iframes (YouTube/Vimeo/etc.) handle their own playback UI.
+  if (!v) return;
   v.addEventListener('timeupdate', () => {
     if (!v.duration) return;
     const bar = el.querySelector('.progress > i');
-    bar.style.width = (v.currentTime / v.duration * 100).toFixed(1) + '%';
+    if (bar) bar.style.width = (v.currentTime / v.duration * 100).toFixed(1) + '%';
   });
   // Tap to pause/resume — also unmute on first user tap.
   el.addEventListener('click', (ev) => {
@@ -263,7 +336,8 @@ function bindReel(el) {
     else          { v.pause(); el.classList.add('paused'); }
   });
   v.addEventListener('error', () => {
-    el.querySelector('.play-overlay').textContent = '⚠️';
+    const ov = el.querySelector('.play-overlay');
+    if (ov) ov.textContent = '⚠️';
   });
 }
 

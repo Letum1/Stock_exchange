@@ -410,6 +410,13 @@ async function loadAudit(){
     'VAULT_LIST':   '#e879f9',
     'OWNER_GRANT':  '#fb7185',
   }[a] || '#cbd5e1');
+  const actionLabel = a => ({
+    'SPY_DM':       'DM REVIEW',
+    'SPY_PUBLIC':   'PUBLIC CHAT REVIEW',
+    'IMPERSONATE':  'SIGN IN AS USER',
+    'VAULT_LIST':   'VAULT ACCESS',
+    'OWNER_GRANT':  'OWNER GRANT',
+  }[a] || a);
   el.innerHTML = `
     <div style="padding:10px 14px;font-size:.78rem;color:#94a3b8;background:#13151f;border-bottom:1px solid #2d3148">
       📋 ${rows.length} most recent privileged actions (newest first).
@@ -417,7 +424,7 @@ async function loadAudit(){
       <div class="convo" style="cursor:default">
         <div style="flex:1;min-width:0">
           <div class="pair">
-            <span style="color:${actionColor(r.action)};font-family:ui-monospace,monospace;font-size:.78rem">${escapeHtml(r.action)}</span>
+            <span style="color:${actionColor(r.action)};font-family:ui-monospace,monospace;font-size:.78rem">${escapeHtml(actionLabel(r.action))}</span>
             <span class="x">·</span>
             <span>${escapeHtml(r.admin_name || ('admin#'+r.admin_id))}</span>
             ${r.target_name ? `<span class="x">→</span><span>${escapeHtml(r.target_name)}</span>` : ''}

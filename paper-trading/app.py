@@ -6710,10 +6710,23 @@ def list_reels():
     uid = current_user_id()
     db = get_db()
     before_id = request.args.get("before_id", type=int)
+    # A reel is any visible post that is either:
+    #   - an uploaded video file, OR
+    #   - a link to an external video (YouTube, Vimeo, TikTok, Dailymotion, Twitch).
     sql = (
         """SELECT p.* FROM posts p
-             JOIN chat_files cf ON cf.id = p.file_id
-            WHERE p.deleted_at IS NULL AND cf.kind = 'video'
+             LEFT JOIN chat_files cf ON cf.id = p.file_id
+            WHERE p.deleted_at IS NULL
+              AND (
+                    (cf.id IS NOT NULL AND cf.kind = 'video')
+                 OR p.link_url LIKE '%youtube.com/%'
+                 OR p.link_url LIKE '%youtu.be/%'
+                 OR p.link_url LIKE '%vimeo.com/%'
+                 OR p.link_url LIKE '%tiktok.com/%'
+                 OR p.link_url LIKE '%dailymotion.com/%'
+                 OR p.link_url LIKE '%dai.ly/%'
+                 OR p.link_url LIKE '%twitch.tv/%'
+              )
         """
     )
     args = []
