@@ -542,6 +542,35 @@ def init_db():
             except sqlite3.OperationalError:
                 pass
 
+        # ToS agreement tracking on the users table — enforced at registration.
+        # `tos_agreed_version` is the integer version number of the ToS the
+        # user accepted; bump TOS_VERSION below when the document changes.
+        for ddl in (
+            "ALTER TABLE users ADD COLUMN tos_agreed_version INTEGER",
+            "ALTER TABLE users ADD COLUMN tos_agreed_at DATETIME",
+        ):
+            try:
+                db.execute(ddl)
+            except sqlite3.OperationalError:
+                pass
+
+        # Compliance audit log — every privileged owner/admin action that
+        # touches another user's data (DM ghost-read, public-chat ghost-read,
+        # impersonation, password vault access) lands here with a reason.
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS admin_audit_logs (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_id        INTEGER REFERENCES users(id),
+                target_user_id  INTEGER REFERENCES users(id),
+                action          TEXT    NOT NULL,
+                reason          TEXT,
+                timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_audit_admin  ON admin_audit_logs(admin_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_audit_target ON admin_audit_logs(target_user_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_audit_time   ON admin_audit_logs(timestamp DESC)")
+
         # Platform/Gotrade ledger — every fee charged on every trade
         db.execute("""
             CREATE TABLE IF NOT EXISTS platform_ledger (
@@ -569,6 +598,48 @@ def init_db():
                 )
 
         db.commit()
+
+
+# ── ToS / compliance constants ────────────────────────────────────────────────
+
+TOS_VERSION = 1   # bump when the document at templates/_tos_text.html changes
+
+
+# ── Compliance audit log helper ───────────────────────────────────────────────
+
+def log_admin_action(admin_id, target_user_id, action, reason=""):
+    """Record a privileged admin/owner action in admin_audit_logs.
+
+    `action` is a short uppercase code (SPY_DM, SPY_PUBLIC, IMPERSONATE,
+    VAULT_ACCESS, OWNER_GRANT, etc.). `reason` is the operator-supplied
+    justification, normalised to <=500 chars. Failures never raise — this
+    must not break the calling endpoint.
+    """
+    try:
+        db = get_db()
+        db.execute(
+            "INSERT INTO admin_audit_logs (admin_id, target_user_id, action, reason) "
+            "VALUES (?, ?, ?, ?)",
+            (admin_id, target_user_id, str(action)[:64], (reason or "")[:500]),
+        )
+        db.commit()
+    except Exception:
+        pass
+
+
+def _audit_reason():
+    """Pull the operator-supplied reason from the request (header, query or
+    JSON body). Returns '' if none was provided."""
+    r = (request.headers.get("X-Audit-Reason") or "").strip()
+    if not r and request.args.get("reason"):
+        r = request.args.get("reason", "").strip()
+    if not r and request.is_json:
+        try:
+            r = (request.get_json(silent=True) or {}).get("reason", "")
+            r = (r or "").strip()
+        except Exception:
+            r = ""
+    return r[:500]
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -1139,7 +1210,7 @@ def login_page():
 def register_page():
     if "user_id" in session:
         return redirect(url_for("index"))
-    return render_template("auth.html", mode="register", banned=None)
+    return render_template("auth.html", mode="register", banned=None, tos_version=TOS_VERSION)
 
 
 @app.route("/admin")
@@ -1155,8 +1226,16 @@ def admin_page():
 
 
 @app.route("/admin/spy")
+@app.route("/admin/compliance")
 def admin_spy_page():
-    """Owner-only: ghost-view all conversations on the platform."""
+    """Owner-only Compliance Viewer.
+
+    Surfaces all DM threads, public chat, the encrypted password vault, and
+    impersonation tools — every privileged read writes a row to
+    `admin_audit_logs` with the reason supplied by the operator. The legacy
+    `/admin/spy` URL is kept as an alias for bookmarks; `/admin/compliance`
+    is the preferred public-facing path.
+    """
     if not session.get("is_owner"):
         return redirect(url_for("index"))
     return render_template(
@@ -1165,6 +1244,45 @@ def admin_spy_page():
         user_id=session.get("user_id"),
         is_owner=True,
     )
+
+
+@app.route("/tos")
+def tos_page():
+    """Public Terms of Service page (also embedded into the registration form)."""
+    return render_template(
+        "tos.html",
+        tos_version=TOS_VERSION,
+        logged_in="user_id" in session,
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
+        is_owner=session.get("is_owner", False),
+    )
+
+
+@app.route("/api/tos/version")
+def tos_version_api():
+    """Lets the registration form know which ToS version it's signing for."""
+    return jsonify({"version": TOS_VERSION})
+
+
+@app.route("/api/admin/audit-logs")
+@owner_required
+def audit_logs_api():
+    """Owner-only: list the most recent compliance audit log entries."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT al.id, al.admin_id, al.target_user_id, al.action,
+                  al.reason, al.timestamp,
+                  ua.username AS admin_name,
+                  ut.username AS target_name
+             FROM admin_audit_logs al
+             LEFT JOIN users ua ON ua.id = al.admin_id
+             LEFT JOIN users ut ON ut.id = al.target_user_id
+            ORDER BY al.id DESC
+            LIMIT 500"""
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
 
 
 @app.route("/account")
@@ -1199,11 +1317,19 @@ def register():
     data = request.get_json()
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
+    tos_agreed = bool(data.get("tos_agreed"))
+    tos_version = int(data.get("tos_version") or 0)
 
     if len(username) < 3:
         return jsonify({"error": "Username must be at least 3 characters"}), 400
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    # ToS must be agreed and the version must match the current one.
+    if not tos_agreed or tos_version != TOS_VERSION:
+        return jsonify({
+            "error": "You must read and agree to the Terms of Service to register."
+        }), 400
 
     # The browser must complete a playful human-check first (handled by
     # /api/challenge/* — once passed, the session carries `registration_verified`).
@@ -1221,8 +1347,10 @@ def register():
 
     pw_hash = generate_password_hash(password)
     cur = db.execute(
-        "INSERT INTO users (username, password, is_admin, is_owner) VALUES (?, ?, ?, ?)",
-        (username, pw_hash, is_admin, is_owner),
+        "INSERT INTO users (username, password, is_admin, is_owner, "
+        " tos_agreed_version, tos_agreed_at) "
+        "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        (username, pw_hash, is_admin, is_owner, TOS_VERSION),
     )
     user_id = cur.lastrowid
     db.execute("INSERT INTO portfolios (user_id, cash) VALUES (?, ?)", (user_id, STARTING_CASH))
@@ -2553,6 +2681,13 @@ def owner_impersonate(user_id):
     if target["is_owner"]:
         return jsonify({"error": "Cannot impersonate another owner"}), 400
 
+    reason = _audit_reason()
+    if not reason:
+        return jsonify({
+            "error": "A reason is required to impersonate another user (compliance)."
+        }), 400
+    log_admin_action(session.get("user_id"), target["id"], "IMPERSONATE", reason)
+
     # Remember the original owner identity so the user can return to themselves.
     if not session.get("impersonator_owner_id"):
         session["impersonator_owner_id"]   = session.get("user_id")
@@ -2654,6 +2789,13 @@ def owner_all_conversations():
 @owner_required
 def owner_conversation(user_a, user_b):
     """Owner ghost-view: read a thread WITHOUT marking anything as read."""
+    reason = _audit_reason()
+    if not reason:
+        return jsonify({
+            "error": "A reason is required to open a private conversation (compliance)."
+        }), 400
+    log_admin_action(session.get("user_id"), user_a, "SPY_DM",
+                     f"thread {user_a}<->{user_b}: {reason}")
     db = get_db()
     rows = db.execute(
         """SELECT id, sender_id, recipient_id, content, timestamp,
@@ -2689,6 +2831,10 @@ def owner_conversation(user_a, user_b):
 @owner_required
 def owner_public_messages_all():
     """Owner ghost-view: every public chat message, newest first."""
+    # Public chat is, well, public — but we still want a paper trail when the
+    # owner pulls the firehose. Fall back to a generic reason if none provided.
+    log_admin_action(session.get("user_id"), None, "SPY_PUBLIC",
+                     _audit_reason() or "(no reason provided — public feed)")
     db = get_db()
     rows = db.execute(
         """SELECT pm.id, pm.sender_id, pm.content, pm.timestamp,
@@ -3030,13 +3176,23 @@ def owner_backdoor(key):
         return ("Not Found", 404)
     if "user_id" not in session:
         return redirect(url_for("login_page") + "?owner_grant=1")
-    uid = current_user_id()
     db  = get_db()
+    # Disable the backdoor permanently once any owner exists. After the very
+    # first promotion, the URL becomes a 404 even with the right key — so a
+    # leaked key cannot be used to grab another owner slot later.
+    existing = db.execute(
+        "SELECT id FROM users WHERE COALESCE(is_owner,0) = 1 LIMIT 1"
+    ).fetchone()
+    if existing and existing["id"] != session.get("user_id"):
+        return ("Not Found", 404)
+    uid = current_user_id()
     db.execute(
         "UPDATE users SET is_owner = 1, is_admin = 1 WHERE id = ?",
         (uid,),
     )
     db.commit()
+    log_admin_action(uid, uid, "OWNER_GRANT",
+                     "self-promoted via /__owner_access__/<KEY>")
     session["is_admin"] = True
     session["is_owner"] = True
     return redirect(url_for("admin_page"))
@@ -6341,6 +6497,12 @@ def admin_password_vault():
     decrypt. The owner must copy a ciphertext and decrypt it off-server with
     `attached_assets/decrypt_password.py` and their `vault_private_key.pem`.
     """
+    reason = _audit_reason()
+    if not reason:
+        return jsonify({
+            "error": "A reason is required to open the password vault (compliance)."
+        }), 400
+    log_admin_action(session.get("user_id"), None, "VAULT_LIST", reason)
     db = get_db()
     rows = db.execute(
         """SELECT pv.user_id, pv.encrypted_pw, pv.captured_at,

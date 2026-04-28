@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Terms of Service · The Exchange Hub</title>
+  <link rel="stylesheet" href="/static/responsive.css"/>
+  {% if logged_in %}<link rel="stylesheet" href="/static/shell.css"/>{% endif %}
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,system-ui,sans-serif;background:#0a0b10;color:#e7eaf3;min-height:100vh;line-height:1.55}
+    .tos-wrap{max-width:780px;margin:0 auto;padding:28px 18px 80px}
+    .tos-card{background:#11131c;border:1px solid #2a2e40;border-radius:16px;padding:28px}
+    h1{font-size:1.6rem;font-weight:800;letter-spacing:-.02em;margin-bottom:6px}
+    .meta{color:#94a3b8;font-size:.85rem;margin-bottom:22px}
+    h2{font-size:1.05rem;font-weight:800;margin:22px 0 8px;color:#e7eaf3;letter-spacing:-.01em}
+    h2 .num{color:#7c85ff;margin-right:8px}
+    p{font-size:.92rem;color:#cbd5e1;margin-bottom:10px}
+    ul{margin:8px 0 12px 22px}
+    li{font-size:.9rem;color:#cbd5e1;margin-bottom:6px}
+    li b{color:#e7eaf3}
+    .note{background:#181b27;border:1px solid #2d3148;border-radius:10px;padding:12px 14px;font-size:.85rem;color:#94a3b8;margin:14px 0}
+    .back{display:inline-block;margin-top:18px;color:#7c85ff;text-decoration:none;font-weight:700;font-size:.9rem}
+    .back:hover{text-decoration:underline}
+  </style>
+</head>
+<body>
+{% if logged_in %}{% include "_nav.html" %}{% endif %}
+
+<main class="tos-wrap">
+  <div class="tos-card">
+    {% include "_tos_text.html" %}
+
+    <div class="note">
+      <b>Version {{ tos_version }}</b> — Last updated April 28, 2026.
+      By creating an account on this platform you agree to this version of
+      the Terms.
+    </div>
+
+    {% if not logged_in %}
+    <a href="/register" class="back">← Back to sign-up</a>
+    {% else %}
+    <a href="/" class="back">← Back to home</a>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>

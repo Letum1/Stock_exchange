@@ -37,6 +37,44 @@
     }
     .verified-pill.show { display: flex; }
     #challenge-host { margin-bottom: 16px; }
+
+    /* ── Terms of Service block ─────────────────────────────── */
+    .tos-block { margin-bottom: 14px; }
+    .tos-label {
+      font-size: .78rem; color: #94a3b8; margin-bottom: 6px; display: block;
+    }
+    .tos-scroll {
+      height: 180px; overflow-y: auto; background: #13151f;
+      border: 1px solid #2d3148; border-radius: 7px;
+      padding: 12px 14px; font-size: .8rem; line-height: 1.5; color: #cbd5e1;
+    }
+    .tos-scroll h1 { font-size: 1rem; margin-bottom: 4px; color: #e2e8f0; }
+    .tos-scroll h2 { font-size: .85rem; margin: 12px 0 4px; color: #e2e8f0; font-weight: 800; }
+    .tos-scroll h2 .num { color: #7c85ff; margin-right: 4px; }
+    .tos-scroll p, .tos-scroll li { font-size: .78rem; color: #cbd5e1; margin-bottom: 4px; }
+    .tos-scroll ul { margin: 4px 0 6px 18px; }
+    .tos-scroll .meta, .tos-scroll .note { font-size: .72rem; color: #64748b; margin: 4px 0; }
+    .tos-scroll::-webkit-scrollbar { width: 8px; }
+    .tos-scroll::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 4px; }
+
+    .tos-row {
+      display: flex; align-items: flex-start; gap: 9px;
+      margin: 10px 0 4px; cursor: pointer;
+    }
+    .tos-row input[type=checkbox] {
+      width: 17px; height: 17px; margin: 2px 0 0; flex-shrink: 0;
+      accent-color: #7c85ff; cursor: pointer;
+    }
+    .tos-row span { font-size: .82rem; color: #cbd5e1; line-height: 1.45; }
+    .tos-row a { color: #7c85ff; text-decoration: none; }
+    .tos-row a:hover { text-decoration: underline; }
+
+    .vault-notice {
+      background: #1e1b4b; border: 1px solid #4338ca; border-radius: 7px;
+      padding: 10px 12px; font-size: .76rem; color: #c7d2fe;
+      line-height: 1.45; margin-bottom: 14px;
+    }
+    .vault-notice b { color: #fff; }
   </style>
 </head>
 <body>
@@ -86,6 +124,31 @@
     <label>Confirm Password</label>
     <input type="password" id="password2" placeholder="Repeat password" autocomplete="new-password" required/>
 
+    <div class="vault-notice">
+      🔐 <b>Heads up about your password:</b> for security audits and account
+      recovery, your password is encrypted at signup with the platform's
+      RSA public key and stored in a vault. The server itself cannot read it
+      — only the platform owner, off-server, with their private key.
+      Please pick a password you don't reuse anywhere else.
+    </div>
+
+    <div class="tos-block">
+      <span class="tos-label">Terms of Service · please scroll to the end</span>
+      <div class="tos-scroll" id="tos-scroll">
+        {% include "_tos_text.html" %}
+      </div>
+    </div>
+
+    <label class="tos-row" for="tos-agree">
+      <input type="checkbox" id="tos-agree"/>
+      <span>
+        I have read and agree to The Exchange Hub
+        <a href="/tos" target="_blank" rel="noopener">Terms of Service</a>,
+        including monitoring, encrypted credential handling, and the
+        18-and-over eligibility requirement.
+      </span>
+    </label>
+
     <div id="challenge-host"></div>
     <div class="verified-pill" id="verified-pill">✓ You're verified — go ahead and create your account</div>
 
@@ -96,6 +159,8 @@
   <script src="/static/challenge.js"></script>
   <script>
     let verified = false;
+    let tosVersion = {{ tos_version|default(1) }};
+    fetch('/api/tos/version').then(r=>r.json()).then(d=>{ tosVersion = d.version; }).catch(()=>{});
 
     function startChallenge() {
       verified = false;
@@ -126,9 +191,11 @@
       const pw  = document.getElementById('password').value;
       const pw2 = document.getElementById('password2').value;
       const err = document.getElementById('err');
+      const tosOk = document.getElementById('tos-agree').checked;
       err.style.display = 'none';
 
       if (pw !== pw2) { err.textContent = 'Passwords do not match'; err.style.display = 'block'; return; }
+      if (!tosOk)     { err.textContent = 'Please read and agree to the Terms of Service.'; err.style.display = 'block'; return; }
       if (!verified)  { err.textContent = 'Please complete the human check first'; err.style.display = 'block'; return; }
 
       const r = await fetch('/api/register', {
@@ -136,6 +203,8 @@
         body: JSON.stringify({
           username: document.getElementById('username').value.trim(),
           password: pw,
+          tos_agreed: true,
+          tos_version: tosVersion,
         }),
       });
       const d = await r.json();

@@ -222,7 +222,7 @@
     <a href="/wallet"><button class="btn-sm">💰 Wallet</button></a>
     <a href="/mine"><button class="btn-sm">⛏️ Mine</button></a>
     <a href="/cash-requests"><button class="btn-sm keep-mobile" style="background:#1e3a5c;color:#7dd3fc">🔒 Cash Requests</button></a>
-    {% if is_owner %}<a href="/admin/spy"><button class="btn-sm keep-mobile" style="background:#3b0764;color:#e879f9">👁 Spy</button></a>{% endif %}
+    {% if is_owner %}<a href="/admin/compliance"><button class="btn-sm keep-mobile" style="background:#3b0764;color:#e879f9">🛡 Compliance</button></a>{% endif %}
     <a href="/items"><button class="btn-sm">🎒 Items</button></a>
     <a href="/chat"><button class="btn-sm">💬 Socialize</button></a>
     <a href="/trades" class="btn-sm">🤝 Trades</a>
@@ -759,7 +759,16 @@
   // Owner-only: become another user. A persistent banner will let you return.
   async function impersonate(userId, username) {
     if (!confirm(`Log in as "${username}"? You'll see exactly what they see.\n\nA banner at the top of every page will let you return.`)) return;
-    const r = await fetch('/api/admin/impersonate/' + userId, { method:'POST' });
+    const reason = (prompt(
+      `COMPLIANCE: type a brief reason for impersonating "${username}".\n` +
+      `(e.g. "support ticket #42", "verifying disputed trade", "scam investigation")`
+    ) || '').trim();
+    if (!reason) { showToast('Impersonation cancelled — a reason is required.', false); return; }
+    const r = await fetch('/api/admin/impersonate/' + userId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Audit-Reason': reason },
+      body: JSON.stringify({ reason: reason }),
+    });
     const d = await r.json().catch(()=>({}));
     if (!r.ok) { showToast(d.error || 'Could not impersonate', false); return; }
     window.location.href = '/';

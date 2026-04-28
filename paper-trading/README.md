@@ -303,6 +303,9 @@ via best-effort `ALTER TABLE` migrations in the same function.
 | Onboarding tour                  | `static/tour.js` (auto-injected)         |
 | Shared nav                       | `templates/_nav.html` + `static/shell.css` |
 | Mobile rules                     | `static/responsive.css` + per-template `@media` blocks |
+| Terms of Service text + version  | `templates/_tos_text.html` + `TOS_VERSION` in `app.py` |
+| Compliance audit log             | `admin_audit_logs` table + `log_admin_action()` helper |
+| Compliance Viewer (formerly Spy) | `/admin/compliance` (alias `/admin/spy`) → `admin_spy.html` |
 
 ---
 

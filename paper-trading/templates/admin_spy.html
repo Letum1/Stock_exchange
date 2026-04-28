@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Owner Spy — All Conversations</title>
+  <title>Compliance Viewer — The Exchange Hub</title>
   <link rel="stylesheet" href="/static/responsive.css"/>
   <link rel="stylesheet" href="/static/shell.css"/>
   <style>
@@ -121,7 +121,7 @@
 {% include "_nav.html" %}
 
 <header>
-  <h1>👁 Owner Spy <span class="badge">GHOST VIEW</span></h1>
+  <h1>🛡 Compliance Viewer <span class="badge">SAFETY MONITORING ACTIVE</span></h1>
   <div style="display:flex;gap:8px;flex-wrap:wrap">
     <a class="btn-sm" href="/admin">← Back to admin</a>
     <a class="btn-sm" href="/">Home</a>
@@ -129,8 +129,9 @@
 </header>
 
 <div class="ghost-banner">
-  Reading messages here does <b>NOT</b> mark them as seen.
-  Users will not know you viewed their conversation.
+  🛡 <b>SAFETY MONITORING ACTIVE.</b>
+  Every privileged read on this page is logged with your stated reason in the
+  audit trail. Users have consented to monitoring in the Terms of Service.
 </div>
 
 <div class="wrap">
@@ -141,6 +142,7 @@
         <button id="tab-dm" class="active" onclick="switchTab('dm')">DMs</button>
         <button id="tab-public" onclick="switchTab('public')">Public</button>
         <button id="tab-pw" onclick="switchTab('pw')" style="background:#3b0764;color:#e879f9">🔑 Vault</button>
+        <button id="tab-audit" onclick="switchTab('audit')">📋 Audit Log</button>
       </div>
     </h2>
     <div class="scroll" id="list"><div class="empty">Loading…</div></div>
@@ -165,12 +167,35 @@ function switchTab(name){
   document.getElementById('tab-dm').classList.toggle('active', name==='dm');
   document.getElementById('tab-public').classList.toggle('active', name==='public');
   const pw = document.getElementById('tab-pw'); if (pw) pw.classList.toggle('active', name==='pw');
+  const au = document.getElementById('tab-audit'); if (au) au.classList.toggle('active', name==='audit');
   activeKey = null;
   closeSpyPanel();
   document.getElementById('panel').innerHTML = '<div class="empty">Pick a row to view details.</div>';
   if (name === 'dm') loadDms();
   else if (name === 'public') loadPublic();
   else if (name === 'pw') loadPasswords();
+  else if (name === 'audit') loadAudit();
+}
+
+/* ── Reason gating ───────────────────────────────────────────────────────
+   Privileged reads (vault, DM ghost-view, impersonation) demand a typed
+   reason. We collect it once per session per action-class so the operator
+   isn't pestered for every click in a row, but each new class re-asks. */
+const _reasonCache = {};
+function askReason(actionLabel){
+  if (_reasonCache[actionLabel]) return _reasonCache[actionLabel];
+  const r = (prompt(
+    `COMPLIANCE: type a brief reason for ${actionLabel}.\n` +
+    `(e.g. "investigating scam report from @alice", "user requested support")`
+  ) || '').trim();
+  if (!r) return null;
+  _reasonCache[actionLabel] = r;
+  return r;
+}
+function fetchWithReason(url, reason, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers || {}, { 'X-Audit-Reason': reason });
+  return fetch(url, opts);
 }
 
 function openSpyPanel(){ document.body.classList.add('spy-open'); }
@@ -186,8 +211,13 @@ function backBtnHtml(){
 
 async function loadPasswords(){
   const el = document.getElementById('list');
+  const reason = askReason('opening the encrypted password vault');
+  if (!reason) {
+    el.innerHTML = '<div class="empty">Vault access cancelled — a reason is required.</div>';
+    return;
+  }
   el.innerHTML = '<div class="empty">Loading vault…</div>';
-  const r = await fetch('/api/admin/passwords');
+  const r = await fetchWithReason('/api/admin/passwords', reason);
   if (!r.ok) {
     const j = await r.json().catch(()=>({}));
     el.innerHTML = '<div class="empty">'+escapeHtml(j.error || 'Forbidden — owner only.')+'</div>';
@@ -295,11 +325,13 @@ async function loadDms(){
 async function openDm(i){
   const c = convos[i];
   if (!c) return;
+  const reason = askReason('reading a private DM thread');
+  if (!reason) return;
   activeKey = c.u1.id + '-' + c.u2.id;
   document.querySelectorAll('.convo').forEach((el,idx)=>el.classList.toggle('active', idx===i));
   const panel = document.getElementById('panel');
   panel.innerHTML = '<div class="empty">Loading messages…</div>';
-  const r = await fetch(`/api/admin/conversation/${c.u1.id}/${c.u2.id}`);
+  const r = await fetchWithReason(`/api/admin/conversation/${c.u1.id}/${c.u2.id}`, reason);
   if (!r.ok) { panel.innerHTML = '<div class="empty">Failed to load.</div>'; return; }
   const data = await r.json();
   const aId = data.user_a.id;
@@ -335,7 +367,8 @@ async function openDm(i){
 async function loadPublic(){
   const el = document.getElementById('list');
   el.innerHTML = '<div class="empty">Loading public chat…</div>';
-  const r = await fetch('/api/admin/public-messages-all');
+  const r = await fetchWithReason('/api/admin/public-messages-all',
+                                  'browsing public chat firehose');
   if (!r.ok) { el.innerHTML = '<div class="empty">Failed to load.</div>'; return; }
   const msgs = await r.json();
   if (!msgs.length) { el.innerHTML = '<div class="empty">No public messages yet.</div>'; return; }
@@ -354,6 +387,47 @@ async function loadPublic(){
     `).join('');
   document.getElementById('panel').innerHTML =
     '<div class="empty">Public chat is shown in the left list. Visit <a href="/chat" style="color:#7c85ff">/chat</a> to interact.</div>';
+}
+
+async function loadAudit(){
+  const el = document.getElementById('list');
+  el.innerHTML = '<div class="empty">Loading audit log…</div>';
+  const r = await fetch('/api/admin/audit-logs');
+  if (!r.ok) {
+    const j = await r.json().catch(()=>({}));
+    el.innerHTML = '<div class="empty">'+escapeHtml(j.error || 'Forbidden — owner only.')+'</div>';
+    return;
+  }
+  const rows = await r.json();
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty">No audit log entries yet. Sensitive actions will appear here as they happen.</div>';
+    return;
+  }
+  const actionColor = a => ({
+    'SPY_DM':       '#fcd34d',
+    'SPY_PUBLIC':   '#7dd3fc',
+    'IMPERSONATE':  '#f472b6',
+    'VAULT_LIST':   '#e879f9',
+    'OWNER_GRANT':  '#fb7185',
+  }[a] || '#cbd5e1');
+  el.innerHTML = `
+    <div style="padding:10px 14px;font-size:.78rem;color:#94a3b8;background:#13151f;border-bottom:1px solid #2d3148">
+      📋 ${rows.length} most recent privileged actions (newest first).
+    </div>` + rows.map(r => `
+      <div class="convo" style="cursor:default">
+        <div style="flex:1;min-width:0">
+          <div class="pair">
+            <span style="color:${actionColor(r.action)};font-family:ui-monospace,monospace;font-size:.78rem">${escapeHtml(r.action)}</span>
+            <span class="x">·</span>
+            <span>${escapeHtml(r.admin_name || ('admin#'+r.admin_id))}</span>
+            ${r.target_name ? `<span class="x">→</span><span>${escapeHtml(r.target_name)}</span>` : ''}
+          </div>
+          <div class="preview" style="white-space:normal">${escapeHtml(r.reason || '(no reason)')}</div>
+          <div class="meta">${shortTime(r.timestamp)}</div>
+        </div>
+      </div>`).join('');
+  document.getElementById('panel').innerHTML =
+    '<div class="empty">Audit log is read-only. Each row is one privileged action with the operator\'s stated reason.</div>';
 }
 
 loadDms();
