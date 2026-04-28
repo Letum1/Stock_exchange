@@ -1180,7 +1180,7 @@ def account_page():
 
 @app.route("/about")
 def about_page():
-    """Beginner-friendly tour of the app: what PaperTrade is, how the
+    """Beginner-friendly tour of the app: what The Exchange Hub is, how the
     portfolio, wallet, marketplace, swap, mining and cash-in work."""
     return render_template(
         "about.html",

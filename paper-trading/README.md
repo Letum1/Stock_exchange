@@ -1,4 +1,6 @@
-# PaperTrade
+# The Exchange Hub
+
+
 
 A practice-trading playground built with Flask. Users get virtual cash, buy
 real stocks and crypto at live prices, mine for tokens, chat, swap items,

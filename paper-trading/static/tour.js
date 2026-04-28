@@ -1,4 +1,4 @@
-/* PaperTrade — first-visit guided tour.
+/* The Exchange Hub — first-visit guided tour.
    Pure-JS overlay that highlights navigation tabs and explains them.
    Triggered automatically on the first page load (per-account, stored in
    localStorage). Can be re-launched any time via window.startPaperTour(). */
@@ -16,7 +16,7 @@
   var STEPS = [
     {
       href: null,
-      title: 'Welcome to PaperTrade! 👋',
+      title: 'Welcome to The Exchange Hub! 👋',
       body: "We'll take 30 seconds to show you around. You can skip any time.",
       cta: "Show me",
       isIntro: true
