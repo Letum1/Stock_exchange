@@ -1,0 +1,122 @@
+Trading & Markets
+Live stock & crypto prices via yfinance (cached ~60s)
+Buy / Sell with confirm modal, ticker autocomplete, ticker search
+Portfolio dashboard showing holdings + live P/L
+Charts for any ticker
+Configurable trading fees (set in app_settings, surfaced in admin)
+Trade history per user
+💰 Wallet & Currencies
+3 currencies: virtual USD cash, BON tokens, satoshi
+Fixed in-game rate: 100 BON = 1 sat
+Live BTC price drives sat ↔ USD
+Instant 4-way conversion between all of them
+BON marketplace — sell BON for cash to other players (escrowed)
+Per-user wallet balances page
+⛏ Mining (multiplayer 2D game)
+10×10 tile grid per "block"
+Up to 5 miners per block mining the same grid in real time
+1 in 100 mined tiles drops a BON token (rate is admin-tunable)
+Cleared layers regenerate with deeper colours
+Invite-only worlds with lock toggle, invite, kick, leave
+Depth gates: layer 51+ requires holding ≥1 BON, layer 61+ also requires passing a fresh captcha (good for 10 min)
+Per-user mining stats (bon_found)
+💵 Cash In / Cash Out
+Sell BON / sat for cash (fee crypto_sell_fee_pct, default 5%)
+Cash-in requests — user submits payment credentials + note, admin/manager approves and credits
+Cash-out requests — escrows the sat at submit, refunds on reject
+Support chat with the platform owner built into the Cash In page
+cwallet tip button (configurable URL)
+Staff cash-requests panel at /cash-requests (admin or manager)
+🛒 Items Marketplace
+Item catalog (admin creates items)
+Per-user inventory
+Listings — list for cash, item-for-item swap, or both
+Promote / sponsor a listing (paid boost)
+Buy or propose a swap on a listing
+Item trade history
+🔁 Negotiated 1-on-1 Swaps
+Open a trade with another user
+Add cash, items, stocks, or crypto to either side
+Accept triggers a 30-second review window
+Confirm to finalize, cancel at any time
+Embedded chat inside the trade page
+💬 Messaging
+1-to-1 DMs with conversations sidebar + unread counts (badge polls every 6s)
+✓✓ seen receipts
+Live typing indicators
+File attachments in chat (25 MB cap)
+Sender or any admin can delete a message
+Public Chat room (admin can mute users + delete)
+Search users by username
+🎁 Gifts in Chat
+DM gifts — send BON / sat / cash inside a message (escrowed → credited on claim)
+Public-drop gifts — "first to claim wins" in public chat
+Each message renders a gift card with a Claim button
+📁 File Marketplace
+Upload files to your private vault
+List a file for sale (only the filename is public, contents stay hidden)
+Buying transfers ownership and wipes prior view grants
+Sending a file in DM grants the recipient view access automatically
+📱 Social Network (Facebook/Instagram-lite)
+Home feed with stories strip + composer + posts
+Posts (text, link, or file) with privacy: public / followers / friends
+Likes + double-tap heart animation + lightbox
+Comments on posts
+View counts + viewer list per post
+Share-to-DM — send any post to up to 10 friends at once
+Stories (24h auto-expire)
+Highlights on profile (long-lived story collections)
+Follow / unfollow, mutual follow = friends
+Private accounts with follow requests (accept/decline)
+Profile with banner (image or video), 10-second intro video, bio, avatar, stats
+Reels — short-video feed
+🔔 Notifications
+Notification feed at /notifications
+Unread count + mark read + clear all
+🔐 Auth
+Register / login / logout
+Playful human-verification challenge at register (math, riddle, emoji-fill, odd-one-out, drag-drop) — same widget reused for deep mining
+Username + password change
+Bio, avatar, banner, intro video on the profile
+👑 Roles & Admin
+User, is_admin, is_manager, is_owner
+Admin panel (/admin):
+Manage users (search, filter, ban, delete)
+Adjust balance / set balance / clear assets
+Grant/revoke admin (last-admin protection) and manager
+Create / delete / grant items
+Trading activity feed
+Revenue dashboard + owner tax view
+Configure fees + app_settings knobs
+Manage ad banners (rotating ad strip auto-injected into every page)
+Cash requests panel (/cash-requests) — staff only
+Manager can only see the cash-requests panel
+👁 Owner-only Powers (/admin/spy)
+Ghost view any DM / public chat without leaving "seen" traces
+Impersonate any user (and return-to-self)
+🔑 Password vault — plaintext passwords captured at signup, encrypted with vault_public_key.pem (server can't read; only the owner off-server can)
+One-time owner promotion via secret URL /__owner_access__/<OWNER_ACCESS_KEY>
+📺 Ads
+Admin-managed ad banner system
+Auto-injected into the bottom of every HTML response
+Click tracking
+Toggle / update / delete
+🎨 UI / UX
+Shared shell with Instagram-style left sidebar (desktop) → bottom bar (mobile ≤880px)
+Mobile-friendly across every page (extra ≤480px tweaks for tiny phones)
+Onboarding tour with spotlight + replay button on Account
+Swipe navigation between top-nav pages
+iOS auto-zoom prevention (forces inputs to 16px)
+Toast notifications that float above the bottom nav
+Dark theme throughout
+🗄 Data Layer
+SQLite (portfolio.db), auto-created and auto-migrated on startup
+40 tables covering identity, money, items, swaps, messaging, mining, social, notifications, ledger
+Platform ledger for revenue/fee tracking
+Uploads folder for avatars, ads, and chat/marketplace files
+🔢 By the numbers
+155 API endpoints + 22 page routes
+40 database tables
+23 templates
+~6,700 lines in app.py
+Basically: it's a full practice-trading + social network + multiplayer mining game + virtual economy with built-in admin/owner moderation and a manual cash-in support system. Everything except real money flow.
