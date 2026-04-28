@@ -182,6 +182,13 @@
     .story-bubble img,.story-bubble video{max-width:100%;border-radius:8px;display:block}
     .story-bubble p{font-size:.94rem;margin-top:6px;color:#e7eaf3;white-space:pre-wrap}
 
+    /* Inline embed for video links (YouTube, Vimeo, raw .mp4 etc.) */
+    .post-embed{margin-top:8px;border-radius:10px;overflow:hidden;
+                background:#000;border:1px solid #2a2e40}
+    .post-embed.iframe{position:relative;width:100%;padding-top:56.25%}
+    .post-embed.iframe iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+    .post-embed.video video{width:100%;display:block;background:#000;max-height:70vh}
+
     /* Like animation overlay on media */
     .heart-pop{
       position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.3);
@@ -218,7 +225,7 @@
       <textarea id="post-content" placeholder="What's on your mind, {{ username }}?" maxlength="5000" oninput="autoGrow(this)"></textarea>
     </div>
     <div class="composer-row2">
-      <input type="text" id="post-link" placeholder="🔗 Optional link" maxlength="500"/>
+      <input type="text" id="post-link" placeholder="🔗 Optional link (YouTube/Vimeo/.mp4 auto-plays)" maxlength="500"/>
       <select id="post-privacy" title="Who can see this post?">
         <option value="public">🌐 Public</option>
         <option value="followers">👥 Followers</option>
@@ -305,6 +312,59 @@ let currentFileId = null;
 let activeSharePostId = null;
 
 function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
+function escapeAttr(s){return String(s||'').replace(/["'<>&]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
+
+/* ── Video-link auto-embed ──────────────────────────────────────────────
+   If a post's link_url points to YouTube, Vimeo, or a raw video file,
+   render an inline player. Otherwise fall back to the original
+   "🔗 https://…" link. The fallback (and the "Open" button below the
+   embed) keep the URL clickable and copy-able for everyone. */
+function detectVideoEmbed(url){
+  if (!url) return null;
+  let u;
+  try { u = new URL(url); } catch (e) { return null; }
+  const host = u.hostname.replace(/^www\./, '').toLowerCase();
+  // YouTube — youtu.be/ID, youtube.com/watch?v=ID, /embed/ID, /shorts/ID
+  if (host === 'youtu.be') {
+    const id = u.pathname.slice(1).split('/')[0];
+    if (id) return { kind: 'iframe', src: `https://www.youtube.com/embed/${encodeURIComponent(id)}` };
+  }
+  if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
+    if (u.pathname === '/watch' && u.searchParams.get('v')) {
+      return { kind: 'iframe', src: `https://www.youtube.com/embed/${encodeURIComponent(u.searchParams.get('v'))}` };
+    }
+    const m = u.pathname.match(/^\/(embed|shorts|v)\/([^\/?#]+)/);
+    if (m) return { kind: 'iframe', src: `https://www.youtube.com/embed/${encodeURIComponent(m[2])}` };
+  }
+  // Vimeo — vimeo.com/123456789
+  if (host === 'vimeo.com') {
+    const m = u.pathname.match(/^\/(\d+)/);
+    if (m) return { kind: 'iframe', src: `https://player.vimeo.com/video/${m[1]}` };
+  }
+  // Raw video file (mp4/webm/mov/m4v/ogv) — same-origin or cross-origin
+  if (/\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i.test(u.pathname + u.search)) {
+    return { kind: 'video', src: url };
+  }
+  return null;
+}
+function renderLinkOrEmbed(url){
+  const safeLink = `<a class="post-link" href="${escapeAttr(url)}" target="_blank" rel="noreferrer">🔗 ${escapeHtml(url)}</a>`;
+  const e = detectVideoEmbed(url);
+  if (!e) return safeLink;
+  if (e.kind === 'iframe') {
+    return `<div class="post-embed iframe">
+      <iframe src="${escapeAttr(e.src)}" loading="lazy"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+    </div>${safeLink}`;
+  }
+  if (e.kind === 'video') {
+    return `<div class="post-embed video">
+      <video src="${escapeAttr(e.src)}" controls preload="metadata" playsinline></video>
+    </div>${safeLink}`;
+  }
+  return safeLink;
+}
 function shortTime(ts){if(!ts)return'';try{const d=new Date(ts.replace(' ','T')+'Z');const diff=(Date.now()-d.getTime())/1000;
   if(diff<60)return 'just now';if(diff<3600)return Math.floor(diff/60)+'m ago';if(diff<86400)return Math.floor(diff/3600)+'h ago';
   return d.toLocaleDateString();}catch(e){return ts;}}
@@ -450,7 +510,7 @@ function renderPost(p){
     }
   }
   const ava = p.avatar_url ? `<img src="${escapeHtml(p.avatar_url)}" alt=""/>` : escapeHtml((p.username||'?')[0].toUpperCase());
-  const link = p.link_url ? `<a class="post-link" href="${escapeHtml(p.link_url)}" target="_blank" rel="noreferrer">🔗 ${escapeHtml(p.link_url)}</a>` : '';
+  const link = p.link_url ? renderLinkOrEmbed(p.link_url) : '';
   const delBtn = p.mine ? `<button class="icon-btn" onclick="deletePost(${p.id})" title="Delete post">🗑</button>` : '';
   return `<div class="post" id="post-${p.id}">
     <div class="post-head">
