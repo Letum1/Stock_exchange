@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <link rel="stylesheet" href="/static/responsive.css"/>
   <link rel="stylesheet" href="/static/shell.css"/>
+  <link rel="stylesheet" href="/static/premium.css">
   <title>Socialize — The Exchange Hub</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -414,10 +415,12 @@
     }
     el.innerHTML = conversations.map(c => `
       <div class="convo ${c.user_id === activeUserId ? 'active' : ''}" onclick="openChat(${c.user_id}, '${escapeJs(c.username)}', '${escapeJs(c.avatar_url||'')}')">
-        ${avatarHtml(c.username, c.avatar_url)}
+        ${avatarHtml(c.username, c.avatar_url, c.is_premium)}
         <div class="convo-meta">
           <div class="convo-name">
-            <span>${escapeHtml(c.username)}</span>
+            <span class="${c.is_premium ? 'username is-premium' : ''}"
+                  ${c.premium_color ? `style="--pcolor:${escapeAttr(c.premium_color)}"` : ''}>${escapeHtml(c.username)}</span>
+            ${c.is_premium ? '<span class="pro-pill">PRO</span>' : ''}
             ${c.unread > 0 ? `<span class="unread-dot">${c.unread}</span>` : `<span class="convo-time">${shortTime(c.timestamp)}</span>`}
           </div>
           <div class="convo-preview">${c.from_me ? 'You: ' : ''}${escapeHtml(c.preview)}</div>
@@ -426,10 +429,12 @@
     `).join('');
   }
 
-  function avatarHtml(username, url) {
+  function avatarHtml(username, url, isPremium) {
     const initial = (username && username[0] ? username[0] : '?').toUpperCase();
-    if (url) return `<div class="avatar"><img src="${escapeAttr(url)}" alt=""/></div>`;
-    return `<div class="avatar">${initial}</div>`;
+    const inner = url
+      ? `<div class="avatar"><img src="${escapeAttr(url)}" alt=""/></div>`
+      : `<div class="avatar">${initial}</div>`;
+    return isPremium ? `<div class="premium-ring">${inner}</div>` : inner;
   }
 
   // ── Open chat ───────────────────────────────────────────────────────────
@@ -514,8 +519,9 @@
       const canDelete = me || IS_ADMIN;
       const actions = canDelete
         ? `<div class="msg-actions"><button onclick="deleteDm(${m.id})" title="Delete">🗑</button></div>` : '';
-      const text = m.content ? `<div class="msg ${me?'me':'them'}">${renderMsgContent(m.content)}</div>` : '';
-      const file = m.file ? `<div class="msg ${me?'me':'them'} msg-file">${renderFileAttachment(m.file)}</div>` : '';
+      const pcls = m.sender_is_premium ? ' premium-bubble' : '';
+      const text = m.content ? `<div class="msg ${me?'me':'them'}${pcls}">${renderMsgContent(m.content)}</div>` : '';
+      const file = m.file ? `<div class="msg ${me?'me':'them'} msg-file${pcls}">${renderFileAttachment(m.file)}</div>` : '';
       const gift = m.gift ? `<div class="msg ${me?'me':'them'}" style="padding:0;background:transparent;border:none">${renderGiftCard(m.gift)}</div>` : '';
       const body = text || file || gift
         ? `${text}${file}${gift}`
@@ -812,7 +818,7 @@
     const users = await r.json();
     const box = document.getElementById('search-results');
     if (!users.length) { box.innerHTML = '<div style="color:#64748b">No users found</div>'; box.classList.add('open'); return; }
-    box.innerHTML = users.map(u => `<div onclick="pickUser(${u.id}, '${escapeJs(u.username)}', '${escapeJs(u.avatar_url||'')}')">${escapeHtml(u.username)} <small style="color:#64748b">#${u.id}</small></div>`).join('');
+    box.innerHTML = users.map(u => `<div onclick="pickUser(${u.id}, '${escapeJs(u.username)}', '${escapeJs(u.avatar_url||'')}')"><span class="${u.is_premium ? 'username is-premium' : ''}" ${u.premium_color ? `style="--pcolor:${escapeAttr(u.premium_color)}"` : ''}>${escapeHtml(u.username)}</span>${u.is_premium ? ' <span class="pro-pill">PRO</span>' : ''} <small style="color:#64748b">#${u.id}</small></div>`).join('');
     box.classList.add('open');
   }
 

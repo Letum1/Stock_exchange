@@ -1,0 +1,194 @@
+/* ==== Premium membership perks (visual layer) ============================ */
+
+/* Gold gradient username — used wherever .is-premium decorates a name */
+.username.is-premium,
+.user-name.is-premium,
+.is-premium-name {
+  background: linear-gradient(90deg, #f6d365 0%, #fda085 50%, #ffd76a 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(253, 215, 106, .35);
+}
+
+/* When the user picks a custom colour, override the gradient with a solid hue */
+.username.is-premium[style*="--pcolor"],
+.user-name.is-premium[style*="--pcolor"] {
+  background: none;
+  -webkit-text-fill-color: var(--pcolor);
+  color: var(--pcolor);
+  text-shadow: 0 0 6px var(--pcolor);
+}
+
+/* "PRO" pill shown next to premium usernames */
+.pro-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .5px;
+  color: #1a1300;
+  background: linear-gradient(135deg, #ffd76a, #ff9d3d);
+  border-radius: 999px;
+  box-shadow: 0 0 6px rgba(255, 165, 0, .55);
+  text-transform: uppercase;
+  vertical-align: middle;
+  line-height: 1.2;
+}
+.pro-pill::before { content: "★"; font-size: 9px; }
+
+/* Animated rotating gold ring around premium avatars.
+   The actual <img> avatar must remain inside this wrapper. */
+.premium-ring {
+  position: relative;
+  padding: 2px;
+  border-radius: 50%;
+  background:
+    conic-gradient(from var(--ring-angle, 0deg),
+      #ffd76a, #ff7a18, #ffd76a, #ffae00, #ffd76a);
+  animation: premium-ring-spin 4s linear infinite;
+  box-shadow: 0 0 10px rgba(255, 175, 0, .55);
+}
+.premium-ring > img,
+.premium-ring > .avatar {
+  display: block;
+  border-radius: 50%;
+  background: var(--bg, #0c1117);
+  border: 2px solid var(--bg, #0c1117);
+}
+@property --ring-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes premium-ring-spin {
+  to { --ring-angle: 360deg; transform: rotate(360deg); }
+}
+@supports not (background: conic-gradient(from 0deg, #fff, #000)) {
+  .premium-ring { background: #ffd76a; animation: none; }
+}
+
+/* Premium chat bubble — used in chat.html / DMs */
+.bubble.premium-bubble,
+.dm-bubble.premium-bubble {
+  background: linear-gradient(135deg, #2a1a05 0%, #4a2c08 60%, #2a1a05 100%) !important;
+  border: 1px solid rgba(255, 200, 80, .55) !important;
+  box-shadow: 0 0 14px rgba(255, 175, 0, .25);
+  position: relative;
+}
+.bubble.premium-bubble::after,
+.dm-bubble.premium-bubble::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(120deg,
+              transparent 0%, rgba(255,215,106,.18) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: premium-shimmer 6s linear infinite;
+}
+@keyframes premium-shimmer {
+  to { background-position: -200% 0; }
+}
+
+/* Glowing border on reels for premium creators */
+.reel.premium-reel,
+.reel-card.premium-reel {
+  box-shadow:
+    0 0 0 2px rgba(255, 215, 106, .65),
+    0 0 24px rgba(255, 165, 0, .45),
+    0 8px 28px rgba(0,0,0,.5);
+  border-radius: 18px;
+}
+
+/* The premium upgrade page */
+.prem-hero {
+  text-align: center;
+  padding: 32px 16px 16px;
+}
+.prem-hero h1 {
+  font-size: 34px;
+  margin: 0 0 8px;
+  background: linear-gradient(90deg, #ffd76a, #ff9d3d, #ffd76a);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.prem-hero p { color: #a9b3c2; max-width: 560px; margin: 0 auto; }
+
+.prem-balance {
+  text-align: center;
+  margin: 12px 0 22px;
+  color: #ffd76a;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.prem-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  padding: 0 16px 24px;
+}
+.prem-plan {
+  background: linear-gradient(160deg, #14181f 0%, #1a2230 100%);
+  border: 1px solid rgba(255, 215, 106, .25);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.prem-plan h3 { margin: 0 0 6px; color: #ffd76a; font-size: 20px; }
+.prem-plan .price {
+  font-size: 28px; font-weight: 800; color: #fff; margin: 8px 0;
+}
+.prem-plan .price small { font-size: 12px; color: #a9b3c2; font-weight: 500; }
+.prem-plan button {
+  margin-top: 10px; width: 100%;
+  background: linear-gradient(135deg, #ffd76a, #ff9d3d);
+  color: #1a1300; font-weight: 800;
+  border: 0; border-radius: 10px;
+  padding: 10px 14px; cursor: pointer;
+}
+.prem-plan button:disabled { opacity: .55; cursor: not-allowed; }
+.prem-plan.featured { border-color: #ffd76a; box-shadow: 0 0 18px rgba(255,165,0,.35); }
+
+.prem-perks {
+  list-style: none;
+  padding: 0 16px;
+  margin: 8px 0 24px;
+  display: grid;
+  gap: 8px;
+  max-width: 560px;
+  margin-left: auto; margin-right: auto;
+}
+.prem-perks li {
+  background: rgba(255,215,106,.06);
+  border: 1px solid rgba(255,215,106,.18);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: #e6e9ef;
+}
+.prem-perks li::before { content: "★ "; color: #ffd76a; }
+
+.prem-status {
+  text-align: center; margin: 8px 0 18px; color: #9ed3a6;
+}
+
+.prem-color-row {
+  display: flex; gap: 8px; align-items: center;
+  justify-content: center; margin: 14px 0 24px;
+  flex-wrap: wrap;
+}
+.prem-color-row input[type=color] {
+  width: 44px; height: 44px; border: 0; background: transparent; cursor: pointer;
+}
+.prem-color-row button {
+  background: #ffd76a; color: #1a1300; font-weight: 700;
+  border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+}

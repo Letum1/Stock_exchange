@@ -555,6 +555,27 @@ def init_db():
             except sqlite3.OperationalError:
                 pass
 
+        # Premium membership — paid in satoshi. `premium_until` is NULL for free
+        # accounts, a far-future date for lifetime, otherwise a timestamp.
+        for ddl in (
+            "ALTER TABLE users ADD COLUMN premium_until DATETIME",
+            "ALTER TABLE users ADD COLUMN premium_color TEXT DEFAULT ''",
+        ):
+            try:
+                db.execute(ddl)
+            except sqlite3.OperationalError:
+                pass
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS premium_purchases (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL REFERENCES users(id),
+                plan        TEXT    NOT NULL,
+                sats_paid   INTEGER NOT NULL,
+                expires_at  DATETIME,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Compliance audit log — every privileged owner/admin action that
         # touches another user's data (DM ghost-read, public-chat ghost-read,
         # impersonation, password vault access) lands here with a reason.
@@ -1204,6 +1225,50 @@ BON_DROP_RATE   = 100         # default 1-in-N chance; admin-tunable via app_set
 
 def current_user_id():
     return session["user_id"]
+
+
+# ── Premium membership ──────────────────────────────────────────────────────
+# Plans are priced in satoshi (the in-app currency users earn from mining).
+# Lifetime is stored as the year-9999 sentinel.
+PREMIUM_PLANS = {
+    "month":    {"label": "1 month",   "sats": 1_000,   "days": 30},
+    "year":     {"label": "1 year",    "sats": 10_000,  "days": 365},
+    "lifetime": {"label": "Lifetime",  "sats": 50_000,  "days": None},
+}
+_PREMIUM_LIFETIME = "9999-12-31 23:59:59"
+
+
+def _user_premium_until(db, user_id):
+    """Return the user's premium expiry as a string, or None if not premium /
+    expired. Treats far-future sentinel as lifetime."""
+    row = db.execute(
+        "SELECT premium_until FROM users WHERE id=?", (user_id,)
+    ).fetchone()
+    if not row or not row["premium_until"]:
+        return None
+    pu = row["premium_until"]
+    # Compare lexicographically — works because format is always YYYY-MM-DD…
+    from datetime import datetime as _dt
+    now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    return pu if pu >= now else None
+
+
+def _user_is_premium(db, user_id):
+    return bool(_user_premium_until(db, user_id))
+
+
+def _premium_meta(db, user_id):
+    """Compact dict to embed in any user serializer."""
+    row = db.execute(
+        "SELECT premium_until, COALESCE(premium_color,'') AS premium_color FROM users WHERE id=?",
+        (user_id,),
+    ).fetchone()
+    if not row:
+        return {"is_premium": False, "premium_color": ""}
+    from datetime import datetime as _dt
+    now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    is_pro = bool(row["premium_until"] and row["premium_until"] >= now)
+    return {"is_premium": is_pro, "premium_color": row["premium_color"] or ""}
 
 
 # ── Stock helper ──────────────────────────────────────────────────────────────
@@ -2515,7 +2580,12 @@ def search_users():
              FROM users WHERE username LIKE ? AND id != ? LIMIT 8""",
         (f"%{q}%", current_user_id()),
     ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    out = []
+    for r in rows:
+        d = dict(r)
+        d.update(_premium_meta(db, r["id"]))
+        out.append(d)
+    return jsonify(out)
 
 
 @app.route("/api/messages/conversations")
@@ -2558,14 +2628,17 @@ def conversations():
                 if f:
                     icon = {"image":"🖼️","video":"🎬","audio":"🔊"}.get(f["kind"], "📎")
                     preview = f"{icon} {f['display_name']}"
+            pm = _premium_meta(db, user["id"])
             out.append({
-                "user_id":    user["id"],
-                "username":   user["username"],
-                "avatar_url": user["avatar_url"],
-                "preview":    preview,
-                "from_me":    last["sender_id"] == uid,
-                "timestamp":  last["timestamp"],
-                "unread":     unread,
+                "user_id":      user["id"],
+                "username":     user["username"],
+                "avatar_url":   user["avatar_url"],
+                "preview":      preview,
+                "from_me":      last["sender_id"] == uid,
+                "timestamp":    last["timestamp"],
+                "unread":       unread,
+                "is_premium":   pm["is_premium"],
+                "premium_color": pm["premium_color"],
             })
     return jsonify(out)
 
@@ -2607,6 +2680,10 @@ def messages_with(other_id):
                 d["file"] = None
         # Phase 3: hydrate any gift attached to this DM message
         d["gift"] = _gift_for_message(db, d["id"], uid)
+        # Premium decoration of the *sender* — used to colour the bubble.
+        pm = _premium_meta(db, d["sender_id"])
+        d["sender_is_premium"]    = pm["is_premium"]
+        d["sender_premium_color"] = pm["premium_color"]
         out.append(d)
     return jsonify(out)
 
@@ -2914,6 +2991,7 @@ def api_profile(user_id):
         "SELECT COUNT(*) AS n FROM holdings WHERE user_id = ?", (user_id,)
     ).fetchone()["n"]
 
+    pm = _premium_meta(db, user["id"])
     return jsonify({
         "id":       user["id"],
         "username": user["username"],
@@ -2929,6 +3007,8 @@ def api_profile(user_id):
         "item_trade_count": item_trade_count,
         "item_count":       item_count,
         "holdings_count":   holdings_count,
+        "is_premium":       pm["is_premium"],
+        "premium_color":    pm["premium_color"],
     })
 
 
@@ -5494,6 +5574,120 @@ def _can_view_account(db, viewer_id, owner_id):
     return _is_following(db, viewer_id, owner_id)
 
 
+# ── Premium membership endpoints ─────────────────────────────────────────────
+
+@app.route("/premium")
+@login_required
+def premium_page():
+    return render_template(
+        "premium.html",
+        username=session.get("username"),
+        user_id=session.get("user_id"),
+        is_admin=session.get("is_admin", False),
+        is_owner=session.get("is_owner", False),
+        owner_id=_owner_id(),
+    )
+
+
+@app.route("/api/premium/status")
+@login_required
+def api_premium_status():
+    """Current user's premium state + the catalog of buyable plans."""
+    uid = current_user_id()
+    db = get_db()
+    row = db.execute(
+        "SELECT COALESCE(satoshi,0) AS sats, premium_until, COALESCE(premium_color,'') AS premium_color "
+        "FROM users WHERE id=?", (uid,),
+    ).fetchone()
+    until = _user_premium_until(db, uid)
+    return jsonify({
+        "is_premium":     bool(until),
+        "premium_until":  until,
+        "lifetime":       bool(until and until.startswith("9999")),
+        "premium_color":  row["premium_color"] if row else "",
+        "satoshi_balance": int(row["sats"]) if row else 0,
+        "plans": [
+            {"key": k, "label": v["label"], "sats": v["sats"], "days": v["days"]}
+            for k, v in PREMIUM_PLANS.items()
+        ],
+    })
+
+
+@app.route("/api/premium/purchase", methods=["POST"])
+@login_required
+def api_premium_purchase():
+    """Spend satoshi to activate or extend premium. Body: {plan: 'month'|'year'|'lifetime'}."""
+    uid = current_user_id()
+    if session.get("is_banned"):
+        return jsonify({"error": "Account is restricted"}), 403
+    data = request.get_json(silent=True) or {}
+    plan_key = (data.get("plan") or "").strip().lower()
+    plan = PREMIUM_PLANS.get(plan_key)
+    if not plan:
+        return jsonify({"error": "Unknown plan"}), 400
+
+    db = get_db()
+    row = db.execute(
+        "SELECT COALESCE(satoshi,0) AS sats, premium_until FROM users WHERE id=?", (uid,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "User not found"}), 404
+    cost = int(plan["sats"])
+    if int(row["sats"]) < cost:
+        return jsonify({
+            "error": f"Not enough satoshi. You have {int(row['sats'])}, this plan costs {cost}."
+        }), 400
+
+    # Compute the new expiry: stack on top of existing premium if still active.
+    from datetime import datetime as _dt, timedelta as _td
+    now = _dt.utcnow()
+    base = now
+    if row["premium_until"]:
+        try:
+            existing = _dt.strptime(row["premium_until"], "%Y-%m-%d %H:%M:%S")
+            if existing > now and not row["premium_until"].startswith("9999"):
+                base = existing
+        except Exception:
+            pass
+    if plan["days"] is None:
+        new_until = _PREMIUM_LIFETIME
+    else:
+        new_until = (base + _td(days=plan["days"])).strftime("%Y-%m-%d %H:%M:%S")
+
+    db.execute("UPDATE users SET satoshi = satoshi - ?, premium_until = ? WHERE id = ?",
+               (cost, new_until, uid))
+    db.execute(
+        "INSERT INTO premium_purchases (user_id, plan, sats_paid, expires_at) VALUES (?, ?, ?, ?)",
+        (uid, plan_key, cost, new_until),
+    )
+    db.commit()
+    return jsonify({
+        "ok": True,
+        "premium_until": new_until,
+        "lifetime": new_until.startswith("9999"),
+        "satoshi_balance": int(row["sats"]) - cost,
+        "message": f"🎉 Welcome to Premium! Your perks are active until {new_until[:10] if not new_until.startswith('9999') else 'forever'}.",
+    })
+
+
+@app.route("/api/premium/color", methods=["POST"])
+@login_required
+def api_premium_color():
+    """Set the user's custom username colour. Premium-only."""
+    uid = current_user_id()
+    db = get_db()
+    if not _user_is_premium(db, uid):
+        return jsonify({"error": "Premium only"}), 403
+    data = request.get_json(silent=True) or {}
+    color = (data.get("color") or "").strip()
+    if color and not (color.startswith("#") and len(color) in (4, 7)
+                      and all(c in "0123456789abcdefABCDEF" for c in color[1:])):
+        return jsonify({"error": "Use a hex colour like #ff0066"}), 400
+    db.execute("UPDATE users SET premium_color = ? WHERE id = ?", (color, uid))
+    db.commit()
+    return jsonify({"ok": True, "premium_color": color})
+
+
 # ── Page: Cash In support chat (Phase 2) ─────────────────────────────────────
 
 @app.route("/cashin")
@@ -5808,6 +6002,7 @@ def _serialize_post(db, row, viewer_id):
         ).fetchone()["n"]
     except Exception:
         views = 0
+    pm = _premium_meta(db, row["user_id"])
     return {
         "id": row["id"],
         "user_id": row["user_id"],
@@ -5823,6 +6018,8 @@ def _serialize_post(db, row, viewer_id):
         "comments": comments,
         "views": views,
         "mine": (row["user_id"] == viewer_id),
+        "is_premium":    pm["is_premium"],
+        "premium_color": pm["premium_color"],
     }
 
 
@@ -6573,8 +6770,11 @@ def list_comments(pid):
     ).fetchall()
     out = [dict(r) for r in rows]
     for r in out:
-        r["mine"]      = (r["user_id"] == uid)
+        r["mine"]       = (r["user_id"] == uid)
         r["can_delete"] = r["mine"] or post["user_id"] == uid or session.get("is_admin")
+        pm = _premium_meta(db, r["user_id"])
+        r["is_premium"]    = pm["is_premium"]
+        r["premium_color"] = pm["premium_color"]
     return jsonify(out)
 
 

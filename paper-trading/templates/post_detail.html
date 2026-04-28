@@ -6,6 +6,7 @@
   <title>Post · The Exchange Hub</title>
   <link rel="stylesheet" href="/static/responsive.css"/>
   <link rel="stylesheet" href="/static/shell.css"/>
+  <link rel="stylesheet" href="/static/premium.css">
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     body{font-family:system-ui,sans-serif;background:#0a0b10;color:#e7eaf3;min-height:100vh}
@@ -204,11 +205,14 @@ async function load() {
     }
     const ava = p.avatar_url ? `<img src="${escapeHtml(p.avatar_url)}"/>` : escapeHtml((p.username||'?')[0].toUpperCase());
     const link = p.link_url ? renderLinkOrEmbed(p.link_url) : '';
+    const avaWrap = p.is_premium ? `<div class="premium-ring"><div class="avatar">${ava}</div></div>` : `<div class="avatar">${ava}</div>`;
+    const nameStyle = p.premium_color ? ` style="--pcolor:${escapeHtml(p.premium_color)}"` : '';
+    const nameCls   = p.is_premium ? 'username is-premium' : '';
     document.getElementById('root').innerHTML = `<div class="post">
       <div class="post-head">
-        <div class="avatar">${ava}</div>
+        ${avaWrap}
         <div class="post-meta">
-          <div class="who"><a href="/profile/${p.user_id}">${escapeHtml(p.username)}</a></div>
+          <div class="who"><a class="${nameCls}"${nameStyle} href="/profile/${p.user_id}">${escapeHtml(p.username)}</a>${p.is_premium ? '<span class="pro-pill">PRO</span>' : ''}</div>
           <div class="when">${shortTime(p.created_at)} · <span class="privacy-pill">${escapeHtml(p.privacy)}</span></div>
         </div>
       </div>
@@ -261,19 +265,25 @@ async function loadComments() {
       body.innerHTML = '<div style="color:#64748b;padding:18px;text-align:center">No comments yet. Be the first.</div>';
       return;
     }
-    body.innerHTML = arr.map(c => `
+    body.innerHTML = arr.map(c => {
+      const ava = c.avatar_url ? `<img src="${escapeHtml(c.avatar_url)}">`
+                               : escapeHtml((c.username||'?')[0].toUpperCase());
+      const avaWrap = c.is_premium
+        ? `<div class="premium-ring" style="display:inline-block"><a href="/profile/${c.user_id}" class="ava">${ava}</a></div>`
+        : `<a href="/profile/${c.user_id}" class="ava">${ava}</a>`;
+      const nameStyle = c.premium_color ? ` style="--pcolor:${escapeHtml(c.premium_color)}"` : '';
+      const nameCls   = c.is_premium ? 'username is-premium' : '';
+      return `
       <div class="c-row" data-cid="${c.id}">
-        <a href="/profile/${c.user_id}" class="ava">
-          ${c.avatar_url ? `<img src="${escapeHtml(c.avatar_url)}">`
-                         : escapeHtml((c.username||'?')[0].toUpperCase())}
-        </a>
+        ${avaWrap}
         <div style="flex:1;min-width:0">
-          <div class="who"><a href="/profile/${c.user_id}">@${escapeHtml(c.username)}</a></div>
+          <div class="who"><a class="${nameCls}"${nameStyle} href="/profile/${c.user_id}">@${escapeHtml(c.username)}</a>${c.is_premium ? ' <span class="pro-pill">PRO</span>' : ''}</div>
           <div class="txt">${escapeHtml(c.content)}</div>
           <div class="when">${shortTime(c.created_at)}</div>
         </div>
         ${c.can_delete ? `<button class="del" onclick="delComment(${c.id})" title="Delete">×</button>` : ''}
-      </div>`).join('');
+      </div>`;
+    }).join('');
   } catch (e) {
     body.innerHTML = '<div style="color:#ef4444;padding:14px 18px">Could not load comments.</div>';
   }

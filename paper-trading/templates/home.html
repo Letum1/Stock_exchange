@@ -6,6 +6,7 @@
   <title>Home · The Exchange Hub</title>
   <link rel="stylesheet" href="/static/responsive.css"/>
   <link rel="stylesheet" href="/static/shell.css"/>
+  <link rel="stylesheet" href="/static/premium.css">
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,system-ui,sans-serif;background:#0a0b10;color:#e7eaf3;min-height:100vh}
@@ -584,11 +585,16 @@ function renderPost(p){
   const ava = p.avatar_url ? `<img src="${escapeHtml(p.avatar_url)}" alt=""/>` : escapeHtml((p.username||'?')[0].toUpperCase());
   const link = p.link_url ? renderLinkOrEmbed(p.link_url) : '';
   const delBtn = p.mine ? `<button class="icon-btn" onclick="deletePost(${p.id})" title="Delete post">🗑</button>` : '';
+  const avaWrap = p.is_premium
+    ? `<div class="premium-ring" onclick="location='/profile/${p.user_id}'" style="cursor:pointer"><div class="avatar">${ava}</div></div>`
+    : `<div class="avatar" onclick="location='/profile/${p.user_id}'">${ava}</div>`;
+  const nameStyle = p.premium_color ? ` style="--pcolor:${escapeHtml(p.premium_color)}"` : '';
+  const nameCls   = p.is_premium ? 'username is-premium' : '';
   return `<div class="post" id="post-${p.id}">
     <div class="post-head">
-      <div class="avatar" onclick="location='/profile/${p.user_id}'">${ava}</div>
+      ${avaWrap}
       <div class="post-meta">
-        <div class="who"><a href="/profile/${p.user_id}">${escapeHtml(p.username)}</a></div>
+        <div class="who"><a class="${nameCls}" ${nameStyle} href="/profile/${p.user_id}">${escapeHtml(p.username)}</a>${p.is_premium ? '<span class="pro-pill">PRO</span>' : ''}</div>
         <div class="when">${shortTime(p.created_at)} · <span class="privacy-pill">${escapeHtml(p.privacy)}</span></div>
       </div>
       <div class="post-actions-top">${delBtn}</div>
@@ -711,9 +717,14 @@ async function doShareSearch(q) {
       const ava = u.avatar_url
         ? `<img src="${escapeHtml(u.avatar_url)}" alt=""/>`
         : escapeHtml((u.username||'?')[0].toUpperCase());
+      const avWrap = u.is_premium
+        ? `<div class="premium-ring"><div class="avatar-mini">${ava}</div></div>`
+        : `<div class="avatar-mini">${ava}</div>`;
+      const nameStyle = u.premium_color ? ` style="--pcolor:${escapeHtml(u.premium_color)}"` : '';
+      const nameCls   = u.is_premium ? 'username is-premium' : '';
       return `<div class="user-pick">
-        <div class="avatar-mini">${ava}</div>
-        <div class="upn">${escapeHtml(u.username)}</div>
+        ${avWrap}
+        <div class="upn"><span class="${nameCls}"${nameStyle}>${escapeHtml(u.username)}</span>${u.is_premium ? ' <span class="pro-pill">PRO</span>' : ''}</div>
         <button class="send-btn" onclick="sendShare(${u.id}, this)">Send</button>
       </div>`;
     }).join('');

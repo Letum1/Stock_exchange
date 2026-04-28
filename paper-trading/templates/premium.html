@@ -1,0 +1,166 @@
+{% set nav_active = 'premium' %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Premium · The Exchange Hub</title>
+  <link rel="stylesheet" href="/static/responsive.css"/>
+  <link rel="stylesheet" href="/static/shell.css"/>
+  <link rel="stylesheet" href="/static/premium.css">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}
+    main.container{max-width:880px;margin:0 auto;padding:18px 0}
+    .preview-card{
+      background:linear-gradient(160deg,#1a1d27,#222a3a);
+      border:1px solid #2d3148;border-radius:14px;
+      padding:18px;margin:0 16px 18px;display:flex;align-items:center;gap:14px;
+    }
+    .preview-card .premium-ring img{width:56px;height:56px;}
+    .preview-card .username{font-size:18px;}
+    .preview-bubble{margin-left:auto;max-width:60%;padding:10px 14px;border-radius:14px;}
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+  <main class="container">
+
+    <section class="prem-hero">
+      <h1>★ The Exchange Hub Premium</h1>
+      <p>Pay in satoshi you've already earned in the app — no fiat, no card,
+         no third party. Show off who you are with custom flair across chats,
+         posts, reels, and your profile.</p>
+    </section>
+
+    <div class="prem-status" id="prem-status">Checking your status…</div>
+    <div class="prem-balance" id="prem-balance"></div>
+
+    <ul class="prem-perks">
+      <li>Gold gradient username everywhere it appears</li>
+      <li>Animated rotating gold ring around your avatar</li>
+      <li>"PRO" pill next to your name</li>
+      <li>Custom-coloured chat bubbles in DMs &amp; comments</li>
+      <li>Glowing border on your reels so they stand out</li>
+      <li>Pick a custom username colour (members-only)</li>
+    </ul>
+
+    <div class="preview-card">
+      <div class="premium-ring">
+        <img id="pv-avatar" src="" alt="" onerror="this.style.display='none'">
+      </div>
+      <div>
+        <div><span id="pv-name" class="username is-premium">{{ username }}</span><span class="pro-pill">PRO</span></div>
+        <div style="color:#94a3b8;font-size:13px;">This is how you'll look across the app.</div>
+      </div>
+      <div class="bubble premium-bubble preview-bubble">Looking sharp ✨</div>
+    </div>
+
+    <section class="prem-grid" id="prem-grid">
+      <!-- plans rendered here -->
+    </section>
+
+    <section id="prem-color-section" style="display:none">
+      <h3 style="text-align:center;color:#ffd76a;margin:18px 0 8px">Pick a custom username colour</h3>
+      <div class="prem-color-row">
+        <input type="color" id="prem-color" value="#ffd76a">
+        <button id="prem-color-save">Save colour</button>
+        <button id="prem-color-clear" style="background:#2d3148;color:#cbd5e1">Reset</button>
+      </div>
+    </section>
+  </main>
+
+<script>
+const grid     = document.getElementById('prem-grid');
+const statusEl = document.getElementById('prem-status');
+const balEl    = document.getElementById('prem-balance');
+const colorSec = document.getElementById('prem-color-section');
+const colorInp = document.getElementById('prem-color');
+const pvName   = document.getElementById('pv-name');
+const pvAva    = document.getElementById('pv-avatar');
+
+async function load() {
+  const r = await fetch('/api/premium/status');
+  const d = await r.json();
+  balEl.textContent = `Balance: ${d.satoshi_balance.toLocaleString()} sats`;
+  if (d.is_premium) {
+    if (d.lifetime) {
+      statusEl.innerHTML = '✅ You are a <b>Lifetime Premium</b> member. Thank you!';
+    } else {
+      statusEl.innerHTML = `✅ Premium active until <b>${d.premium_until.slice(0,10)}</b>. Renew or upgrade below.`;
+    }
+    colorSec.style.display = '';
+    if (d.premium_color) {
+      colorInp.value = d.premium_color;
+      pvName.style.setProperty('--pcolor', d.premium_color);
+      pvName.setAttribute('style', `--pcolor:${d.premium_color}`);
+    }
+  } else {
+    statusEl.innerHTML = 'You are not premium yet — pick a plan below to unlock perks.';
+  }
+  // Try to load avatar from current profile
+  fetch(`/api/profile/{{ user_id }}`).then(r => r.json()).then(p => {
+    if (p && p.avatar_url) { pvAva.src = p.avatar_url; pvAva.style.display = ''; }
+  }).catch(()=>{});
+
+  grid.innerHTML = '';
+  d.plans.forEach((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'prem-plan' + (p.key === 'year' ? ' featured' : '');
+    const days = p.days ? `for ${p.days} days` : 'forever';
+    card.innerHTML = `
+      <h3>${p.label}</h3>
+      <div class="price">${p.sats.toLocaleString()} <small>sats</small></div>
+      <div style="color:#94a3b8;font-size:13px">${days}</div>
+      <button data-plan="${p.key}" ${d.satoshi_balance < p.sats ? 'disabled' : ''}>
+        ${d.satoshi_balance < p.sats ? 'Need more sats' : 'Buy now'}
+      </button>
+    `;
+    grid.appendChild(card);
+  });
+  grid.querySelectorAll('button[data-plan]').forEach(btn => {
+    btn.addEventListener('click', () => buy(btn.dataset.plan, btn));
+  });
+}
+
+async function buy(plan, btn) {
+  btn.disabled = true; btn.textContent = 'Processing…';
+  try {
+    const r = await fetch('/api/premium/purchase', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({plan}),
+    });
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || 'Purchase failed'); btn.disabled = false; btn.textContent = 'Buy now'; return; }
+    alert(d.message || 'Premium activated!');
+    load();
+  } catch (e) {
+    alert('Network error');
+    btn.disabled = false; btn.textContent = 'Buy now';
+  }
+}
+
+document.getElementById('prem-color-save').addEventListener('click', async () => {
+  const r = await fetch('/api/premium/color', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({color: colorInp.value})
+  });
+  const d = await r.json();
+  if (!r.ok) { alert(d.error || 'Failed'); return; }
+  alert('Colour saved.');
+  pvName.setAttribute('style', `--pcolor:${d.premium_color}`);
+});
+document.getElementById('prem-color-clear').addEventListener('click', async () => {
+  await fetch('/api/premium/color', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({color: ''})
+  });
+  pvName.removeAttribute('style');
+  alert('Colour reset.');
+});
+
+load();
+</script>
+</body>
+</html>

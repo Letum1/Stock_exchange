@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <link rel="stylesheet" href="/static/responsive.css"/>
   <link rel="stylesheet" href="/static/shell.css"/>
+  <link rel="stylesheet" href="/static/premium.css">
   <title>Profile{% if target_username %} — {{ target_username }}{% endif %}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -347,6 +348,27 @@
     }
     if (p.avatar_url) {
       document.getElementById('avatar').innerHTML = `<img src="${p.avatar_url}" alt=""/>`;
+    }
+    // Premium decoration on the profile head
+    if (p.is_premium) {
+      const wrap = document.querySelector('.ava-wrap');
+      if (wrap && !wrap.classList.contains('premium-ring')) wrap.classList.add('premium-ring');
+      const uname = document.querySelector('.uname');
+      if (uname) {
+        uname.classList.add('username','is-premium');
+        if (p.premium_color) uname.setAttribute('style', `--pcolor:${p.premium_color}`);
+        if (!uname.querySelector('.pro-pill')) {
+          const pill = document.createElement('span');
+          pill.className = 'pro-pill';
+          pill.textContent = 'PRO';
+          uname.appendChild(pill);
+        }
+      }
+      const dn = document.getElementById('display-name');
+      if (dn) {
+        dn.classList.add('username','is-premium');
+        if (p.premium_color) dn.setAttribute('style', `--pcolor:${p.premium_color}`);
+      }
     }
     if (p.banner_url) {
       const wrap = document.getElementById('banner');

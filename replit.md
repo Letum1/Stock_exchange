@@ -143,6 +143,24 @@ indicators.
   with the platform owner (reusing the existing DM stack with screenshot
   attachments).
 
+### Premium membership (DONE)
+- Paid in **satoshi** earned in-app (no fiat / Stripe). Plans:
+  monthly = 1 000 sats, yearly = 10 000 sats, lifetime = 50 000 sats
+  (lifetime stored as `9999-12-31`).
+- Schema: `users.premium_until DATETIME`, `users.premium_color TEXT`,
+  table `premium_purchases (id, user_id, plan, sats_paid, expires_at, created_at)`.
+- Endpoints: `GET /api/premium/status`, `POST /api/premium/purchase`,
+  `POST /api/premium/color`. Page: `/premium` (linked from sidebar).
+- Visual perks (`static/premium.css`): gold-gradient username, animated
+  rotating gold ring around avatar, "PRO" pill, gold shimmering chat bubble,
+  glowing border on reels, custom hex username colour for premium users.
+- Serializers (`/api/users/search`, `/api/profile/<id>`,
+  `/api/messages/conversations`, `/api/messages/<id>`,
+  `/api/posts/<id>/comments`, `_serialize_post`) all include
+  `is_premium` + `premium_color`. Templates `home.html`, `chat.html`,
+  `reels.html`, `profile.html`, `post_detail.html` apply the premium
+  classes wherever a username or avatar is rendered.
+
 ### Phase 3 — Gifts in chat (DONE)
 - `chat_gifts` table (DM via `message_id`, public-drop via `public_message_id`).
 - Endpoints: `POST /api/messages/gift` (DM gift, BON/satoshi/cash),

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Reels — The Exchange Hub</title>
   <link rel="stylesheet" href="/static/shell.css">
+  <link rel="stylesheet" href="/static/premium.css">
   <style>
     html, body {
       margin:0; padding:0; height:100%;
@@ -292,15 +293,20 @@ function reelHtml(p) {
   }
   const isEmbed = !!embed;
 
+  const avaLink = p.is_premium
+    ? `<div class="premium-ring" style="display:inline-block"><a href="/profile/${p.user_id}" class="ava">${ava}</a></div>`
+    : `<a href="/profile/${p.user_id}" class="ava">${ava}</a>`;
+  const nameStyle = p.premium_color ? ` style="--pcolor:${escapeHtml(p.premium_color)}"` : '';
+  const nameCls   = p.is_premium ? 'username is-premium' : '';
   return `
-    <article class="reel ${p.liked ? 'liked' : ''} ${isEmbed ? 'is-embed' : ''}"
+    <article class="reel ${p.liked ? 'liked' : ''} ${isEmbed ? 'is-embed' : ''} ${p.is_premium ? 'premium-reel' : ''}"
              data-id="${p.id}" data-uid="${p.user_id}"
              ${isEmbed ? `data-embed="1"` : ''}>
       ${media}
       <div class="meta">
         <div class="author-row">
-          <a href="/profile/${p.user_id}" class="ava">${ava}</a>
-          <a href="/profile/${p.user_id}">@${escapeHtml(p.username)}</a>
+          ${avaLink}
+          <a class="${nameCls}" ${nameStyle} href="/profile/${p.user_id}">@${escapeHtml(p.username)}</a>${p.is_premium ? '<span class="pro-pill">PRO</span>' : ''}
         </div>
         ${p.content ? `<div class="caption">${escapeHtml(p.content)}</div>` : ''}
       </div>
@@ -457,9 +463,13 @@ async function doShareSearch(q){
       const ava = u.avatar_url
         ? `<img src="${escapeHtml(u.avatar_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
         : escapeHtml((u.username || '?')[0].toUpperCase());
+      const inner = `<div style="width:36px;height:36px;border-radius:50%;background:#1e293b;display:flex;align-items:center;justify-content:center;font-weight:700;overflow:hidden;flex-shrink:0">${ava}</div>`;
+      const avWrap = u.is_premium ? `<div class="premium-ring" style="--bg:#0c1117">${inner}</div>` : inner;
+      const nameStyle = u.premium_color ? ` style="--pcolor:${escapeHtml(u.premium_color)}"` : '';
+      const nameCls   = u.is_premium ? 'username is-premium' : '';
       return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid #1e293b">
-        <div style="width:36px;height:36px;border-radius:50%;background:#1e293b;display:flex;align-items:center;justify-content:center;font-weight:700;overflow:hidden;flex-shrink:0">${ava}</div>
-        <div style="flex:1;font-weight:600">@${escapeHtml(u.username)}</div>
+        ${avWrap}
+        <div style="flex:1;font-weight:600"><span class="${nameCls}"${nameStyle}>@${escapeHtml(u.username)}</span>${u.is_premium ? ' <span class="pro-pill">PRO</span>' : ''}</div>
         <button class="reel-send-btn" data-uid="${u.id}"
           style="background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-radius:8px;font-weight:700;font-size:.8rem;cursor:pointer">Send</button>
       </div>`;
@@ -514,20 +524,26 @@ function renderComments(arr) {
     body.innerHTML = '<div style="color:#94a3b8;padding:24px;text-align:center">No comments yet. Be the first.</div>';
     return;
   }
-  body.innerHTML = arr.map(c => `
+  body.innerHTML = arr.map(c => {
+    const ava = c.avatar_url ? `<img src="${escapeHtml(c.avatar_url)}">`
+                             : escapeHtml((c.username||'?')[0].toUpperCase());
+    const avaWrap = c.is_premium
+      ? `<div class="premium-ring" style="display:inline-block"><a href="/profile/${c.user_id}" class="ava">${ava}</a></div>`
+      : `<a href="/profile/${c.user_id}" class="ava">${ava}</a>`;
+    const nameStyle = c.premium_color ? ` style="--pcolor:${escapeHtml(c.premium_color)}"` : '';
+    const nameCls   = c.is_premium ? 'username is-premium' : '';
+    return `
     <div class="row" data-cid="${c.id}">
-      <a href="/profile/${c.user_id}" class="ava">
-        ${c.avatar_url ? `<img src="${escapeHtml(c.avatar_url)}">`
-                       : escapeHtml((c.username||'?')[0].toUpperCase())}
-      </a>
+      ${avaWrap}
       <div style="flex:1;min-width:0">
-        <div class="who">@${escapeHtml(c.username)}</div>
+        <div class="who"><span class="${nameCls}"${nameStyle}>@${escapeHtml(c.username)}</span>${c.is_premium ? ' <span class="pro-pill">PRO</span>' : ''}</div>
         <div class="txt">${escapeHtml(c.content)}</div>
       </div>
       ${c.can_delete
         ? `<button onclick="deleteComment(${c.id})" style="background:transparent;border:none;color:#64748b;cursor:pointer">×</button>`
         : ''}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 function closeSheet() {
   document.getElementById('sheet').classList.remove('open');
