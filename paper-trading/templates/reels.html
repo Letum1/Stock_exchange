@@ -140,6 +140,10 @@
          can sit closer to the visible bottom of the video. */
       .reel .meta    { bottom:18px; right:84px; }
       .reel .actions { bottom:18px; }
+      /* Lift the comment sheet above the bottom nav so the input is visible. */
+      .sheet         { bottom: var(--reels-nav-h);
+                       max-height: calc(75dvh - var(--reels-nav-h)); }
+      .sheet .composer { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
     }
   </style>
 </head>
