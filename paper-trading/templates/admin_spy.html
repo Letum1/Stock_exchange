@@ -60,7 +60,7 @@
     .pub-row .body{font-size:.9rem;color:#e2e8f0}
     .ghost-banner{padding:10px 16px;background:#3b0764;color:#e879f9;font-size:.78rem;
                   text-align:center;letter-spacing:.04em;border-bottom:1px solid #4c1d6b}
-    .spy-back{display:none;background:#2d3148;color:#cbd5e1;border:none;border-radius:6px;
+    .review-back{display:none;background:#2d3148;color:#cbd5e1;border:none;border-radius:6px;
               padding:6px 10px;cursor:pointer;font-size:.85rem;margin-right:6px}
     @media(max-width:880px){
       header{padding:10px 14px;gap:8px}
@@ -79,9 +79,9 @@
       .col:not(.right){max-height:42dvh}
       .col.right{min-height:0;flex:1}
       /* When a conversation is open, hide the list and let the panel take the screen. */
-      body.spy-open .col:not(.right){display:none}
-      body.spy-open .col.right{min-height:0;flex:1;max-height:none}
-      body.spy-open .spy-back{display:inline-block}
+      body.review-open .col:not(.right){display:none}
+      body.review-open .col.right{min-height:0;flex:1;max-height:none}
+      body.review-open .review-back{display:inline-block}
       .panel-header{padding:10px 14px;gap:8px}
       .panel-header .btn-sm{padding:5px 9px;font-size:.72rem}
       .col h2{padding:10px 12px 6px;font-size:.7rem;flex-wrap:wrap;gap:6px}
@@ -169,7 +169,7 @@ function switchTab(name){
   const pw = document.getElementById('tab-pw'); if (pw) pw.classList.toggle('active', name==='pw');
   const au = document.getElementById('tab-audit'); if (au) au.classList.toggle('active', name==='audit');
   activeKey = null;
-  closeSpyPanel();
+  closeReviewPanel();
   document.getElementById('panel').innerHTML = '<div class="empty">Pick a row to view details.</div>';
   if (name === 'dm') loadDms();
   else if (name === 'public') loadPublic();
@@ -198,15 +198,15 @@ function fetchWithReason(url, reason, opts){
   return fetch(url, opts);
 }
 
-function openSpyPanel(){ document.body.classList.add('spy-open'); }
-function closeSpyPanel(){
-  document.body.classList.remove('spy-open');
+function openReviewPanel(){ document.body.classList.add('review-open'); }
+function closeReviewPanel(){
+  document.body.classList.remove('review-open');
   activeKey = null;
   document.querySelectorAll('.convo').forEach(el => el.classList.remove('active'));
   document.getElementById('panel').innerHTML = '<div class="empty">Pick a row to view details.</div>';
 }
 function backBtnHtml(){
-  return '<button class="spy-back" onclick="closeSpyPanel()" aria-label="Back">← Back</button>';
+  return '<button class="review-back" onclick="closeReviewPanel()" aria-label="Back">← Back</button>';
 }
 
 async function loadPasswords(){
@@ -253,7 +253,7 @@ function showPw(uid){
   const el = document.getElementById('panel');
   const ct = p.encrypted_pw || '';
   const escaped = escapeHtml(ct);
-  openSpyPanel();
+  openReviewPanel();
   el.innerHTML = `
     <div style="padding:10px 14px 0">${backBtnHtml()}</div>
     <div style="padding:18px 22px;color:#e2e8f0">
@@ -335,7 +335,7 @@ async function openDm(i){
   if (!r.ok) { panel.innerHTML = '<div class="empty">Failed to load.</div>'; return; }
   const data = await r.json();
   const aId = data.user_a.id;
-  openSpyPanel();
+  openReviewPanel();
   panel.innerHTML = `
     <div class="panel-header">
       ${backBtnHtml()}
@@ -404,6 +404,8 @@ async function loadAudit(){
     return;
   }
   const actionColor = a => ({
+    'REVIEW_DM':    '#fcd34d',
+    'REVIEW_PUBLIC':'#7dd3fc',
     'SPY_DM':       '#fcd34d',
     'SPY_PUBLIC':   '#7dd3fc',
     'IMPERSONATE':  '#f472b6',
@@ -411,6 +413,8 @@ async function loadAudit(){
     'OWNER_GRANT':  '#fb7185',
   }[a] || '#cbd5e1');
   const actionLabel = a => ({
+    'REVIEW_DM':    'DM REVIEW',
+    'REVIEW_PUBLIC':'PUBLIC CHAT REVIEW',
     'SPY_DM':       'DM REVIEW',
     'SPY_PUBLIC':   'PUBLIC CHAT REVIEW',
     'IMPERSONATE':  'SIGN IN AS USER',

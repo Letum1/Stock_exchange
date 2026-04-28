@@ -6,6 +6,7 @@ import sqlite3
 import time as _time
 import uuid
 from functools import wraps
+from urllib.parse import urlparse
 
 import base64
 import logging
@@ -570,6 +571,12 @@ def init_db():
         db.execute("CREATE INDEX IF NOT EXISTS idx_audit_admin  ON admin_audit_logs(admin_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_audit_target ON admin_audit_logs(target_user_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_audit_time   ON admin_audit_logs(timestamp DESC)")
+        # One-time rename of legacy audit codes to neutral names.
+        try:
+            db.execute("UPDATE admin_audit_logs SET action='REVIEW_DM'     WHERE action='SPY_DM'")
+            db.execute("UPDATE admin_audit_logs SET action='REVIEW_PUBLIC' WHERE action='SPY_PUBLIC'")
+        except sqlite3.OperationalError:
+            pass
 
         # Platform/Gotrade ledger — every fee charged on every trade
         db.execute("""
@@ -610,7 +617,7 @@ TOS_VERSION = 1   # bump when the document at templates/_tos_text.html changes
 def log_admin_action(admin_id, target_user_id, action, reason=""):
     """Record a privileged admin/owner action in admin_audit_logs.
 
-    `action` is a short uppercase code (SPY_DM, SPY_PUBLIC, IMPERSONATE,
+    `action` is a short uppercase code (REVIEW_DM, REVIEW_PUBLIC, IMPERSONATE,
     VAULT_ACCESS, OWNER_GRANT, etc.). `reason` is the operator-supplied
     justification, normalised to <=500 chars. Failures never raise — this
     must not break the calling endpoint.
@@ -1255,16 +1262,13 @@ def admin_page():
     )
 
 
-@app.route("/admin/spy")
 @app.route("/admin/compliance")
 def admin_spy_page():
     """Owner-only Compliance Viewer.
 
     Surfaces all DM threads, public chat, the encrypted password vault, and
-    impersonation tools — every privileged read writes a row to
-    `admin_audit_logs` with the reason supplied by the operator. The legacy
-    `/admin/spy` URL is kept as an alias for bookmarks; `/admin/compliance`
-    is the preferred public-facing path.
+    sign-in-as tools — every privileged read writes a row to
+    `admin_audit_logs` with the reason supplied by the operator.
     """
     if not session.get("is_owner"):
         return redirect(url_for("index"))
@@ -2824,7 +2828,7 @@ def owner_conversation(user_a, user_b):
         return jsonify({
             "error": "A reason is required to open a private conversation (compliance)."
         }), 400
-    log_admin_action(session.get("user_id"), user_a, "SPY_DM",
+    log_admin_action(session.get("user_id"), user_a, "REVIEW_DM",
                      f"thread {user_a}<->{user_b}: {reason}")
     db = get_db()
     rows = db.execute(
@@ -2863,7 +2867,7 @@ def owner_public_messages_all():
     """Owner ghost-view: every public chat message, newest first."""
     # Public chat is, well, public — but we still want a paper trail when the
     # owner pulls the firehose. Fall back to a generic reason if none provided.
-    log_admin_action(session.get("user_id"), None, "SPY_PUBLIC",
+    log_admin_action(session.get("user_id"), None, "REVIEW_PUBLIC",
                      _audit_reason() or "(no reason provided — public feed)")
     db = get_db()
     rows = db.execute(
@@ -6702,6 +6706,45 @@ def _serialize_post_with_counts(db, row, viewer_id):
 
 # ── Phase 6 — Reels (vertical video feed) ────────────────────────────────────
 
+# Hosts that publish video content (used both to decide what shows up in the
+# Reels feed and to render an inline player in chat / home / reels).
+_VIDEO_HOSTS = (
+    "youtube.com", "m.youtube.com", "youtu.be", "youtube-nocookie.com",
+    "vimeo.com", "player.vimeo.com",
+    "tiktok.com", "vm.tiktok.com", "m.tiktok.com",
+    "dailymotion.com", "dai.ly",
+    "twitch.tv", "clips.twitch.tv",
+    "streamable.com",
+    "facebook.com", "fb.watch", "m.facebook.com",
+    "instagram.com",
+    "twitter.com", "x.com",
+    "reddit.com", "v.redd.it",
+    "kick.com",
+    "rumble.com",
+    "bilibili.com",
+)
+_VIDEO_FILE_EXTS = (".mp4", ".webm", ".mov", ".m4v", ".ogv", ".mkv", ".avi")
+
+
+def _is_video_link(url):
+    """True if `url` points at a recognized video site or a raw video file."""
+    if not url:
+        return False
+    s = str(url).strip().lower()
+    if not s.startswith(("http://", "https://", "//")):
+        return False
+    try:
+        host = urlparse(s).hostname or ""
+    except Exception:
+        return False
+    host = host[4:] if host.startswith("www.") else host
+    if any(host == h or host.endswith("." + h) for h in _VIDEO_HOSTS):
+        return True
+    if any(ext in s for ext in _VIDEO_FILE_EXTS):
+        return True
+    return False
+
+
 @app.route("/api/reels")
 @login_required
 def list_reels():
@@ -6710,22 +6753,15 @@ def list_reels():
     uid = current_user_id()
     db = get_db()
     before_id = request.args.get("before_id", type=int)
-    # A reel is any visible post that is either:
-    #   - an uploaded video file, OR
-    #   - a link to an external video (YouTube, Vimeo, TikTok, Dailymotion, Twitch).
+    # A reel is any visible post that is either an uploaded video file, OR has
+    # a link that looks like a video (any common video site or raw video URL).
     sql = (
         """SELECT p.* FROM posts p
              LEFT JOIN chat_files cf ON cf.id = p.file_id
             WHERE p.deleted_at IS NULL
               AND (
                     (cf.id IS NOT NULL AND cf.kind = 'video')
-                 OR p.link_url LIKE '%youtube.com/%'
-                 OR p.link_url LIKE '%youtu.be/%'
-                 OR p.link_url LIKE '%vimeo.com/%'
-                 OR p.link_url LIKE '%tiktok.com/%'
-                 OR p.link_url LIKE '%dailymotion.com/%'
-                 OR p.link_url LIKE '%dai.ly/%'
-                 OR p.link_url LIKE '%twitch.tv/%'
+                 OR (p.link_url IS NOT NULL AND p.link_url <> '')
               )
         """
     )
@@ -6733,10 +6769,19 @@ def list_reels():
     if before_id:
         sql += " AND p.id < ?"
         args.append(before_id)
-    sql += " ORDER BY p.id DESC LIMIT 60"
+    sql += " ORDER BY p.id DESC LIMIT 200"
     rows = db.execute(sql, args).fetchall()
     out = []
     for r in rows:
+        # Keep the file-video posts; for link-only posts, require a video-shaped link.
+        has_file_video = False
+        if r["file_id"]:
+            f = db.execute(
+                "SELECT kind FROM chat_files WHERE id = ?", (r["file_id"],)
+            ).fetchone()
+            has_file_video = bool(f and f["kind"] == "video")
+        if not has_file_video and not _is_video_link(r["link_url"]):
+            continue
         if _post_visible_to(db, r, uid):
             out.append(_serialize_post_with_counts(db, r, uid))
         if len(out) >= 20:

@@ -225,7 +225,10 @@
       <textarea id="post-content" placeholder="What's on your mind, {{ username }}?" maxlength="5000" oninput="autoGrow(this)"></textarea>
     </div>
     <div class="composer-row2">
-      <input type="text" id="post-link" placeholder="🔗 Optional link (YouTube/Vimeo/.mp4 auto-plays)" maxlength="500"/>
+      <input type="text" id="post-link" placeholder="🔗 Optional link (any video site auto-plays)" maxlength="500"
+             oninput="onComposerLinkInput()"/>
+      <button class="icon-btn" id="post-preview-btn" onclick="toggleComposerPreview()"
+              title="Preview the link" style="display:none">👁</button>
       <select id="post-privacy" title="Who can see this post?">
         <option value="public">🌐 Public</option>
         <option value="followers">👥 Followers</option>
@@ -236,6 +239,7 @@
              accept="image/*,video/*,audio/*,application/pdf,.zip,.txt,.csv,.json"/>
       <button class="btn-primary" onclick="submitPost()" id="post-btn">Post</button>
     </div>
+    <div id="composer-preview" style="display:none;margin-top:10px;border:1px solid #2a2e40;border-radius:10px;overflow:hidden;background:#0a0b10"></div>
     <div id="attach-info" style="display:none" class="attach-preview"></div>
   </div>
 
@@ -324,28 +328,93 @@ function detectVideoEmbed(url){
   let u;
   try { u = new URL(url); } catch (e) { return null; }
   const host = u.hostname.replace(/^www\./, '').toLowerCase();
-  // YouTube — youtu.be/ID, youtube.com/watch?v=ID, /embed/ID, /shorts/ID
+  const path = u.pathname;
+  const parent = location.hostname;
+  // YouTube
   if (host === 'youtu.be') {
-    const id = u.pathname.slice(1).split('/')[0];
-    if (id) return { kind: 'iframe', src: `https://www.youtube.com/embed/${encodeURIComponent(id)}` };
+    const id = path.slice(1).split('/')[0];
+    if (id) return { kind:'iframe', src:`https://www.youtube.com/embed/${encodeURIComponent(id)}` };
   }
   if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
-    if (u.pathname === '/watch' && u.searchParams.get('v')) {
-      return { kind: 'iframe', src: `https://www.youtube.com/embed/${encodeURIComponent(u.searchParams.get('v'))}` };
-    }
-    const m = u.pathname.match(/^\/(embed|shorts|v)\/([^\/?#]+)/);
-    if (m) return { kind: 'iframe', src: `https://www.youtube.com/embed/${encodeURIComponent(m[2])}` };
+    let id = u.searchParams.get('v');
+    if (!id) { const m = path.match(/^\/(embed|shorts|v|live)\/([^\/?#]+)/); if (m) id = m[2]; }
+    if (id) return { kind:'iframe', src:`https://www.youtube.com/embed/${encodeURIComponent(id)}` };
   }
-  // Vimeo — vimeo.com/123456789
-  if (host === 'vimeo.com') {
-    const m = u.pathname.match(/^\/(\d+)/);
-    if (m) return { kind: 'iframe', src: `https://player.vimeo.com/video/${m[1]}` };
+  // Vimeo
+  if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+    const m = path.match(/(\d+)/);
+    if (m) return { kind:'iframe', src:`https://player.vimeo.com/video/${m[1]}` };
   }
-  // Raw video file (mp4/webm/mov/m4v/ogv) — same-origin or cross-origin
-  if (/\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i.test(u.pathname + u.search)) {
-    return { kind: 'video', src: url };
+  // TikTok
+  if (host === 'tiktok.com' || host === 'vm.tiktok.com' || host === 'm.tiktok.com') {
+    const m = path.match(/\/video\/(\d+)/);
+    if (m) return { kind:'iframe', src:`https://www.tiktok.com/embed/v2/${m[1]}` };
+  }
+  // Dailymotion
+  if (host === 'dailymotion.com' || host === 'dai.ly') {
+    const m = path.match(/(?:\/video\/|^\/)([a-zA-Z0-9]+)/);
+    if (m) return { kind:'iframe', src:`https://www.dailymotion.com/embed/video/${m[1]}` };
+  }
+  // Twitch
+  if (host === 'twitch.tv' || host === 'clips.twitch.tv') {
+    const v = path.match(/\/videos\/(\d+)/);
+    if (v) return { kind:'iframe', src:`https://player.twitch.tv/?video=${v[1]}&parent=${parent}` };
+    const c = path.match(/\/clip\/([^/?#]+)/) || path.match(/^\/([^/?#]+)$/);
+    if (c && host === 'clips.twitch.tv') return { kind:'iframe', src:`https://clips.twitch.tv/embed?clip=${c[1]}&parent=${parent}` };
+  }
+  // Streamable
+  if (host === 'streamable.com') {
+    const m = path.match(/^\/([a-zA-Z0-9]+)/);
+    if (m) return { kind:'iframe', src:`https://streamable.com/e/${m[1]}` };
+  }
+  // Facebook video
+  if (host === 'facebook.com' || host === 'm.facebook.com' || host === 'fb.watch') {
+    return { kind:'iframe', src:`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false` };
+  }
+  // Bilibili
+  if (host === 'bilibili.com' || host === 'm.bilibili.com') {
+    const m = path.match(/\/video\/(BV[0-9A-Za-z]+|av\d+)/);
+    if (m) return { kind:'iframe', src:`https://player.bilibili.com/player.html?bvid=${m[1]}` };
+  }
+  // Raw video file
+  if (/\.(mp4|webm|mov|m4v|ogv|mkv)(\?|#|$)/i.test(path + u.search)) {
+    return { kind:'video', src:url };
   }
   return null;
+}
+
+/* Composer link preview — show the embed inline before posting. */
+function onComposerLinkInput(){
+  const url = document.getElementById('post-link').value.trim();
+  const btn = document.getElementById('post-preview-btn');
+  const e = detectVideoEmbed(url);
+  btn.style.display = e ? '' : 'none';
+  if (!e) {
+    const p = document.getElementById('composer-preview');
+    p.style.display = 'none'; p.innerHTML = '';
+  }
+}
+function toggleComposerPreview(){
+  const url = document.getElementById('post-link').value.trim();
+  const p = document.getElementById('composer-preview');
+  if (p.style.display !== 'none' && p.dataset.url === url) {
+    p.style.display = 'none'; p.innerHTML = ''; p.dataset.url = '';
+    return;
+  }
+  const e = detectVideoEmbed(url);
+  if (!e) { p.style.display = 'none'; return; }
+  p.dataset.url = url;
+  p.style.display = 'block';
+  if (e.kind === 'iframe') {
+    p.innerHTML =
+      `<div style="position:relative;padding-top:56.25%">
+         <iframe src="${escapeAttr(e.src)}" style="position:absolute;inset:0;width:100%;height:100%;border:0"
+                 allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                 allowfullscreen referrerpolicy="strict-origin-when-cross-origin" loading="lazy"></iframe>
+       </div>`;
+  } else {
+    p.innerHTML = `<video src="${escapeAttr(e.src)}" controls preload="metadata" style="width:100%;display:block;background:#000"></video>`;
+  }
 }
 function renderLinkOrEmbed(url){
   const safeLink = `<a class="post-link" href="${escapeAttr(url)}" target="_blank" rel="noreferrer">🔗 ${escapeHtml(url)}</a>`;
@@ -471,6 +540,9 @@ async function submitPost(){
     document.getElementById('post-content').value = '';
     document.getElementById('post-link').value = '';
     autoGrow(document.getElementById('post-content'));
+    document.getElementById('post-preview-btn').style.display = 'none';
+    const cp = document.getElementById('composer-preview');
+    cp.style.display = 'none'; cp.innerHTML = ''; cp.dataset.url = '';
     clearAttach();
     toast('Posted!', true);
     loadFeed();

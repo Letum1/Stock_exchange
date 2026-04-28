@@ -514,7 +514,7 @@
       const canDelete = me || IS_ADMIN;
       const actions = canDelete
         ? `<div class="msg-actions"><button onclick="deleteDm(${m.id})" title="Delete">🗑</button></div>` : '';
-      const text = m.content ? `<div class="msg ${me?'me':'them'}">${escapeHtml(m.content)}</div>` : '';
+      const text = m.content ? `<div class="msg ${me?'me':'them'}">${renderMsgContent(m.content)}</div>` : '';
       const file = m.file ? `<div class="msg ${me?'me':'them'} msg-file">${renderFileAttachment(m.file)}</div>` : '';
       const gift = m.gift ? `<div class="msg ${me?'me':'them'}" style="padding:0;background:transparent;border:none">${renderGiftCard(m.gift)}</div>` : '';
       const body = text || file || gift
@@ -533,6 +533,7 @@
               </div>
               <div class="msg-time ${me?'me':'them'}">${shortTime(m.timestamp)}${seen}</div>`;
     }).join('');
+    hydrateSharedPostCards(el);
     if (wasAtBottom) el.scrollTop = el.scrollHeight;
   }
 
@@ -828,6 +829,71 @@
   // ── Helpers ─────────────────────────────────────────────────────────────
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s) { return escapeHtml(s); }
+
+  /* Render DM body: linkify URLs, replace shared-post tokens with a clickable
+     placeholder, and lazily upgrade those placeholders into rich preview cards. */
+  function renderMsgContent(raw) {
+    let html = escapeHtml(raw);
+    // Match the share format "📎 Shared a post by @user → /post/123"
+    html = html.replace(
+      /📎 Shared a post by @([A-Za-z0-9_.\-]+) (?:→|-&gt;) \/post\/(\d+)/g,
+      (_m, uname, pid) =>
+        `<a class="shared-post-link" href="/post/${pid}" data-pid="${pid}"
+            style="display:block;text-decoration:none;color:inherit;margin-top:4px">
+           <span style="opacity:.7;font-size:.8rem">📎 Shared a post by @${escapeHtml(uname)}</span>
+           <div class="shared-post-card" data-pid="${pid}"
+                style="margin-top:6px;border:1px solid rgba(148,163,184,.3);border-radius:10px;padding:10px;background:rgba(15,23,42,.4);font-size:.85rem">
+             <span style="opacity:.6">Loading preview…</span>
+           </div>
+         </a>`
+    );
+    // Linkify any remaining bare URLs.
+    html = html.replace(
+      /(^|[^"'>])(https?:\/\/[^\s<]+)/g,
+      (m, pre, url) => `${pre}<a href="${url}" target="_blank" rel="noopener" style="color:#7c85ff;text-decoration:underline">${url}</a>`
+    );
+    return html;
+  }
+
+  // Cache of fetched post previews so re-renders don't refetch.
+  const _postPreviewCache = {};
+  function hydrateSharedPostCards(root) {
+    const nodes = (root || document).querySelectorAll('.shared-post-card[data-pid]');
+    nodes.forEach(card => {
+      const pid = card.dataset.pid;
+      if (card.dataset.loaded === '1') return;
+      card.dataset.loaded = '1';
+      const fill = (p) => { card.innerHTML = renderSharedPostCard(p); };
+      if (_postPreviewCache[pid]) { fill(_postPreviewCache[pid]); return; }
+      fetch('/api/posts/' + pid)
+        .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        .then(p => { _postPreviewCache[pid] = p; fill(p); })
+        .catch(() => { card.innerHTML = '<span style="opacity:.6">Post unavailable</span>'; });
+    });
+  }
+  function renderSharedPostCard(p) {
+    const ava = p.avatar_url
+      ? `<img src="${escapeHtml(p.avatar_url)}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover">`
+      : `<div style="width:28px;height:28px;border-radius:50%;background:#334155;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.75rem">${escapeHtml((p.username||'?')[0].toUpperCase())}</div>`;
+    const head = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                    ${ava}<b style="font-size:.85rem">@${escapeHtml(p.username || '?')}</b>
+                  </div>`;
+    const body = p.content
+      ? `<div style="white-space:pre-wrap;line-height:1.35">${escapeHtml(p.content).slice(0,280)}${p.content.length>280?'…':''}</div>` : '';
+    let media = '';
+    if (p.file && p.file.can_view && p.file.kind === 'image') {
+      media = `<img src="/api/files/${p.file.id}/download" alt=""
+                    style="margin-top:8px;max-width:100%;border-radius:8px;display:block"/>`;
+    } else if (p.file && p.file.can_view && p.file.kind === 'video') {
+      media = `<div style="margin-top:8px;opacity:.75;font-size:.78rem">🎬 Video attachment</div>`;
+    } else if (p.link_url) {
+      media = `<div style="margin-top:8px;opacity:.75;font-size:.78rem;word-break:break-all">🔗 ${escapeHtml(p.link_url)}</div>`;
+    }
+    const stats = `<div style="margin-top:8px;display:flex;gap:14px;opacity:.7;font-size:.75rem">
+                     <span>♥ ${p.likes||0}</span><span>💬 ${p.comments||0}</span>
+                   </div>`;
+    return head + body + media + stats;
+  }
   function escapeJs(s)   { return String(s).replace(/['\\]/g, '\\$&'); }
   function shortTime(ts) {
     if (!ts) return '';

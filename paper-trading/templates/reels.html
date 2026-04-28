@@ -152,6 +152,29 @@
   </main>
 </div>
 
+<!-- Share to DM modal (friend picker) -->
+<div id="share-modal" data-no-swipe="1"
+     style="position:fixed;inset:0;background:rgba(0,0,0,.78);display:none;align-items:center;justify-content:center;z-index:9000;padding:18px;backdrop-filter:blur(6px)">
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;max-width:440px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)">
+    <div style="padding:14px 18px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:12px;font-weight:700">
+      <span>📤 Send to a friend</span>
+      <button onclick="closeShare()" style="margin-left:auto;background:#1e293b;border:none;color:#cbd5e1;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:.95rem">×</button>
+    </div>
+    <div style="padding:14px 18px;display:flex;flex-direction:column;gap:10px;overflow-y:auto">
+      <div style="display:flex;gap:6px">
+        <input id="share-link" readonly
+               style="flex:1;background:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:9px 12px;border-radius:8px;font-size:.82rem;outline:none"/>
+        <button onclick="copyShareLink()" style="background:#334155;color:#fff;border:none;padding:9px 14px;border-radius:8px;font-weight:700;font-size:.82rem;cursor:pointer">Copy</button>
+      </div>
+      <input id="share-search" placeholder="Search a username…"
+             oninput="onShareSearch(this.value)"
+             style="background:#1e293b;color:#fff;border:1px solid #334155;padding:10px 12px;border-radius:8px;outline:none"/>
+      <div id="share-results" style="background:#0b1220;border:1px solid #1e293b;border-radius:8px;min-height:120px;max-height:42vh;overflow-y:auto"></div>
+    </div>
+  </div>
+</div>
+<style>#share-modal.open{display:flex !important}</style>
+
 <!-- Comment sheet -->
 <div class="sheet" id="sheet" data-no-swipe="1">
   <header>
@@ -177,50 +200,66 @@ function escapeHtml(s) {
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-/* Convert a pasted video URL (YouTube, Vimeo, TikTok, Dailymotion, Twitch) into
-   an embeddable iframe URL. Returns null if the URL isn't a recognized video link. */
+/* Convert any pasted video URL into a renderable embed.
+   Returns { kind: 'iframe' | 'video', src } for known sites or raw video files,
+   or null if the URL isn't a video link at all. */
 function videoEmbedFor(url) {
   if (!url) return null;
   let u;
   try { u = new URL(url); } catch (e) { return null; }
   const host = u.hostname.replace(/^www\./, '').toLowerCase();
   const path = u.pathname;
+  const parent = location.hostname;
 
   // YouTube
   if (host === 'youtu.be') {
     const id = path.slice(1).split('/')[0];
-    return id ? `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0&modestbranding=1` : null;
+    if (id) return { kind:'iframe', src:`https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0&modestbranding=1` };
   }
   if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
     let id = u.searchParams.get('v');
-    if (!id) {
-      const m = path.match(/\/(?:shorts|embed|live)\/([^/?#]+)/);
-      if (m) id = m[1];
-    }
-    return id ? `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0&modestbranding=1` : null;
+    if (!id) { const m = path.match(/\/(?:shorts|embed|live|v)\/([^/?#]+)/); if (m) id = m[1]; }
+    if (id) return { kind:'iframe', src:`https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0&modestbranding=1` };
   }
   // Vimeo
   if (host === 'vimeo.com' || host === 'player.vimeo.com') {
     const m = path.match(/(\d+)/);
-    return m ? `https://player.vimeo.com/video/${m[1]}?autoplay=1&playsinline=1` : null;
+    if (m) return { kind:'iframe', src:`https://player.vimeo.com/video/${m[1]}?autoplay=1&playsinline=1` };
   }
   // TikTok
   if (host === 'tiktok.com' || host === 'vm.tiktok.com' || host === 'm.tiktok.com') {
     const m = path.match(/\/video\/(\d+)/);
-    if (m) return `https://www.tiktok.com/embed/v2/${m[1]}`;
+    if (m) return { kind:'iframe', src:`https://www.tiktok.com/embed/v2/${m[1]}` };
   }
   // Dailymotion
   if (host === 'dailymotion.com' || host === 'dai.ly') {
     const m = path.match(/(?:\/video\/|^\/)([a-zA-Z0-9]+)/);
-    if (m) return `https://www.dailymotion.com/embed/video/${m[1]}?autoplay=1`;
+    if (m) return { kind:'iframe', src:`https://www.dailymotion.com/embed/video/${m[1]}?autoplay=1` };
   }
-  // Twitch (videos / clips)
+  // Twitch
   if (host === 'twitch.tv' || host === 'clips.twitch.tv') {
-    const parent = location.hostname;
     const v = path.match(/\/videos\/(\d+)/);
-    if (v) return `https://player.twitch.tv/?video=${v[1]}&parent=${parent}&autoplay=true`;
+    if (v) return { kind:'iframe', src:`https://player.twitch.tv/?video=${v[1]}&parent=${parent}&autoplay=true` };
     const c = path.match(/\/clip\/([^/?#]+)/) || path.match(/^\/([^/?#]+)$/);
-    if (c && host === 'clips.twitch.tv') return `https://clips.twitch.tv/embed?clip=${c[1]}&parent=${parent}&autoplay=true`;
+    if (c && host === 'clips.twitch.tv') return { kind:'iframe', src:`https://clips.twitch.tv/embed?clip=${c[1]}&parent=${parent}&autoplay=true` };
+  }
+  // Streamable
+  if (host === 'streamable.com') {
+    const m = path.match(/^\/([a-zA-Z0-9]+)/);
+    if (m) return { kind:'iframe', src:`https://streamable.com/e/${m[1]}?autoplay=1` };
+  }
+  // Facebook video
+  if (host === 'facebook.com' || host === 'm.facebook.com' || host === 'fb.watch') {
+    return { kind:'iframe', src:`https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&autoplay=true` };
+  }
+  // Bilibili
+  if (host === 'bilibili.com' || host === 'm.bilibili.com') {
+    const m = path.match(/\/video\/(BV[0-9A-Za-z]+|av\d+)/);
+    if (m) return { kind:'iframe', src:`https://player.bilibili.com/player.html?bvid=${m[1]}&autoplay=1` };
+  }
+  // Raw video file (mp4/webm/mov/m4v/ogv/mkv) — same-origin or cross-origin.
+  if (/\.(mp4|webm|mov|m4v|ogv|mkv)(\?|#|$)/i.test(u.pathname + u.search)) {
+    return { kind:'video', src:url };
   }
   return null;
 }
@@ -230,24 +269,29 @@ function reelHtml(p) {
     ? `<img src="${escapeHtml(p.avatar_url)}" alt="">`
     : escapeHtml((p.username || '?')[0].toUpperCase());
 
-  const embedUrl = videoEmbedFor(p.link_url);
+  const embed = videoEmbedFor(p.link_url);
   let media;
-  if (embedUrl) {
-    media = `<iframe src="${escapeHtml(embedUrl)}"
+  if (embed && embed.kind === 'iframe') {
+    media = `<iframe src="${escapeHtml(embed.src)}"
                     allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
                     allowfullscreen referrerpolicy="strict-origin-when-cross-origin"
                     loading="lazy"></iframe>`;
+  } else if (embed && embed.kind === 'video') {
+    media = `<video src="${escapeHtml(embed.src)}" loop playsinline preload="metadata" muted controls></video>
+             <div class="play-overlay">▶</div>
+             <div class="progress"><i></i></div>`;
   } else {
     const src = p.file ? `/api/files/${p.file.id}/download` : '';
     media = `<video src="${escapeHtml(src)}" loop playsinline preload="metadata" muted></video>
              <div class="play-overlay">▶</div>
              <div class="progress"><i></i></div>`;
   }
+  const isEmbed = !!embed;
 
   return `
-    <article class="reel ${p.liked ? 'liked' : ''} ${embedUrl ? 'is-embed' : ''}"
+    <article class="reel ${p.liked ? 'liked' : ''} ${isEmbed ? 'is-embed' : ''}"
              data-id="${p.id}" data-uid="${p.user_id}"
-             ${embedUrl ? `data-embed="1"` : ''}>
+             ${isEmbed ? `data-embed="1"` : ''}>
       ${media}
       <div class="meta">
         <div class="author-row">
@@ -356,10 +400,93 @@ async function toggleLike(pid) {
   } catch (_) { el.classList.toggle('liked'); }
 }
 
+/* Share: open a friend-picker overlay so the reel can be sent into a DM
+   exactly like the home-feed Share button. */
+let _shareReelPid = null;
 function sharePost(pid) {
-  const url = location.origin + '/post/' + pid;
-  if (navigator.share) navigator.share({ url }).catch(()=>{});
-  else { navigator.clipboard?.writeText(url); alert('Link copied: ' + url); }
+  _shareReelPid = pid;
+  document.getElementById('share-link').value = location.origin + '/post/' + pid;
+  document.getElementById('share-search').value = '';
+  document.getElementById('share-results').innerHTML =
+    '<div style="color:#94a3b8;font-size:.85rem;padding:10px">Type a username to search…</div>';
+  document.getElementById('share-modal').classList.add('open');
+  setTimeout(() => document.getElementById('share-search').focus(), 80);
+}
+function closeShare(){
+  document.getElementById('share-modal').classList.remove('open');
+  _shareReelPid = null;
+}
+function copyShareLink(){
+  const inp = document.getElementById('share-link');
+  inp.select();
+  navigator.clipboard.writeText(inp.value).then(()=>toastReel('Link copied!')).catch(()=>{});
+}
+function toastReel(msg){
+  let t = document.getElementById('reel-toast');
+  if (!t) {
+    t = document.createElement('div'); t.id = 'reel-toast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 16px;border-radius:24px;font-size:.85rem;box-shadow:0 6px 24px rgba(0,0,0,.5);z-index:9999;opacity:0;transition:opacity .2s';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg; t.style.opacity = '1';
+  clearTimeout(t._h); t._h = setTimeout(()=>{ t.style.opacity = '0'; }, 1800);
+}
+let _shareDebounce = null;
+function onShareSearch(q){
+  clearTimeout(_shareDebounce);
+  _shareDebounce = setTimeout(() => doShareSearch(q.trim()), 200);
+}
+async function doShareSearch(q){
+  const el = document.getElementById('share-results');
+  if (!q) {
+    el.innerHTML = '<div style="color:#94a3b8;font-size:.85rem;padding:10px">Type a username to search…</div>';
+    return;
+  }
+  try {
+    const r = await fetch('/api/users/search?q=' + encodeURIComponent(q));
+    const users = await r.json();
+    if (!Array.isArray(users) || !users.length) {
+      el.innerHTML = '<div style="color:#94a3b8;font-size:.85rem;padding:10px">No users found.</div>';
+      return;
+    }
+    el.innerHTML = users.map(u => {
+      const ava = u.avatar_url
+        ? `<img src="${escapeHtml(u.avatar_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+        : escapeHtml((u.username || '?')[0].toUpperCase());
+      return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid #1e293b">
+        <div style="width:36px;height:36px;border-radius:50%;background:#1e293b;display:flex;align-items:center;justify-content:center;font-weight:700;overflow:hidden;flex-shrink:0">${ava}</div>
+        <div style="flex:1;font-weight:600">@${escapeHtml(u.username)}</div>
+        <button class="reel-send-btn" data-uid="${u.id}"
+          style="background:#3b82f6;color:#fff;border:none;padding:6px 14px;border-radius:8px;font-weight:700;font-size:.8rem;cursor:pointer">Send</button>
+      </div>`;
+    }).join('');
+    el.querySelectorAll('.reel-send-btn').forEach(btn => {
+      btn.addEventListener('click', () => sendShareTo(+btn.dataset.uid, btn));
+    });
+  } catch(e) {
+    el.innerHTML = '<div style="color:#f87171;font-size:.85rem;padding:10px">Search failed.</div>';
+  }
+}
+async function sendShareTo(uid, btn){
+  if (!_shareReelPid) return;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const r = await fetch(`/api/posts/${_shareReelPid}/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient_ids: [uid] }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(()=>({}));
+      throw new Error(d.error || ('HTTP ' + r.status));
+    }
+    btn.textContent = 'Sent ✓';
+    btn.style.background = '#16a34a';
+    toastReel('Shared!');
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Send';
+    toastReel(e.message || 'Failed');
+  }
 }
 
 let sheetPostId = null;
